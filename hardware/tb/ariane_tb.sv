@@ -3451,10 +3451,21 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
    `ifndef SEC_BOOT
         jtag_elf_run(binary_entry, cid);
      `ifdef DUAL_BOOT
+        $display("Core 1 Wake up call");
         repeat(100)
           @(posedge clk_i);
         jtag_init(cid+1);
         jtag_ariane_wakeup( LINKER_ENTRY, cid+1 );
+        $display("Core 2 Wake up call");
+        repeat(100)
+          @(posedge clk_i);
+        jtag_init(cid+2);
+        jtag_ariane_wakeup( LINKER_ENTRY, cid+2 );
+        $display("Core 3 Wake up call");
+        repeat(100)
+          @(posedge clk_i);
+        jtag_init(cid+3);
+        jtag_ariane_wakeup( LINKER_ENTRY, cid+3 );
      `endif
    `endif
         $display("Wait EOC...");
@@ -3470,10 +3481,21 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
    `ifndef SEC_BOOT
       jtag_ariane_wakeup( LINKER_ENTRY, cid );
      `ifdef DUAL_BOOT
+      $display("Core 1 Wake up call");
       repeat(100)
         @(posedge clk_i);
       jtag_init(cid+1);
       jtag_ariane_wakeup( LINKER_ENTRY, cid+1 );
+      $display("Core 2 Wake up call");
+      repeat(100)
+        @(posedge clk_i);
+      jtag_init(cid+2);
+      jtag_ariane_wakeup( LINKER_ENTRY, cid+2 );
+      $display("Core 3 Wake up call");
+      repeat(100)
+        @(posedge clk_i);
+      jtag_init(cid+3);
+      jtag_ariane_wakeup( LINKER_ENTRY, cid+3 );
      `endif
    `endif
       $display("Wait EOC...");

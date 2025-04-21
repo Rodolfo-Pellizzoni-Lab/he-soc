@@ -116,6 +116,7 @@ sources:
   - host/apb_soc_control.sv
   - host/apb_subsystem.sv
   - host/gpio2padframe.sv
+  - host/cva6_axi_id_remap.sv
   - host/cva6_synth_wrap.sv
   - host/l3_onchip_subsystem.sv
   - host/cva6_subsystem.sv

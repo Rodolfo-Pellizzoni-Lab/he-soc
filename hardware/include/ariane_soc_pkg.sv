@@ -16,7 +16,7 @@
   `define HYPER_FPGA_DDR
  `endif
 `endif
-
+`define QUAD_CORE
 package ariane_soc;
 
   // 2~4 number of cores

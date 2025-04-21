@@ -1,4 +1,28 @@
 // Do not edit - auto-generated
+// module plic_regs (
+//   input logic [255:0][2:0] prio_i,
+//   output logic [255:0][2:0] prio_o,
+//   output logic [255:0] prio_we_o,
+//   output logic [255:0] prio_re_o,
+//   input logic [0:0][255:0] ip_i,
+//   output logic [0:0] ip_re_o,
+//   input logic [3:0][255:0] ie_i,
+//   output logic [3:0][255:0] ie_o,
+//   output logic [3:0] ie_we_o,
+//   output logic [3:0] ie_re_o,
+//   input logic [3:0][2:0] threshold_i,
+//   output logic [3:0][2:0] threshold_o,
+//   output logic [3:0] threshold_we_o,
+//   output logic [3:0] threshold_re_o,
+//   input logic [3:0][7:0] cc_i,
+//   output logic [3:0][7:0] cc_o,
+//   output logic [3:0] cc_we_o,
+//   output logic [3:0] cc_re_o,
+//   // Bus Interface
+//   input  reg_intf::reg_intf_req_a32_d32 req_i,
+//   output reg_intf::reg_intf_resp_d32    resp_o
+// );
+localparam N_TARGET = 8;
 module plic_regs (
   input logic [255:0][2:0] prio_i,
   output logic [255:0][2:0] prio_o,
@@ -6,22 +30,22 @@ module plic_regs (
   output logic [255:0] prio_re_o,
   input logic [0:0][255:0] ip_i,
   output logic [0:0] ip_re_o,
-  input logic [3:0][255:0] ie_i,
-  output logic [3:0][255:0] ie_o,
-  output logic [3:0] ie_we_o,
-  output logic [3:0] ie_re_o,
-  input logic [3:0][2:0] threshold_i,
-  output logic [3:0][2:0] threshold_o,
-  output logic [3:0] threshold_we_o,
-  output logic [3:0] threshold_re_o,
-  input logic [3:0][7:0] cc_i,
-  output logic [3:0][7:0] cc_o,
-  output logic [3:0] cc_we_o,
-  output logic [3:0] cc_re_o,
+  input logic [N_TARGET-1:0][255:0] ie_i,
+  output logic [N_TARGET-1:0][255:0] ie_o,
+  output logic [N_TARGET-1:0] ie_we_o,
+  output logic [N_TARGET-1:0] ie_re_o,
+  input logic [N_TARGET-1:0][2:0] threshold_i,
+  output logic [N_TARGET-1:0][2:0] threshold_o,
+  output logic [N_TARGET-1:0] threshold_we_o,
+  output logic [N_TARGET-1:0] threshold_re_o,
+  input logic [N_TARGET-1:0][7:0] cc_i,
+  output logic [N_TARGET-1:0][7:0] cc_o,
+  output logic [N_TARGET-1:0] cc_we_o,
+  output logic [N_TARGET-1:0] cc_re_o,
   // Bus Interface
   input  reg_intf::reg_intf_req_a32_d32 req_i,
   output reg_intf::reg_intf_resp_d32    resp_o
-);
+ );
 always_comb begin
   resp_o.ready = 1'b1;
   resp_o.rdata = '0;

@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "pmu_test_func.c"
 #include "aplic.h"
+#include "plic.h"
 
 
 #define APLIC_IRQ_ID 156 // Kept it as a safe number for PMU to be in range with irq_sources & APLIC_ID
