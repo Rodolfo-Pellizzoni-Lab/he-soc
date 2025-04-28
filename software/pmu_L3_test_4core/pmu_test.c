@@ -7,6 +7,26 @@
 // The CUA will always miss in the L1 but after one run of the loop, it will never miss in the LLC.
 #define NUM_NON_CUA 3
 
+// __attribute__ ((section(".heapl2ram"))) volatile int flag[2] = { 0, 0};
+__attribute__ ((section(".heapl2ram"))) volatile int flag[4] = { 0, 0, 0, 0};
+
+__attribute__ ((section(".heapl2ram"))) volatile int victim = -1;
+
+__attribute__ ((section(".heapl2ram"))) volatile int core_1 = -1;
+
+static __attribute__ ((noinline)) void lock(int cid) {
+  flag[cid] = 1;
+  victim = cid;
+  int other_cid = 1-cid;
+  while( flag[other_cid] && (victim==cid) ) {
+    __asm__ volatile("nop;");
+  }
+}
+
+static __attribute__ ((noinline)) void unlock(int cid) {
+  flag[cid] = 0;
+}
+
 // ********************************************************************************************************//
 // Change LEN_CUA to generate L1 hits, L1 misses, L2 hits, L2 misses
 // Hit would be when LEN_CUA < Lx and miss would be when LEN_CUA > Lx
@@ -109,34 +129,42 @@ int main(int argc, char const *argv[]) {
 
     // Fix for LLC Addr
     write_32b(0x1C + 0x1A106000, 0xA0000000);
-
+    lock(mhartid);
     printf("Hello from Core0 %d!! :) \n", mhartid);
-
+    unlock(mhartid);
     // PLIC code
     #define PLIC_BASE     0x0C000000
-    #define PLIC_CHECK1    PLIC_BASE + 0x206004
+    #define PLIC_CHECK1    PLIC_BASE + 0x205004
+    #define PLIC_CHECK2    PLIC_BASE + 0x207004
     //enable bits for sources 0-31
-    #define PLIC_EN_BITS  PLIC_BASE + 0x2280
+    #define PLIC_EN_BITS1  PLIC_BASE + 0x2280
+    #define PLIC_EN_BITS2  PLIC_BASE + 0x2380
     
     
     // Initialazing the interrupt controller - 1
     pulp_write32(PLIC_BASE+pmu_plic_id1*4, 1);                                // set pmu interrupt priority to 1
-    pulp_write32(PLIC_EN_BITS+(((int)(pmu_plic_id1/32))*4), 1<<(pmu_plic_id1%32)); // enable interrupt
+    pulp_write32(PLIC_EN_BITS1+(((int)(pmu_plic_id1/32))*4), 1<<(pmu_plic_id1%32)); // enable interrupt
+    lock(mhartid);
     printf("PLIC Configured \n");
-    //pulp_write32();
+    unlock(mhartid);
     // Initialazing the interrupt controller - 2
-    //pulp_write32(PLIC_BASE+pmu_plic_id2*4, 1);                                // set pmu interrupt priority to 1
-    //pulp_write32(PLIC_EN_BITS+(((int)(pmu_plic_id2/32))*4), 1<<(pmu_plic_id2%32)); // enable interrupt
+    pulp_write32(PLIC_BASE+pmu_plic_id2*4, 1);                                // set pmu interrupt priority to 1
+    pulp_write32(PLIC_EN_BITS2+(((int)(pmu_plic_id2/32))*4), 1<<(pmu_plic_id2%32)); // enable interrupt
 
     // PMU Config
     uint32_t event_info_val = OVERFLOW_EN; 
     // Counter 0:
     write_32b (EVENT_INFO_BASE_ADDR, event_info_val);
     write_32b (COUNTER_BASE_ADDR, 0x40000000);
-    printf("PMU Interrupt Raised! \n");
+    lock(mhartid);
+    printf("PMU Interrupt Raised - Counter0! \n");
+    unlock(mhartid);
     // Counter 1:
-    //write_32b (EVENT_INFO_BASE_ADDR + COUNTER_BUNDLE_SIZE, event_info_val);
-    //write_32b (COUNTER_BASE_ADDR + COUNTER_BUNDLE_SIZE, 0x40000000);
+    write_32b (EVENT_INFO_BASE_ADDR + COUNTER_BUNDLE_SIZE, event_info_val);
+    write_32b (COUNTER_BASE_ADDR + COUNTER_BUNDLE_SIZE, 0x40000000);
+    lock(mhartid);
+    printf("PMU Interrupt Raised - Counter1! \n");
+    unlock(mhartid);
 
     while (1) {    
     }
@@ -146,7 +174,9 @@ int main(int argc, char const *argv[]) {
   // Core 1-3
   // *******************************************************************
   } else if (mhartid == 1) {
+      lock(mhartid);
       printf("Hello from Core1 %d!! :) \n", mhartid);
+      unlock(mhartid);
 
       // // ************************************************************************************//
       // // THIS PORTION IS FOR COUNTER 0, 1, 2, 3 TO TRACK REQUESTS & RESPONSES BETWEEN CORE0<=>LLC, & LLC<=>MAIN MEM
@@ -168,10 +198,20 @@ int main(int argc, char const *argv[]) {
 
   } else if (mhartid == 2) {
       // Start of """Interrupt Service Routine""" (this code should be into an IRQ Handler)
-      printf("irq has been received and processed. :)\r\n");
-      pulp_write32(0x10404024, 0x00000000); // Cleaning the irq source
-      pulp_write32(PLIC_CHECK1, pmu_plic_id1);    // Completing irq (according to riscv specs)
+      // printf("irq has been received and processed. :)\r\n");
+      // pulp_write32(0x10407000, 0x00000000); // Cleaning the irq source
+      // pulp_write32(PLIC_CHECK1, pmu_plic_id1);    // Completing irq (according to riscv specs)
+      
+      // Disabling the Overflow interrupt of PMU:
+      // #define OVERFLOW_EN    0x1000000
+      //   uint32_t event_info_val_disable = 0x0000000; 
+      // // Counter 0:
+      // write_32b (EVENT_INFO_BASE_ADDR, event_info_val_disable);
+      // write_32b (COUNTER_BASE_ADDR, 0x40000000);
+
+      // lock(mhartid);
       printf("Hello from Core2 %d!! :) \n", mhartid);
+      // unlock(mhartid);
 
     // ************************************************************************************//
     // THIS PORTION IS FOR COUNTER 0, 1, 2, 3 TO TRACK REQUESTS & RESPONSES BETWEEN CORE0<=>LLC, & LLC<=>MAIN MEM
@@ -192,8 +232,8 @@ int main(int argc, char const *argv[]) {
     // uart_wait_tx_done();
 
 } else if (mhartid == 3) {
-  //asm volatile ("fence");
-  //printf("Hello from Core3 %d!! :) \n", mhartid);
+  
+  printf("Hello from Core3 %d!! :) \n", mhartid);
 
   // // ************************************************************************************//
   // // THIS PORTION IS FOR COUNTER 0, 1, 2, 3 TO TRACK REQUESTS & RESPONSES BETWEEN CORE0<=>LLC, & LLC<=>MAIN MEM

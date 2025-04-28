@@ -201,47 +201,45 @@ module cva6_axi_id_remap #(
   // assign mst_req_o.aw.id = {{ZeroWidth{1'b0}}, wr_push_oup_id};
   always_comb begin
       // For Read
-      if ((slv_req_i.ar.id[7] == 1) && (slv_req_i.ar.id[4] == 1)) begin
-          mst_req_o.ar.id = {2'b01, rd_push_oup_id};    // Coherence Core 1 condition
-      end else if ((slv_req_i.ar.id[7] == 1) && (slv_req_i.ar.id[4] == 0)) begin
-          mst_req_o.ar.id = {2'b00, rd_push_oup_id};    // Coherence Core 0 condition
-      end else if ((slv_req_i.ar.id[7] == 0) && (slv_req_i.ar.id[6] == 1)) begin
-          mst_req_o.ar.id = {2'b01, rd_push_oup_id};    // Non-Coherence Core 1 condition
-      end else if ((slv_req_i.ar.id[7] == 1) && (slv_req_i.ar.id[6] == 0)) begin
-          mst_req_o.ar.id = {2'b00, rd_push_oup_id};    // Non-Coherence Core 0 condition
+      if ((slv_req_i.ar.id[9] == 1) && (slv_req_i.ar.id[5:4] == 2'b00)) begin
+        mst_req_o.ar.id = {2'b00, rd_push_oup_id}; // Coherent Core 0
+      end else if ((slv_req_i.ar.id[9] == 1) && (slv_req_i.ar.id[5:4] == 2'b01)) begin
+        mst_req_o.ar.id = {2'b01, rd_push_oup_id}; // Coherent Core 1
+      end else if ((slv_req_i.ar.id[9] == 1) && (slv_req_i.ar.id[5:4] == 2'b10)) begin
+        mst_req_o.ar.id = {2'b10, rd_push_oup_id}; // Coherent Core 2
+      end else if ((slv_req_i.ar.id[9] == 1) && (slv_req_i.ar.id[5:4] == 2'b11)) begin
+        mst_req_o.ar.id = {2'b11, rd_push_oup_id}; // Coherent Core 3
+      end else if ((slv_req_i.ar.id[9] == 0) && (slv_req_i.ar.id[8:7] == 2'b00)) begin
+        mst_req_o.ar.id = {2'b00, rd_push_oup_id}; // Noncoherent Core 0
+      end else if ((slv_req_i.ar.id[9] == 0) && (slv_req_i.ar.id[8:7] == 2'b01)) begin
+        mst_req_o.ar.id = {2'b01, rd_push_oup_id}; // Noncoherent Core 1
+      end else if ((slv_req_i.ar.id[9] == 0) && (slv_req_i.ar.id[8:7] == 2'b10)) begin
+        mst_req_o.ar.id = {2'b10, rd_push_oup_id}; // Noncoherent Core 2
+      end else if ((slv_req_i.ar.id[9] == 0) && (slv_req_i.ar.id[8:7] == 2'b11)) begin
+        mst_req_o.ar.id = {2'b11, rd_push_oup_id}; // Noncoherent Core 3
       end else begin
-          mst_req_o.ar.id = {{ZeroWidth{1'b0}}, rd_push_oup_id};
-       end
-      
-      /*if (slv_req_i.ar.id[4] == 1'b0) begin             // Condition for Core-0
-          mst_req_o.ar.id = {2'b00, rd_push_oup_id};
-      end else if (slv_req_i.ar.id[4] == 1'b1) begin    // Condition for Core-1
-          mst_req_o.ar.id = {2'b01, rd_push_oup_id};
-      end else begin
-          mst_req_o.ar.id = {{ZeroWidth{1'b0}}, rd_push_oup_id};
-       end */ 
+        mst_req_o.ar.id = {{ZeroWidth{1'b0}}, rd_push_oup_id}; // Default case
+      end
       // For Write
-      if ((slv_req_i.aw.id[7] == 1) && (slv_req_i.aw.id[4] == 1)) begin
-          mst_req_o.aw.id = {2'b01, wr_push_oup_id};    // Coherence Core 1 condition
-      end else if ((slv_req_i.aw.id[7] == 1) && (slv_req_i.aw.id[4] == 0)) begin
-          mst_req_o.aw.id = {2'b00, wr_push_oup_id};    // Coherence Core 0 condition
-      end else if ((slv_req_i.aw.id[7] == 0) && (slv_req_i.aw.id[6] == 1)) begin
-          mst_req_o.aw.id = {2'b01, wr_push_oup_id};    // Non-Coherence Core 1 condition
-      end else if ((slv_req_i.aw.id[7] == 1) && (slv_req_i.aw.id[6] == 0)) begin
-          mst_req_o.aw.id = {2'b00, wr_push_oup_id};    // Non-Coherence Core 0 condition
+      if ((slv_req_i.aw.id[9] == 1) && (slv_req_i.aw.id[5:4] == 2'b00)) begin
+        mst_req_o.aw.id = {2'b00, wr_push_oup_id}; // Coherent Core 0
+      end else if ((slv_req_i.aw.id[9] == 1) && (slv_req_i.aw.id[5:4] == 2'b01)) begin
+        mst_req_o.aw.id = {2'b01, wr_push_oup_id}; // Coherent Core 1
+      end else if ((slv_req_i.aw.id[9] == 1) && (slv_req_i.aw.id[5:4] == 2'b10)) begin
+        mst_req_o.aw.id = {2'b10, wr_push_oup_id}; // Coherent Core 2
+      end else if ((slv_req_i.aw.id[9] == 1) && (slv_req_i.aw.id[5:4] == 2'b11)) begin
+        mst_req_o.aw.id = {2'b11, wr_push_oup_id}; // Coherent Core 3
+      end else if ((slv_req_i.aw.id[9] == 0) && (slv_req_i.aw.id[8:7] == 2'b00)) begin
+        mst_req_o.aw.id = {2'b00, wr_push_oup_id}; // Noncoherent Core 0
+      end else if ((slv_req_i.aw.id[9] == 0) && (slv_req_i.aw.id[8:7] == 2'b01)) begin
+        mst_req_o.aw.id = {2'b01, wr_push_oup_id}; // Noncoherent Core 1
+      end else if ((slv_req_i.aw.id[9] == 0) && (slv_req_i.aw.id[8:7] == 2'b10)) begin
+        mst_req_o.aw.id = {2'b10, wr_push_oup_id}; // Noncoherent Core 2
+      end else if ((slv_req_i.aw.id[9] == 0) && (slv_req_i.aw.id[8:7] == 2'b11)) begin
+        mst_req_o.aw.id = {2'b11, wr_push_oup_id}; // Noncoherent Core 3
       end else begin
-          mst_req_o.aw.id = {{ZeroWidth{1'b0}}, wr_push_oup_id};
-       end
-      
-      
-      
-      /*if (slv_req_i.aw.id[4] == 1'b0) begin             // Condition for Core-0
-          mst_req_o.aw.id = {2'b00, wr_push_oup_id};
-      end else if (slv_req_i.aw.id[4] == 1'b1) begin    // Condition for Core-1
-          mst_req_o.aw.id = {2'b01, wr_push_oup_id};
-      end else begin
-          mst_req_o.aw.id = {{ZeroWidth{1'b0}}, wr_push_oup_id};
-      end*/
+        mst_req_o.aw.id = {{ZeroWidth{1'b0}}, wr_push_oup_id}; // Default case
+      end
   end
   // *****************************************************************************************
   // Handle requests.
