@@ -199,6 +199,7 @@ module cva6_axi_id_remap #(
   // *****************************************************************************************
   // assign mst_req_o.ar.id = {{ZeroWidth{1'b0}}, rd_push_oup_id};
   // assign mst_req_o.aw.id = {{ZeroWidth{1'b0}}, wr_push_oup_id};
+  // Quad Core CVA6-ID Remapper Logic:
   always_comb begin
       // For Read
       if ((slv_req_i.ar.id[9] == 1) && (slv_req_i.ar.id[5:4] == 2'b00)) begin
