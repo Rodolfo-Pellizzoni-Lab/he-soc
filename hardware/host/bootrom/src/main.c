@@ -64,6 +64,7 @@ void claim_irq(void) {
   }
 }
 
+
 void claim_irq_core2(void) {
   int * pointer1;
   if(read_csr(mhartid)){
