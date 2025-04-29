@@ -13,6 +13,7 @@
  * Description: Auto-generated bootrom
  */
 // Auto-generated code
+
 module bootrom (
    input  logic         clk_i,
    input  logic         req_i,
