@@ -715,7 +715,7 @@ axi_spu_top #(
 
    // The PMU only works with 32-bit AXI4-Lite port.
    pmu_top #(
-     .NUM_PORT         ( 3                              ),
+     .NUM_PORT         ( ariane_soc::NumCVA6 + 1        ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
      .ISPM_NUM_WORDS   ( 512                            ),
      .DSPM_NUM_WORDS   ( 4096                           ),
