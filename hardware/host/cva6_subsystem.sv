@@ -112,7 +112,14 @@ module cva6_subsystem
 
   // Logic locking Keys
   input logic [127:0]    iommu_lock_xor_key_i,
-  input logic [127:0]    aia_lock_xor_key_i
+  input logic [127:0]    aia_lock_xor_key_i,
+
+  //`ifdef perf_counters_evu
+  input ariane_axi_soc::req_lite_t                      perfc_cfg_req_i,
+  output ariane_axi_soc::resp_lite_t                    perfc_cfg_resp_o,
+  output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] perfc_evu_status_resp_o
+  //output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] pcmiles_spu_resp_o
+  //`endif
 
 );
      // disable test-enable
@@ -957,7 +964,12 @@ module cva6_subsystem
     // PMU port
     .spu_core_cdc_data_o  ( spu_core_cdc_data           ),
     .spu_core_cdc_wptr_o  ( spu_core_cdc_wptr           ),
-    .spu_core_cdc_rptr_i  ( spu_core_cdc_rptr           )
+    .spu_core_cdc_rptr_i  ( spu_core_cdc_rptr           ),
+    //`ifdef perf_counters_evu
+    .perfc_axi_req_i     ( perfc_cfg_req_i             ),
+    .perfc_axi_resp_o     ( perfc_cfg_resp_o            ),
+    .perfc_evu_events_resp( perfc_evu_status_resp_o     )
+    //`endif
   );
 
   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core_o_temp;
