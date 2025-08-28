@@ -41,6 +41,10 @@ module axi_lite_subsystem
     input  resp_lite_t axi_lite_snoop_rsp_i,
     // Master to the APMU Slave port.
     AXI_LITE.Master  apmu_cfg_master,
+    //`ifdef perf_counters_evu
+    AXI_LITE.Master  perfc_cfg_master,
+
+    //`endif
 
     output logic     h2c_irq_o,
     output logic     c2h_irq_o,
@@ -49,6 +53,7 @@ module axi_lite_subsystem
     // completion irq to CVA6
     output logic     doorbell_irq_o,
     output logic     completion_irq_o
+    
 );
 
    logic             s_c2h_irq;
@@ -175,10 +180,18 @@ module axi_lite_subsystem
 
 `ifdef APMU_IP
   typedef axi_pkg::xbar_rule_32_t tlb_cfg_xbar_rule_t;
+  //`ifdef perf_counters_evu
+  
+    ariane_axi_soc::resp_lite_t    events_cfg_perfc_resp;
+    ariane_axi_soc::req_lite_t     events_cfg_perfc_req;
 
+    `AXI_LITE_ASSIGN_FROM_REQ ( perfc_cfg_master, events_cfg_perfc_req)
+    `AXI_LITE_ASSIGN_TO_RESP  ( events_cfg_perfc_resp, perfc_cfg_master)
+
+  //`endif
   localparam axi_pkg::xbar_cfg_t FromHostTlbCfgXbarCfg = '{
     NoSlvPorts:  2,
-    NoMstPorts:  7,
+    NoMstPorts:  8,
     MaxMstTrans: 2,
     MaxSlvTrans: 5,
     FallThrough: 0,
@@ -189,11 +202,12 @@ module axi_lite_subsystem
     UniqueIds   : 0,
     AxiAddrWidth: AXI_LITE_ADDR_WIDTH,
     AxiDataWidth: AXI_LITE_DATA_WIDTH,
-    NoAddrRules: 7
+    NoAddrRules: 8
   };
 
   localparam tlb_cfg_xbar_rule_t [FromHostTlbCfgXbarCfg.NoAddrRules-1:0]
       FromHostTlbCfgXbarAddrMap = '{
+    '{idx: 32'd7, start_addr: 32'h1060_6000, end_addr: 32'h1060_6100},  // PerfCountersEVU
     '{idx: 32'd6, start_addr: 32'h1060_5000, end_addr: 32'h1060_6000},  // Snooper
     '{idx: 32'd5, start_addr: 32'h1040_5000, end_addr: 32'h1060_5000},  // APMU IP
     '{idx: 32'd4, start_addr: 32'h1040_4000, end_addr: 32'h1040_5000},
@@ -219,12 +233,13 @@ module axi_lite_subsystem
      .test_i                ( 1'b0                                                ),
      .slv_ports_req_i       ( {cluster_lite_req , host_lite_req }                 ),
      .slv_ports_resp_o      ( {cluster_lite_resp, host_lite_resp}                 ),
-     .mst_ports_req_o       ( { axi_lite_snoop_req_o, apmu_cfg_req,  axi_lite_mbox_req, c2hmailbox_lite_req,  h2cmailbox_lite_req,  llc_cfg_req,  c2h_tlb_cfg_req } ),
-     .mst_ports_resp_i      ( { axi_lite_snoop_rsp_i, apmu_cfg_resp, axi_lite_mbox_rsp, c2hmailbox_lite_resp, h2cmailbox_lite_resp, llc_cfg_resp, c2h_tlb_cfg_resp } ),
+     .mst_ports_req_o       ( {events_cfg_perfc_req, axi_lite_snoop_req_o, apmu_cfg_req,  axi_lite_mbox_req, c2hmailbox_lite_req,  h2cmailbox_lite_req,  llc_cfg_req,  c2h_tlb_cfg_req } ),
+     .mst_ports_resp_i      ( {events_cfg_perfc_resp, axi_lite_snoop_rsp_i, apmu_cfg_resp, axi_lite_mbox_rsp, c2hmailbox_lite_resp, h2cmailbox_lite_resp, llc_cfg_resp, c2h_tlb_cfg_resp } ),
      .addr_map_i            ( FromHostTlbCfgXbarAddrMap                           ),
      .en_default_mst_port_i ( {1'b0, 1'b0}                                        ),
      .default_mst_port_i    ( '0                                                  )
    );
+   
 `else
   typedef axi_pkg::xbar_rule_32_t tlb_cfg_xbar_rule_t;
 
