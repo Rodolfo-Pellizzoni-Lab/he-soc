@@ -194,7 +194,14 @@ module cva6_synth_wrap
 
   // Snooper Irqs
   output logic snoop_watermark_irq_o,
-  output logic snoop_trigger_irq_o
+  output logic snoop_trigger_irq_o,
+
+  //`ifdef perf_counters_evu
+  input req_lite_t   perfc_axi_req_i,
+  output resp_lite_t  perfc_axi_resp_o,
+  output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0]              perfc_evu_events_resp 
+  //output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0]              pcmiles_spu_resp
+  //`endif
 );
 
   localparam  CVA6AXiIdWidth = 4; // Do not change, CVA6 from planV only supports IdWidth = 4
@@ -274,11 +281,182 @@ module cva6_synth_wrap
 
   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core;
 
+//AXI_LITE_SLAVE_PERFORMANCE_COUNTERS_EVU_CONFIGURATION
+// The following AXI_LITE_SLAVE Regs module shall handshake with the axi_lite_subsystem and configure the registers
+// with appropriate Performance Counter Event IDs and PC Values that need to be tracked as Milestones.
+// Here is how it will be configured
+/* 1. For Core-0:
+      a. EventID0  = 0x10606000
+      b. EventID1  = 0x10606004
+      c. EventID2  = 0x10606008
+      d. EventID3  = 0x1060600C
+      e. PC_TRACK0 = 0x10606010
+      f. PC_TRACK1 = 0x10606018
+      g. PC_TRACK2 = 0x10606020
+      h. PC_TRACK3 = 0x10606028
+  2. For Core-1:
+      a. EventID0  = 0x10606030
+      b. EventID1  = 0x10606034
+      c. EventID2  = 0x10606038
+      d. EventID3  = 0x1060603C
+      e. PC_TRACK0 = 0x10606040
+      f. PC_TRACK1 = 0x10606048
+      g. PC_TRACK2 = 0x10606050
+      h. PC_TRACK3 = 0x10606058
+      
+Each EVENTID just needs 5 bits but we write to a 32-bit register. Hence 4 bytes allocated for each EventID Register.
+For PC, as per the current configuration, its 64 bits so we take 8 bytes for each PC Value Stored.
+*/
+typedef logic [7:0] byte_t;
+//Number of Bytes for holding a PERFCOUNTER EventID
+localparam int NumBytesPerfCfgReg           = 4;
+//Number of Bytes for holding a single PC Value as per latest configuration
+localparam int NumBytesPCMilesReg           = 8;
+//Total Number of Bytes Needed Per Core : 4*4 + 8*4 = 48 Bytes needed per core as per latest configuration.
+localparam int NumBytesPerfCfgPerCore       = (NumBytesPerfCfgReg * ariane_pkg::NumPerfEvents) + (NumBytesPCMilesReg * ariane_pkg::NumPCMilesRegs);
+//Total Bytes of Configuration Registers
+localparam int TotalNumBytesCfgRegs         = ariane_soc::NumCVA6 * NumBytesPerfCfgPerCore;
+
+initial begin
+  $display("NumPerfEvents      = %0d", ariane_pkg::NumPerfEvents);
+  $display("NumPCMilesRegs     = %0d", ariane_pkg::NumPCMilesRegs);
+  $display("NumCVA6            = %0d", ariane_soc::NumCVA6);
+  $display("TotalNumBytesCfgRegs = %0d", TotalNumBytesCfgRegs);
+end
+
+typedef struct packed {
+  byte_t [NumBytesPerfCfgReg-1:0] event_id0;
+  byte_t [NumBytesPerfCfgReg-1:0] event_id1;
+  byte_t [NumBytesPerfCfgReg-1:0] event_id2;
+  byte_t [NumBytesPerfCfgReg-1:0] event_id3;
+} event_bundle_t;
+
+typedef struct packed {
+  logic [NumBytesPerfCfgReg-1:0] event0;
+  logic [NumBytesPerfCfgReg-1:0] event1;
+  logic [NumBytesPerfCfgReg-1:0] event2;
+  logic [NumBytesPerfCfgReg-1:0] event3;
+} event_strb_t;
+
+typedef struct packed {
+  byte_t [NumBytesPCMilesReg-1:0] pc0;
+  byte_t [NumBytesPCMilesReg-1:0] pc1;
+  byte_t [NumBytesPCMilesReg-1:0] pc2;
+  byte_t [NumBytesPCMilesReg-1:0] pc3;
+} pc_milestone_bundle_t;
+
+typedef struct packed {
+  logic [NumBytesPCMilesReg-1:0] pc_s0;
+  logic [NumBytesPCMilesReg-1:0] pc_s1;
+  logic [NumBytesPCMilesReg-1:0] pc_s2;
+  logic [NumBytesPCMilesReg-1:0] pc_s3;
+} pc_milestones_strb_t;
+
+typedef struct packed {
+  pc_milestone_bundle_t   pc_milestones;
+  event_bundle_t          events;
+} reg_map_t;
+
+typedef struct packed {
+  pc_milestones_strb_t    pc_milestones_valids; 
+  event_strb_t            event_valids;
+} strb_map_t;
+
+typedef union packed {
+  byte_t          [TotalNumBytesCfgRegs-1:0]   ByteMap;
+  reg_map_t       [ariane_soc::NumCVA6-1:0]    StructMap;
+} union_reg_data_t;
+
+typedef union packed {
+  logic           [TotalNumBytesCfgRegs-1:0]   LogicMap;
+  strb_map_t      [ariane_soc::NumCVA6-1:0]    StrbMap;
+} union_strb_data_t;
+
+union_reg_data_t    perfc_d, perfc_q;
+union_strb_data_t   perfc_wr_o;
+union_strb_data_t   perfc_load_i;
+
+always_comb begin
+    for(int i=0; i<ariane_soc::NumCVA6; i++) begin
+      
+      // perfc_d.StructMap[i].events.event_id0[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id3;
+      // perfc_d.StructMap[i].events.event_id1[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id2;
+      // perfc_d.StructMap[i].events.event_id2[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id1;
+      // perfc_d.StructMap[i].events.event_id3[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id0;
+      
+      // perfc_d.StructMap[i].pc_milestones.pc3 = perfc_pc_milestones[i].pc3;
+      // perfc_d.StructMap[i].pc_milestones.pc2 = perfc_pc_milestones[i].pc2;
+      // perfc_d.StructMap[i].pc_milestones.pc1 = perfc_pc_milestones[i].pc1;
+      // perfc_d.StructMap[i].pc_milestones.pc0 = perfc_pc_milestones[i].pc0;
+
+      perfc_d.StructMap[i].events.event_id0[ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id0[ariane_pkg::EventIDBits-1:0];
+      perfc_d.StructMap[i].events.event_id1[ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id1[ariane_pkg::EventIDBits-1:0];
+      perfc_d.StructMap[i].events.event_id2[ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id2[ariane_pkg::EventIDBits-1:0];
+      perfc_d.StructMap[i].events.event_id3[ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id3[ariane_pkg::EventIDBits-1:0];
+      
+      perfc_d.StructMap[i].pc_milestones.pc3 = perfc_q.StructMap[i].pc_milestones.pc3;
+      perfc_d.StructMap[i].pc_milestones.pc2 = perfc_q.StructMap[i].pc_milestones.pc2;
+      perfc_d.StructMap[i].pc_milestones.pc1 = perfc_q.StructMap[i].pc_milestones.pc1; 
+      perfc_d.StructMap[i].pc_milestones.pc0 = perfc_q.StructMap[i].pc_milestones.pc0;
+
+    end
+  end
+
+
+axi_lite_regs#(
+        .RegNumBytes  ( TotalNumBytesCfgRegs),
+        .AxiAddrWidth ( AXI_LITE_ADDR_WIDTH ),
+        .PrivProtOnly ( 1'b0                ),
+        .AxiDataWidth ( AXI_LITE_DATA_WIDTH ),
+        .SecuProtOnly ( 1'b0                ),
+        .AxiReadOnly  ( /*Not Used*/        ),
+        .RegRstVal    ( 1'b0                ),
+        .resp_lite_t  ( resp_lite_t         ),
+        .req_lite_t   ( req_lite_t          )
+) i_axi_lite_perfc (
+        .rst_ni,
+        .clk_i,
+        .axi_req_i   ( perfc_axi_req_i      ),
+        .axi_resp_o  ( perfc_axi_resp_o     ),
+        .rd_active_o ( /*Not used*/         ),
+        .wr_active_o ( perfc_wr_o.LogicMap  ),
+        .reg_d_i     ( perfc_d.ByteMap      ),
+        .reg_load_i  ( '0                   ),
+        .reg_q_o     ( perfc_q.ByteMap      )
+
+);
+typedef struct packed {
+  logic [ariane_pkg::EventIDBits-1:0] ev_id0;
+  logic [ariane_pkg::EventIDBits-1:0] ev_id1;
+  logic [ariane_pkg::EventIDBits-1:0] ev_id2;
+  logic [ariane_pkg::EventIDBits-1:0] ev_id3;
+} event_id_t;
+
+event_id_t [ariane_soc::NumCVA6-1:0]  perfc_axi_event_ids;
+pc_milestone_bundle_t [ariane_soc::NumCVA6-1:0] perfc_pc_milestones;
+
+always_comb begin
+  for(int i=0; i<ariane_soc::NumCVA6; i++) begin
+
+    perfc_axi_event_ids[i].ev_id3 = perfc_q.StructMap[i].events.event_id0[ariane_pkg::EventIDBits-1:0];
+    perfc_axi_event_ids[i].ev_id2 = perfc_q.StructMap[i].events.event_id1[ariane_pkg::EventIDBits-1:0];
+    perfc_axi_event_ids[i].ev_id1 = perfc_q.StructMap[i].events.event_id2[ariane_pkg::EventIDBits-1:0];
+    perfc_axi_event_ids[i].ev_id0 = perfc_q.StructMap[i].events.event_id3[ariane_pkg::EventIDBits-1:0];
+
+    perfc_pc_milestones[i].pc3    = perfc_q.StructMap[i].pc_milestones.pc3;
+    perfc_pc_milestones[i].pc2    = perfc_q.StructMap[i].pc_milestones.pc2;
+    perfc_pc_milestones[i].pc1    = perfc_q.StructMap[i].pc_milestones.pc1;
+    perfc_pc_milestones[i].pc0    = perfc_q.StructMap[i].pc_milestones.pc0;
+
+  end
+end
+
   for (genvar i = 0; i < ariane_soc::NumCVA6 ; i++ ) begin : gen_ariane
 
     assign hart_id[i] = i;
 
     cva6 #(
+      // .CVA6Cfg       ( ariane_soc::ArianeSocCfg ),
       .ArianeCfg     ( ariane_soc::ArianeSocCfg ),
       .AxiAddrWidth  ( AXI_ADDR_WIDTH           ),
       .AxiDataWidth  ( AXI_DATA_WIDTH           ),
@@ -320,7 +498,12 @@ module cva6_synth_wrap
       .l15_req_o            (                       ),
       .l15_rtrn_i           ( '0                    ),
       .axi_req_o            ( ace_ariane_req[i]     ),
-      .axi_resp_i           ( ace_ariane_resp[i]    )
+      .axi_resp_i           ( ace_ariane_resp[i]    ),
+      //ifdef perf_counters_evu
+      .perfc_evu_req_i     ( perfc_axi_event_ids[i]),
+      .pcmiles_evu_req_i    ( perfc_pc_milestones[i]),
+      .perfc_evu_status_resp     ( perfc_evu_events_resp[i])
+      //endif
     );
 
     `ifdef APMU_IP
