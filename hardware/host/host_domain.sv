@@ -337,6 +337,17 @@ module host_domain
     .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
    ) mem_axi_bus_spu_o_bus();
 
+   AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH          ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH             ),
+    `ifdef EXCLUDE_LLC
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave   ),
+    `else
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave+1 ),
+    `endif
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
+   ) mem_axi_bus_spu_mst();
+
    AXI_LITE #(
     .AXI_ADDR_WIDTH (AXI_LITE_AW),
     .AXI_DATA_WIDTH (AXI_LITE_DW)
@@ -613,8 +624,24 @@ axi_spu_top #(
      .rst_ni             ( s_synch_soc_rst             ),
      .addr_map_i         ( spu_mem_addr_map            ),
      .spu_slv            ( mem_axi_bus_spu_o_bus       ),
-     .spu_mst            ( mem_axi_bus                 ),
+     .spu_mst            ( mem_axi_bus_spu_mst         ),
      .e_out              ( spu_o[ariane_soc::NumCVA6]  )
+   );
+  // ariane_axi_soc::req_slv_mem_t  axi_mem_spu_mst_req;
+  // ariane_axi_soc::resp_slv_mem_t axi_mem_spu_slv_resp;
+  // `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_mst, axi_mem_spu_mst_req )
+  // `AXI_ASSIGN_TO_RESP( axi_mem_spu_slv_resp, mem_axi_bus_spu_mst )
+
+   slowdown_mem_top #(
+    .Latency_param(20),
+    .Throughput_timer_param(10),
+    .Throughput_FIFO_depth(8),
+    .Throughput_COUNTER_WIDTH(4)
+   ) i_slowdown (
+    .clk_i(s_soc_clk),
+    .rst_ni(s_synch_soc_rst),
+    .slowdown_mem_slv(mem_axi_bus_spu_mst),
+    .slowdown_mem_mst(mem_axi_bus)
    );
 
    // AXI Cut for IOPMP Configuration Port
