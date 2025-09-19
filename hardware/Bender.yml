@@ -121,6 +121,13 @@ sources:
   - host/cva6_axi_id_remap.sv
   - host/cva6_synth_wrap.sv
   - host/l3_onchip_subsystem.sv
+  - host/throughput_regulator.sv
+  - host/data_write_fifo.sv
+  - host/countdown_timer.sv
+  - host/fifo_sync.sv
+  - host/latency_r_chan.sv
+  - host/latency_b_chan.sv
+  - host/slowdown_mem_top.sv
   - host/cva6_subsystem.sv
   - host/l2_subsystem.sv
   - host/clk_gen_hyper.sv
