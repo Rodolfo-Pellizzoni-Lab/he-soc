@@ -182,7 +182,7 @@ module slowdown_mem_top #(
     throughput_regulator #(
     .Throughput_timer_param(Throughput_timer_param),
     .Throughput_FIFO_depth(Throughput_FIFO_depth),
-    Throughput_COUNTER_WIDTH(Throughput_COUNTER_WIDTH)
+    .Throughput_COUNTER_WIDTH(Throughput_COUNTER_WIDTH)
 ) i_throughput_regulator
  (
     .clk_i(clk_i),

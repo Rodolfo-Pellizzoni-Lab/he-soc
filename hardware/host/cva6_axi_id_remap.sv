@@ -199,30 +199,50 @@ module cva6_axi_id_remap #(
   localparam ZeroWidth = AxiMstPortIdWidth - IdxWidth;
   // *****************************************************************************************
   // *****************************************************************************************
+  // always_comb begin
+  //     // For Read
+  //   if (slv_req_i.ar.id[6:5] == 2'b10) begin
+  //     // Coherent transaction: use bit 4 to determine core
+  //     mst_req_o.ar.id = { (slv_req_i.ar.id[4] ? 2'b01 : 2'b00), rd_push_oup_id };
+  //   end else if ((slv_req_i.ar.id[6:5] == 2'b00) || (slv_req_i.ar.id[6:5] == 2'b01)) begin
+  //     // Noncoherent transaction: use 6:5 directly
+  //     mst_req_o.ar.id = { slv_req_i.ar.id[6:5], rd_push_oup_id };
+  //   end else begin
+  //     // Fallback for safety — in case of unexpected ID encoding
+  //     mst_req_o.ar.id = {{ZeroWidth{1'b0}}, rd_push_oup_id};
+  //   end
+  //   // For Write
+  //   if (slv_req_i.aw.id[6:5] == 2'b10) begin
+  //     // Coherent transaction: use bit 4 to determine core
+  //     mst_req_o.aw.id = { (slv_req_i.aw.id[4] ? 2'b01 : 2'b00), wr_push_oup_id };
+  //   end else if ((slv_req_i.aw.id[6:5] == 2'b00) || (slv_req_i.aw.id[6:5] == 2'b01)) begin
+  //     // Noncoherent transaction: use 6:5 directly
+  //     mst_req_o.aw.id = { slv_req_i.aw.id[6:5], wr_push_oup_id };
+  //   end else begin
+  //     // Fallback for safety — in case of unexpected ID encoding
+  //     mst_req_o.aw.id = {{ZeroWidth{1'b0}}, wr_push_oup_id};
+  //   end
+  // end
+
   always_comb begin
-      // For Read
-    if (slv_req_i.ar.id[6:5] == 2'b10) begin
-      // Coherent transaction: use bit 4 to determine core
-      mst_req_o.ar.id = { (slv_req_i.ar.id[4] ? 2'b01 : 2'b00), rd_push_oup_id };
-    end else if ((slv_req_i.ar.id[6:5] == 2'b00) || (slv_req_i.ar.id[6:5] == 2'b01)) begin
-      // Noncoherent transaction: use 6:5 directly
-      mst_req_o.ar.id = { slv_req_i.ar.id[6:5], rd_push_oup_id };
-    end else begin
-      // Fallback for safety — in case of unexpected ID encoding
-      mst_req_o.ar.id = {{ZeroWidth{1'b0}}, rd_push_oup_id};
-    end
-    // For Write
-    if (slv_req_i.aw.id[6:5] == 2'b10) begin
-      // Coherent transaction: use bit 4 to determine core
-      mst_req_o.aw.id = { (slv_req_i.aw.id[4] ? 2'b01 : 2'b00), wr_push_oup_id };
-    end else if ((slv_req_i.aw.id[6:5] == 2'b00) || (slv_req_i.aw.id[6:5] == 2'b01)) begin
-      // Noncoherent transaction: use 6:5 directly
-      mst_req_o.aw.id = { slv_req_i.aw.id[6:5], wr_push_oup_id };
-    end else begin
-      // Fallback for safety — in case of unexpected ID encoding
-      mst_req_o.aw.id = {{ZeroWidth{1'b0}}, wr_push_oup_id};
-    end
+  // -------------------- READ --------------------
+  if (slv_req_i.ar.id[8:6] == 3'b100) begin
+    // Coherent: use [5:4] for core ID
+    mst_req_o.ar.id = { slv_req_i.ar.id[5:4], rd_push_oup_id };
+  end else begin
+    // Noncoherent: use [7:6] for core ID
+    mst_req_o.ar.id = { slv_req_i.ar.id[7:6], rd_push_oup_id };
   end
+ 
+  // -------------------- WRITE --------------------
+  if (slv_req_i.aw.id[8:6] == 3'b100) begin
+    // Coherent: use [5:4] for core ID
+    mst_req_o.aw.id = { slv_req_i.aw.id[5:4], wr_push_oup_id };
+  end else begin
+    // Noncoherent: use [7:6] for core ID
+    mst_req_o.aw.id = { slv_req_i.aw.id[7:6], wr_push_oup_id };
+  end
+end
 // *****************************************************************************************
 // *****************************************************************************************
   // Handle requests.

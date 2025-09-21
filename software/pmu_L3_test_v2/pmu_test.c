@@ -12,14 +12,15 @@
 // Hit would be when LEN_CUA < Lx and miss would be when LEN_CUA > Lx
 // #define LEN_CUA 262144    // To convert this length into bytes multiply by 8 right now it is 2MB
 // Defining LEN_CUA to be a hit in LLC:
-#define LEN_CUA 8000
+#define LEN_CUA 4000
 // Choose either RD or WR for CUA
-#define CUA_RD
-// #define CUA_WR
+// #define CUA_RD
+#define CUA_WR
 // mhartid you can put always 0. count: try to put >= 3
 void cua_core(uint32_t mhartid, int count){
   printf("Inside the CUA CORE function \n");
 	uint64_t var;
+  // uint8_t var;
 	volatile uint64_t *array = (uint64_t*)(uint64_t)(0x82000000 + mhartid * 0x01000000);
 	for (int i=0; i<count; i++) {     
 		# if defined (CUA_RD) || defined (CUA_WR)

@@ -624,96 +624,96 @@ module al_saqr
       .pad_bootmode     ( pad_bootmode     )
      );
 
-  `ifndef EXCLUDE_ROT
+  // `ifndef EXCLUDE_ROT
 
-   axi_cdc_dst #(
-      .SyncStages ( ariane_soc::CdcSyncStages ),
-      .LogDepth   ( LogDepth                  ),
-      .aw_chan_t  ( axi_secd_aw_chan_t        ),
-      .w_chan_t   ( axi_secd_w_chan_t         ),
-      .b_chan_t   ( axi_secd_b_chan_t         ),
-      .ar_chan_t  ( axi_secd_ar_chan_t        ),
-      .r_chan_t   ( axi_secd_r_chan_t         ),
-      .axi_req_t  ( axi_secd_req_t            ),
-      .axi_resp_t ( axi_secd_resp_t           )
-   ) i_cdc_ot2host (
-      .async_data_slave_aw_data_i( async_axi_ot_out_aw_data_o ),
-      .async_data_slave_aw_wptr_i( async_axi_ot_out_aw_wptr_o ),
-      .async_data_slave_aw_rptr_o( async_axi_ot_out_aw_rptr_i ),
-      .async_data_slave_w_data_i ( async_axi_ot_out_w_data_o  ),
-      .async_data_slave_w_wptr_i ( async_axi_ot_out_w_wptr_o  ),
-      .async_data_slave_w_rptr_o ( async_axi_ot_out_w_rptr_i  ),
-      .async_data_slave_b_data_o ( async_axi_ot_out_b_data_i  ),
-      .async_data_slave_b_wptr_o ( async_axi_ot_out_b_wptr_i  ),
-      .async_data_slave_b_rptr_i ( async_axi_ot_out_b_rptr_o  ),
-      .async_data_slave_ar_data_i( async_axi_ot_out_ar_data_o ),
-      .async_data_slave_ar_wptr_i( async_axi_ot_out_ar_wptr_o ),
-      .async_data_slave_ar_rptr_o( async_axi_ot_out_ar_rptr_i ),
-      .async_data_slave_r_data_o ( async_axi_ot_out_r_data_i  ),
-      .async_data_slave_r_wptr_o ( async_axi_ot_out_r_wptr_i  ),
-      .async_data_slave_r_rptr_i ( async_axi_ot_out_r_rptr_o  ),
-      .dst_clk_i                 ( s_soc_clk  ),
-      .dst_rst_ni                ( s_rst_ni   ),
-      .dst_req_o                 ( ot_axi_req ),
-      .dst_resp_i                ( ot_axi_rsp )
-   );
+  //  axi_cdc_dst #(
+  //     .SyncStages ( ariane_soc::CdcSyncStages ),
+  //     .LogDepth   ( LogDepth                  ),
+  //     .aw_chan_t  ( axi_secd_aw_chan_t        ),
+  //     .w_chan_t   ( axi_secd_w_chan_t         ),
+  //     .b_chan_t   ( axi_secd_b_chan_t         ),
+  //     .ar_chan_t  ( axi_secd_ar_chan_t        ),
+  //     .r_chan_t   ( axi_secd_r_chan_t         ),
+  //     .axi_req_t  ( axi_secd_req_t            ),
+  //     .axi_resp_t ( axi_secd_resp_t           )
+  //  ) i_cdc_ot2host (
+  //     .async_data_slave_aw_data_i( async_axi_ot_out_aw_data_o ),
+  //     .async_data_slave_aw_wptr_i( async_axi_ot_out_aw_wptr_o ),
+  //     .async_data_slave_aw_rptr_o( async_axi_ot_out_aw_rptr_i ),
+  //     .async_data_slave_w_data_i ( async_axi_ot_out_w_data_o  ),
+  //     .async_data_slave_w_wptr_i ( async_axi_ot_out_w_wptr_o  ),
+  //     .async_data_slave_w_rptr_o ( async_axi_ot_out_w_rptr_i  ),
+  //     .async_data_slave_b_data_o ( async_axi_ot_out_b_data_i  ),
+  //     .async_data_slave_b_wptr_o ( async_axi_ot_out_b_wptr_i  ),
+  //     .async_data_slave_b_rptr_i ( async_axi_ot_out_b_rptr_o  ),
+  //     .async_data_slave_ar_data_i( async_axi_ot_out_ar_data_o ),
+  //     .async_data_slave_ar_wptr_i( async_axi_ot_out_ar_wptr_o ),
+  //     .async_data_slave_ar_rptr_o( async_axi_ot_out_ar_rptr_i ),
+  //     .async_data_slave_r_data_o ( async_axi_ot_out_r_data_i  ),
+  //     .async_data_slave_r_wptr_o ( async_axi_ot_out_r_wptr_i  ),
+  //     .async_data_slave_r_rptr_i ( async_axi_ot_out_r_rptr_o  ),
+  //     .dst_clk_i                 ( s_soc_clk  ),
+  //     .dst_rst_ni                ( s_rst_ni   ),
+  //     .dst_req_o                 ( ot_axi_req ),
+  //     .dst_resp_i                ( ot_axi_rsp )
+  //  );
 
-   security_island i_RoT_wrap (
-     .clk_i               ( clk_opentitan_o     ),
-     .clk_cluster_i       ( s_cluster_clk       ),
-     .clk_ref_i           ( clk_opentitan_o     ),
-     .rst_ni              ( s_rst_ni            ),
-     .pwr_on_rst_ni       ( s_rst_ni            ),
-     .fetch_en_i          ( '0                  ),
-     .bootmode_i          ( bootmode_i          ),
-     .test_enable_i       ( '0                  ),
-     .irq_ibex_i          ( doorbell_irq        ),
-     .cfi_req_irq_i       ( cfi_req_irq         ),
-     .cfi_watermark_irq_i ( cfi_watermark_irq   ),
-   // JTAG port
-     .jtag_tck_i          ( jtag_ibex_i.tck    ),
-     .jtag_tms_i          ( jtag_ibex_i.tms    ),
-     .jtag_trst_n_i       ( jtag_ibex_i.trst_n ),
-     .jtag_tdi_i          ( jtag_ibex_i.tdi    ),
-     .jtag_tdo_o          ( jtag_ibex_o.tdo    ),
-     .jtag_tdo_oe_o       (                    ),
-   // GPIOs
-     .gpio_0_o            (               ),
-     .gpio_0_i            ( '0            ),
-     .gpio_0_oe_o         (               ),
-     .gpio_1_o            (               ),
-     .gpio_1_i            ( '0            ),
-     .gpio_1_oe_o         (               ),
-   // Uart - not implemented
-     .ibex_uart_rx_i      ( '0            ),
-     .ibex_uart_tx_o      (               ),
-   // SPI host
-     .spi_host_SCK_o      ( s_ot_spi_to_pad.clk_o  ),
-     .spi_host_SCK_en_o   (                         ),
-     .spi_host_CSB_o      ( s_ot_spi_to_pad.csn0_o ),
-     .spi_host_CSB_en_o   (                         ),
-     .spi_host_SD_o       ( spi_ot_sd_o             ),
-     .spi_host_SD_i       ( spi_ot_sd_i             ),
-     .spi_host_SD_en_o    ( spi_ot_sd_en            ),
-   // Asynch axi port
-     .async_axi_out_aw_data_o ( async_axi_ot_out_aw_data_o ),
-     .async_axi_out_aw_wptr_o ( async_axi_ot_out_aw_wptr_o ),
-     .async_axi_out_aw_rptr_i ( async_axi_ot_out_aw_rptr_i ),
-     .async_axi_out_w_data_o  ( async_axi_ot_out_w_data_o  ),
-     .async_axi_out_w_wptr_o  ( async_axi_ot_out_w_wptr_o  ),
-     .async_axi_out_w_rptr_i  ( async_axi_ot_out_w_rptr_i  ),
-     .async_axi_out_b_data_i  ( async_axi_ot_out_b_data_i  ),
-     .async_axi_out_b_wptr_i  ( async_axi_ot_out_b_wptr_i  ),
-     .async_axi_out_b_rptr_o  ( async_axi_ot_out_b_rptr_o  ),
-     .async_axi_out_ar_data_o ( async_axi_ot_out_ar_data_o ),
-     .async_axi_out_ar_wptr_o ( async_axi_ot_out_ar_wptr_o ),
-     .async_axi_out_ar_rptr_i ( async_axi_ot_out_ar_rptr_i ),
-     .async_axi_out_r_data_i  ( async_axi_ot_out_r_data_i  ),
-     .async_axi_out_r_wptr_i  ( async_axi_ot_out_r_wptr_i  ),
-     .async_axi_out_r_rptr_o  ( async_axi_ot_out_r_rptr_o  ),
-     .cluster_lock_xor_key_i  ( cluster_lock_xor_key       )
-   );
-  `else // !`ifndef EXCLUDE_ROT
+  //  security_island i_RoT_wrap (
+  //    .clk_i               ( clk_opentitan_o     ),
+  //    .clk_cluster_i       ( s_cluster_clk       ),
+  //    .clk_ref_i           ( clk_opentitan_o     ),
+  //    .rst_ni              ( s_rst_ni            ),
+  //    .pwr_on_rst_ni       ( s_rst_ni            ),
+  //    .fetch_en_i          ( '0                  ),
+  //    .bootmode_i          ( bootmode_i          ),
+  //    .test_enable_i       ( '0                  ),
+  //    .irq_ibex_i          ( doorbell_irq        ),
+  //    .cfi_req_irq_i       ( cfi_req_irq         ),
+  //    .cfi_watermark_irq_i ( cfi_watermark_irq   ),
+  //  // JTAG port
+  //    .jtag_tck_i          ( jtag_ibex_i.tck    ),
+  //    .jtag_tms_i          ( jtag_ibex_i.tms    ),
+  //    .jtag_trst_n_i       ( jtag_ibex_i.trst_n ),
+  //    .jtag_tdi_i          ( jtag_ibex_i.tdi    ),
+  //    .jtag_tdo_o          ( jtag_ibex_o.tdo    ),
+  //    .jtag_tdo_oe_o       (                    ),
+  //  // GPIOs
+  //    .gpio_0_o            (               ),
+  //    .gpio_0_i            ( '0            ),
+  //    .gpio_0_oe_o         (               ),
+  //    .gpio_1_o            (               ),
+  //    .gpio_1_i            ( '0            ),
+  //    .gpio_1_oe_o         (               ),
+  //  // Uart - not implemented
+  //    .ibex_uart_rx_i      ( '0            ),
+  //    .ibex_uart_tx_o      (               ),
+  //  // SPI host
+  //    .spi_host_SCK_o      ( s_ot_spi_to_pad.clk_o  ),
+  //    .spi_host_SCK_en_o   (                         ),
+  //    .spi_host_CSB_o      ( s_ot_spi_to_pad.csn0_o ),
+  //    .spi_host_CSB_en_o   (                         ),
+  //    .spi_host_SD_o       ( spi_ot_sd_o             ),
+  //    .spi_host_SD_i       ( spi_ot_sd_i             ),
+  //    .spi_host_SD_en_o    ( spi_ot_sd_en            ),
+  //  // Asynch axi port
+  //    .async_axi_out_aw_data_o ( async_axi_ot_out_aw_data_o ),
+  //    .async_axi_out_aw_wptr_o ( async_axi_ot_out_aw_wptr_o ),
+  //    .async_axi_out_aw_rptr_i ( async_axi_ot_out_aw_rptr_i ),
+  //    .async_axi_out_w_data_o  ( async_axi_ot_out_w_data_o  ),
+  //    .async_axi_out_w_wptr_o  ( async_axi_ot_out_w_wptr_o  ),
+  //    .async_axi_out_w_rptr_i  ( async_axi_ot_out_w_rptr_i  ),
+  //    .async_axi_out_b_data_i  ( async_axi_ot_out_b_data_i  ),
+  //    .async_axi_out_b_wptr_i  ( async_axi_ot_out_b_wptr_i  ),
+  //    .async_axi_out_b_rptr_o  ( async_axi_ot_out_b_rptr_o  ),
+  //    .async_axi_out_ar_data_o ( async_axi_ot_out_ar_data_o ),
+  //    .async_axi_out_ar_wptr_o ( async_axi_ot_out_ar_wptr_o ),
+  //    .async_axi_out_ar_rptr_i ( async_axi_ot_out_ar_rptr_i ),
+  //    .async_axi_out_r_data_i  ( async_axi_ot_out_r_data_i  ),
+  //    .async_axi_out_r_wptr_i  ( async_axi_ot_out_r_wptr_i  ),
+  //    .async_axi_out_r_rptr_o  ( async_axi_ot_out_r_rptr_o  ),
+  //    .cluster_lock_xor_key_i  ( cluster_lock_xor_key       )
+  //  );
+  //`else // !`ifndef EXCLUDE_ROT
 
    assign ot_axi_req.aw.id = 'h0;
    assign ot_axi_req.aw.addr = 'h0;
@@ -749,7 +749,7 @@ module al_saqr
    assign ot_axi_req.r_ready = 1'b1;
 
    assign jtag_ibex_o.tdo = 1'b0;
-  `endif // !`ifndef EXCLUDE_ROT
+  // `endif // !`ifndef EXCLUDE_ROT
 
   `ifndef EXCLUDE_CLUSTER
 
