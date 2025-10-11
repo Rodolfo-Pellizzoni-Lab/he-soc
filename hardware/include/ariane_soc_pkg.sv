@@ -238,9 +238,14 @@ package ariane_soc;
   // AXI LLC
   // Cache size = 8 x 128 x 8 x 8 = 8kB.
   // Each core partition is 2kB.
-  localparam LLC_SET_ASSOC  = 32'd8;
-  localparam LLC_NUM_LINES  = 32'd256;
-  localparam LLC_NUM_BLOCKS = 32'd8;
+  // LLC Cache Size = 256 x 8 x 8 = 128 KiB
+  // localparam LLC_SET_ASSOC  = 32'd8;
+  // localparam LLC_NUM_LINES  = 32'd256;
+  // localparam LLC_NUM_BLOCKS = 32'd8;
 
+  // LLC Cache Size = 1024 x 16 x 8 = 1MiB
+  localparam LLC_SET_ASSOC  = 32'd16;
+  localparam LLC_NUM_LINES  = 32'd1024;
+  localparam LLC_NUM_BLOCKS = 32'd8;
 
 endpackage
