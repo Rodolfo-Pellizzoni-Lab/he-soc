@@ -1,8 +1,8 @@
 module slowdown_mem_top #(
     parameter int unsigned Latency_param = 0, // needs to >= 2
     parameter int unsigned Throughput_timer_param = 10,
-    parameter int unsigned Throughput_FIFO_depth = 8,
-    parameter int unsigned Throughput_COUNTER_WIDTH = 4
+    parameter int unsigned Throughput_FIFO_depth = 8
+    // parameter int unsigned Throughput_COUNTER_WIDTH = 4
 ) (
     input  logic                    clk_i,
     input  logic                    rst_ni,
@@ -10,33 +10,9 @@ module slowdown_mem_top #(
     AXI_BUS.Master                  slowdown_mem_mst
 );
 
-    // // AW Channel
-    // // IP of E-Slv <= OP of E-Mst
-    // assign slowdown_mem_mst.aw_id     = slowdown_mem_slv.aw_id;
-    // assign slowdown_mem_mst.aw_addr   = slowdown_mem_slv.aw_addr;
-    // assign slowdown_mem_mst.aw_len    = slowdown_mem_slv.aw_len;
-    // assign slowdown_mem_mst.aw_size   = slowdown_mem_slv.aw_size;
-    // assign slowdown_mem_mst.aw_burst  = slowdown_mem_slv.aw_burst;
-    // assign slowdown_mem_mst.aw_lock   = slowdown_mem_slv.aw_lock;
-    // assign slowdown_mem_mst.aw_cache  = slowdown_mem_slv.aw_cache;
-    // assign slowdown_mem_mst.aw_prot   = slowdown_mem_slv.aw_prot;
-    // assign slowdown_mem_mst.aw_qos    = slowdown_mem_slv.aw_qos;
-    // assign slowdown_mem_mst.aw_region = slowdown_mem_slv.aw_region;
-    // assign slowdown_mem_mst.aw_atop   = slowdown_mem_slv.aw_atop;
-    // assign slowdown_mem_mst.aw_user   = slowdown_mem_slv.aw_user;
-    // assign slowdown_mem_mst.aw_valid  = slowdown_mem_slv.aw_valid;
-    // // IP of E-Mst <= OP of E-Slv
-    // assign slowdown_mem_slv.aw_ready  = slowdown_mem_mst.aw_ready;
-
-    // // W Channel
-    // // IP of E-Slv <= OP of E-Mst
-    // assign slowdown_mem_mst.w_data  = slowdown_mem_slv.w_data;
-    // assign slowdown_mem_mst.w_strb  = slowdown_mem_slv.w_strb;
-    // assign slowdown_mem_mst.w_last  = slowdown_mem_slv.w_last;
-    // assign slowdown_mem_mst.w_user  = slowdown_mem_slv.w_user;
-    // assign slowdown_mem_mst.w_valid = slowdown_mem_slv.w_valid;
-    // // IP of E-Mst <= OP of E-Slv
-    // assign slowdown_mem_slv.w_ready = slowdown_mem_mst.w_ready;
+    
+    localparam int unsigned Throughput_COUNTER_WIDTH = $clog2(Throughput_timer_param + 1);
+    
 
     // B Channel
     // IP of E-Mst <= OP of E-Slv
@@ -47,34 +23,7 @@ module slowdown_mem_top #(
     // IP of E-Slv <= OP of E-Mst
     assign slowdown_mem_mst.b_ready = slowdown_mem_slv.b_ready;
 
-    // AR Channel
-    // IP of E-Slv <= OP of E-Mst
-    // assign slowdown_mem_mst.ar_id     = slowdown_mem_slv.ar_id;
-    // assign slowdown_mem_mst.ar_addr   = slowdown_mem_slv.ar_addr;
-    // assign slowdown_mem_mst.ar_len    = slowdown_mem_slv.ar_len;
-    // assign slowdown_mem_mst.ar_size   = slowdown_mem_slv.ar_size;
-    // assign slowdown_mem_mst.ar_burst  = slowdown_mem_slv.ar_burst;
-    // assign slowdown_mem_mst.ar_lock   = slowdown_mem_slv.ar_lock;
-    // assign slowdown_mem_mst.ar_cache  = slowdown_mem_slv.ar_cache;
-    // assign slowdown_mem_mst.ar_prot   = slowdown_mem_slv.ar_prot;
-    // assign slowdown_mem_mst.ar_qos    = slowdown_mem_slv.ar_qos;
-    // assign slowdown_mem_mst.ar_region = slowdown_mem_slv.ar_region;
-    // assign slowdown_mem_mst.ar_user   = slowdown_mem_slv.ar_user;
-    // assign slowdown_mem_mst.ar_valid  = slowdown_mem_slv.ar_valid;
-    // IP of E-Mst <= OP of E-Slv
-    // assign slowdown_mem_slv.ar_ready  = slowdown_mem_mst.ar_ready;
-
-    // // R CHannel
-    // // IP of E-Mst <= OP of E-Slv
-    // assign slowdown_mem_slv.r_id    = slowdown_mem_mst.r_id;
-    // assign slowdown_mem_slv.r_data  = slowdown_mem_mst.r_data;
-    // assign slowdown_mem_slv.r_resp  = slowdown_mem_mst.r_resp;
-    // assign slowdown_mem_slv.r_last  = slowdown_mem_mst.r_last;
-    // assign slowdown_mem_slv.r_user  = slowdown_mem_mst.r_user;
-    // //assign slowdown_mem_slv.r_valid = slowdown_mem_mst.r_valid;      // r_valid is in the latency module
-    // // IP of E-Slv <= OP of E-Mst
-    // //assign slowdown_mem_mst.r_ready = slowdown_mem_slv.r_ready;
-
+    
     ariane_axi_soc::r_chan_slv_mem_t r_in;
     assign r_in.id    = slowdown_mem_mst.r_id;
     assign r_in.data  = slowdown_mem_mst.r_data;
@@ -141,7 +90,7 @@ module slowdown_mem_top #(
 
     ariane_axi_soc::aw_chan_slv_mem_t aw_signals_in;
     assign aw_signals_in.id = slowdown_mem_slv.aw_id;
-    assign aw_signals_in.addr = slowdown_mem_slv.aw_addr;;
+    assign aw_signals_in.addr = slowdown_mem_slv.aw_addr;
     assign aw_signals_in.len = slowdown_mem_slv.aw_len;
     assign aw_signals_in.size = slowdown_mem_slv.aw_size;
     assign aw_signals_in.burst = slowdown_mem_slv.aw_burst;

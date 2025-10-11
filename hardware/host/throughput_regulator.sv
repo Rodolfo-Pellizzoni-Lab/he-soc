@@ -54,6 +54,14 @@ module throughput_regulator #(
     output reg dw_valid_o_reg
 );
 
+    initial begin
+        $display("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
+        $display("Throughput_timer_param     = %0d", Throughput_timer_param);
+        $display("Throughput_FIFO_depth      = %0d", Throughput_FIFO_depth);
+        $display("Throughput_COUNTER_WIDTH    = %0d", Throughput_COUNTER_WIDTH);
+        $display("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
+    end
+
     // -----------------------------
 
     // FIFO signals
@@ -164,11 +172,11 @@ module throughput_regulator #(
     );
 
     logic counter_start, counter_zero_flag;
-    logic [3:0] counter_count_value;
+    logic [Throughput_COUNTER_WIDTH-1:0] counter_count_value;
 
     countdown_timer #(
     .COUNTER_WIDTH(Throughput_COUNTER_WIDTH),
-    .Throughput_TIMER_PARAM(10)
+    .Throughput_TIMER_PARAM(Throughput_timer_param)
 ) i_countdown_timer (
     .clk(clk_i),
     .rst_n(rst_ni),

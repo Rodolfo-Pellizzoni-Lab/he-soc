@@ -22,7 +22,7 @@ module latency_r_chan #(
 
     initial begin
         $display("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
-        $display("Latency_param      = %0d", Latency_param);
+        $display("Latency_param (R Channel)     = %0d", Latency_param);
         $display("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
     end
 

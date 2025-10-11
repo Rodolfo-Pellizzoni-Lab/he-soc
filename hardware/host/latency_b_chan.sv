@@ -9,7 +9,7 @@ module latency_b_chan #(
 
     initial begin
         $display("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
-        $display("Latency_param      = %0d", Latency_param);
+        $display("Latency_param (B Channel)     = %0d", Latency_param);
         $display("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
     end
     // Only build a shift register if latency > 0
