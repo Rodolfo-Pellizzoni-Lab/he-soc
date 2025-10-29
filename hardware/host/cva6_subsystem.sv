@@ -112,7 +112,12 @@ module cva6_subsystem
 
   // Logic locking Keys
   input logic [127:0]    iommu_lock_xor_key_i,
-  input logic [127:0]    aia_lock_xor_key_i
+  input logic [127:0]    aia_lock_xor_key_i,
+
+  // Performance Counters EVU AXI LITE Slave Interface
+  input ariane_axi_soc::req_lite_t                      perfc_cfg_req_i,
+  output ariane_axi_soc::resp_lite_t                    perfc_cfg_resp_o,
+  output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] perfc_evu_status_resp_o
 
 );
      // disable test-enable
@@ -892,7 +897,8 @@ module cva6_subsystem
   // ---------------
 
   cva6_synth_wrap i_ariane_wrap (
-    .clk_i                ( cva6_clk_i                  ),
+    // .clk_i                ( cva6_clk_i                  ),
+    .clk_i                ( clk_i                  ),
     .rst_ni               ( cva6_rst_ni                 ),
     .boot_addr_i          ( ariane_soc::ROMBase         ), // start fetching from ROM
   `ifdef USE_APLIC
@@ -957,7 +963,11 @@ module cva6_subsystem
     // PMU port
     .spu_core_cdc_data_o  ( spu_core_cdc_data           ),
     .spu_core_cdc_wptr_o  ( spu_core_cdc_wptr           ),
-    .spu_core_cdc_rptr_i  ( spu_core_cdc_rptr           )
+    .spu_core_cdc_rptr_i  ( spu_core_cdc_rptr           ),
+    // PMU AXI Lite Slave
+    .perfc_axi_req_i     ( perfc_cfg_req_i             ),
+    .perfc_axi_resp_o     ( perfc_cfg_resp_o            ),
+    .perfc_evu_events_resp( perfc_evu_status_resp_o     )
   );
 
   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core_o_temp;
@@ -1057,5 +1067,24 @@ module cva6_subsystem
       .src        ( snooper_axi_slv_32_intf ),
       .dst        ( snooper_axi_slv_asynch  )
   );
+
+  // cva6_subsystem: cycle-aligned PERFC boundary monitor
+// logic prev_top_b_valid, prev_top_b_ready;
+// always_ff @(posedge clk_i or negedge rst_ni) begin
+//   if (!rst_ni) begin
+//     prev_top_b_valid <= 1'b0; prev_top_b_ready <= 1'b0;
+//   end else begin
+//     if (perfc_cfg_resp_o.b_valid != prev_top_b_valid || perfc_cfg_req_i.b_ready != prev_top_b_ready) begin
+//       $display("TOP_PERFC: time=%0t ADDR=0x%08h req.b_ready=%b resp.b_valid=%b resp.b=%0d",
+//                $time,
+//                perfc_cfg_req_i.aw.addr,
+//                perfc_cfg_req_i.b_ready,
+//                perfc_cfg_resp_o.b_valid,
+//                perfc_cfg_resp_o.b);
+//       prev_top_b_valid <= perfc_cfg_resp_o.b_valid;
+//       prev_top_b_ready <= perfc_cfg_req_i.b_ready;
+//     end
+//   end
+// end
 
 endmodule

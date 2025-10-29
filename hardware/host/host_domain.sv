@@ -203,7 +203,7 @@ module host_domain
    localparam AXI_LITE_DATA_WIDTH = 32;
 
    `ifdef APMU_IP
-    localparam int unsigned APMU_NUM_COUNTER = 8;
+    localparam int unsigned APMU_NUM_COUNTER = 32;
   `else
     localparam int unsigned APMU_NUM_COUNTER = 0;
   `endif
@@ -360,8 +360,12 @@ module host_domain
    ariane_axi_soc::req_lite_t  axi_lite_pmu_cfg_req;
    ariane_axi_soc::resp_lite_t axi_lite_pmu_cfg_res;
 
+   // PERF COUNTERS EVU Configuration Signals
+   ariane_axi_soc::req_lite_t  axi_lite_perfc_cfg_req;
+   ariane_axi_soc::resp_lite_t axi_lite_perfc_cfg_resp;
+
    logic  [APMU_NUM_COUNTER-1:0] pmu_intr_o;
-   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6:0] spu_o;
+   pmu_pkg::pmu_event_t [2 * ariane_soc::NumCVA6:0] spu_o;
 
 
    XBAR_TCDM_BUS axi_bridge_2_interconnect[AXI64_2_TCDM32_N_PORTS]();
@@ -484,6 +488,11 @@ module host_domain
     .AXI_ADDR_WIDTH (AXI_LITE_AW),
     .AXI_DATA_WIDTH (AXI_LITE_DW)
    ) apmu_cfg_lite_bus();
+
+  AXI_LITE #(
+   .AXI_ADDR_WIDTH (AXI_LITE_AW),
+   .AXI_DATA_WIDTH (AXI_LITE_DW)
+  ) perfc_cfg_lite_bus();
 
    // AXI Bus: XBAR <=> AXI Cut (IOPMP Configuration Port)
    AXI_BUS #(
@@ -614,7 +623,7 @@ axi_spu_top #(
      .addr_map_i         ( spu_mem_addr_map            ),
      .spu_slv            ( mem_axi_bus_spu_o_bus       ),
      .spu_mst            ( mem_axi_bus                 ),
-     .e_out              ( spu_o[ariane_soc::NumCVA6]  )
+     .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
    );
 
    // AXI Cut for IOPMP Configuration Port
@@ -715,7 +724,7 @@ axi_spu_top #(
 
    // The PMU only works with 32-bit AXI4-Lite port.
    pmu_top #(
-     .NUM_PORT         ( 3                              ),
+     .NUM_PORT         ( 5                              ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
      .ISPM_NUM_WORDS   ( 512                            ),
      .DSPM_NUM_WORDS   ( 4096                           ),
@@ -742,6 +751,9 @@ axi_spu_top #(
 
   `AXI_LITE_ASSIGN_TO_REQ( axi_lite_pmu_cfg_req, apmu_cfg_lite_bus    )
   `AXI_LITE_ASSIGN_FROM_RESP( apmu_cfg_lite_bus, axi_lite_pmu_cfg_res )
+
+  `AXI_LITE_ASSIGN_TO_REQ( axi_lite_perfc_cfg_req, perfc_cfg_lite_bus    )
+  `AXI_LITE_ASSIGN_FROM_RESP( perfc_cfg_lite_bus, axi_lite_perfc_cfg_resp)
   `endif
 
    cva6_subsystem # (
@@ -800,7 +812,7 @@ axi_spu_top #(
         .udma_tx_l3_axi_slave ( udma_tx_l3_axi_bus   ),
 
         // EVU 
-        .spu_core_o           ( spu_o[ 0+:ariane_soc::NumCVA6 ]),
+        .spu_core_o           ( spu_o[ariane_soc::NumCVA6 +: ariane_soc::NumCVA6]),
         // APMU
         .pmu_intr_i           ( pmu_intr_o           ),
         .iopmp_irq_i          ( iopmp_irq            ),
@@ -812,7 +824,10 @@ axi_spu_top #(
         .axi_lite_snoop_rsp_o ( axi_lite_snooper_rsp ),
 
         .iommu_lock_xor_key_i ( iommu_lock_xor_key   ),
-        .aia_lock_xor_key_i   ( aia_lock_xor_key     )
+        .aia_lock_xor_key_i   ( aia_lock_xor_key     ),
+        .perfc_cfg_req_i       ( axi_lite_perfc_cfg_req  ),
+        .perfc_cfg_resp_o       ( axi_lite_perfc_cfg_resp ),
+        .perfc_evu_status_resp_o( spu_o[0 +: ariane_soc::NumCVA6]) 
     );
 
    axi2tcdm_wrap #(
@@ -958,7 +973,8 @@ axi_spu_top #(
        .axi_lite_snoop_req_o   ( axi_lite_snooper_req    ),
        .axi_lite_snoop_rsp_i   ( axi_lite_snooper_rsp    ),
        .doorbell_irq_o,
-       .completion_irq_o
+       .completion_irq_o,
+       .perfc_cfg_master      ( perfc_cfg_lite_bus     )
    );
 
 endmodule
