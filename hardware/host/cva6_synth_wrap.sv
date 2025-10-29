@@ -282,6 +282,7 @@ module cva6_synth_wrap
   // The following AXI_LITE_SLAVE Regs module shall handshake with the axi_lite_subsystem and configure the registers
   // with appropriate Performance Counter Event IDs and PC Values that need to be tracked as Milestones.
   // Here is how it will be configured
+  // {start_addr: 32'h1060_6000, end_addr: 32'h1060_6100}  // PerfCountersEVU
   /* 1. For Core-0:
         a. EventID0  = 0x10606000
         b. EventID1  = 0x10606004
@@ -300,6 +301,24 @@ module cva6_synth_wrap
         f. PC_TRACK1 = 0x10606048
         g. PC_TRACK2 = 0x10606050
         h. PC_TRACK3 = 0x10606058
+    3. For Core-2:
+        a. EventID0  = 0x10606060
+        b. EventID1  = 0x10606064
+        c. EventID2  = 0x10606068
+        d. EventID3  = 0x1060606C
+        e. PC_TRACK0 = 0x10606070
+        f. PC_TRACK1 = 0x10606078
+        g. PC_TRACK2 = 0x10606080
+        h. PC_TRACK3 = 0x10606088
+    4. For Core-3:
+        a. EventID0  = 0x10606090
+        b. EventID1  = 0x10606094
+        c. EventID2  = 0x10606098
+        d. EventID3  = 0x1060609C
+        e. PC_TRACK0 = 0x106060A0
+        f. PC_TRACK1 = 0x106060A8
+        g. PC_TRACK2 = 0x106060B0
+        h. PC_TRACK3 = 0x106060B8
         
   Each EVENTID just needs 5 bits but we write to a 32-bit register. Hence 4 bytes allocated for each EventID Register.
   For PC, as per the current configuration, its 64 bits so we take 8 bytes for each PC Value Stored.

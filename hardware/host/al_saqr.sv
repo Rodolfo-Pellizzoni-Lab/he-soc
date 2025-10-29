@@ -624,6 +624,7 @@ module al_saqr
       .pad_bootmode     ( pad_bootmode     )
      );
 
+  /*-------------------------------------------------------
   `ifndef EXCLUDE_ROT
 
    axi_cdc_dst #(
@@ -714,6 +715,7 @@ module al_saqr
      .cluster_lock_xor_key_i  ( cluster_lock_xor_key       )
    );
   `else // !`ifndef EXCLUDE_ROT
+  -------------------------------------------------------------------*/
 
    assign ot_axi_req.aw.id = 'h0;
    assign ot_axi_req.aw.addr = 'h0;
@@ -749,7 +751,7 @@ module al_saqr
    assign ot_axi_req.r_ready = 1'b1;
 
    assign jtag_ibex_o.tdo = 1'b0;
-  `endif // !`ifndef EXCLUDE_ROT
+  // `endif // !`ifndef EXCLUDE_ROT
 
   `ifndef EXCLUDE_CLUSTER
 

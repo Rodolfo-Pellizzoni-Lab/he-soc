@@ -6,18 +6,18 @@ module plic_regs (
   output logic [255:0] prio_re_o,
   input logic [0:0][255:0] ip_i,
   output logic [0:0] ip_re_o,
-  input logic [3:0][255:0] ie_i,
-  output logic [3:0][255:0] ie_o,
-  output logic [3:0] ie_we_o,
-  output logic [3:0] ie_re_o,
-  input logic [3:0][2:0] threshold_i,
-  output logic [3:0][2:0] threshold_o,
-  output logic [3:0] threshold_we_o,
-  output logic [3:0] threshold_re_o,
-  input logic [3:0][7:0] cc_i,
-  output logic [3:0][7:0] cc_o,
-  output logic [3:0] cc_we_o,
-  output logic [3:0] cc_re_o,
+  input logic [7:0][255:0] ie_i,
+  output logic [7:0][255:0] ie_o,
+  output logic [7:0] ie_we_o,
+  output logic [7:0] ie_re_o,
+  input logic [7:0][2:0] threshold_i,
+  output logic [7:0][2:0] threshold_o,
+  output logic [7:0] threshold_we_o,
+  output logic [7:0] threshold_re_o,
+  input logic [7:0][7:0] cc_i,
+  output logic [7:0][7:0] cc_o,
+  output logic [7:0] cc_we_o,
+  output logic [7:0] cc_re_o,
   // Bus Interface
   input  reg_intf::reg_intf_req_a32_d32 req_i,
   output reg_intf::reg_intf_resp_d32    resp_o
@@ -26,14 +26,14 @@ always_comb begin
   resp_o.ready = 1'b1;
   resp_o.rdata = '0;
   resp_o.error = '0;
-  prio_o = prio_i;
+  prio_o = '0;
   prio_we_o = '0;
   prio_re_o = '0;
-  ie_o = ie_i;
+  ie_o = '0;
   ie_we_o = '0;
   ie_re_o = '0;
   ip_re_o = '0;
-  threshold_o = threshold_i;
+  threshold_o = '0;
   threshold_we_o = '0;
   threshold_re_o = '0;
   cc_o = '0;
@@ -1197,6 +1197,134 @@ always_comb begin
           ie_o[3][255:224] = req_i.wdata[31:0];
           ie_we_o[3] = 1'b1;
         end
+        32'hc002200: begin
+          ie_o[4][31:0] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc002204: begin
+          ie_o[4][63:32] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc002208: begin
+          ie_o[4][95:64] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc00220c: begin
+          ie_o[4][127:96] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc002210: begin
+          ie_o[4][159:128] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc002214: begin
+          ie_o[4][191:160] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc002218: begin
+          ie_o[4][223:192] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc00221c: begin
+          ie_o[4][255:224] = req_i.wdata[31:0];
+          ie_we_o[4] = 1'b1;
+        end
+        32'hc002280: begin
+          ie_o[5][31:0] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc002284: begin
+          ie_o[5][63:32] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc002288: begin
+          ie_o[5][95:64] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc00228c: begin
+          ie_o[5][127:96] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc002290: begin
+          ie_o[5][159:128] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc002294: begin
+          ie_o[5][191:160] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc002298: begin
+          ie_o[5][223:192] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc00229c: begin
+          ie_o[5][255:224] = req_i.wdata[31:0];
+          ie_we_o[5] = 1'b1;
+        end
+        32'hc002300: begin
+          ie_o[6][31:0] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc002304: begin
+          ie_o[6][63:32] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc002308: begin
+          ie_o[6][95:64] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc00230c: begin
+          ie_o[6][127:96] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc002310: begin
+          ie_o[6][159:128] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc002314: begin
+          ie_o[6][191:160] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc002318: begin
+          ie_o[6][223:192] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc00231c: begin
+          ie_o[6][255:224] = req_i.wdata[31:0];
+          ie_we_o[6] = 1'b1;
+        end
+        32'hc002380: begin
+          ie_o[7][31:0] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
+        32'hc002384: begin
+          ie_o[7][63:32] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
+        32'hc002388: begin
+          ie_o[7][95:64] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
+        32'hc00238c: begin
+          ie_o[7][127:96] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
+        32'hc002390: begin
+          ie_o[7][159:128] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
+        32'hc002394: begin
+          ie_o[7][191:160] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
+        32'hc002398: begin
+          ie_o[7][223:192] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
+        32'hc00239c: begin
+          ie_o[7][255:224] = req_i.wdata[31:0];
+          ie_we_o[7] = 1'b1;
+        end
       // THRESHOLDS 
         32'hc200000: begin
           threshold_o[0][2:0] = req_i.wdata[2:0];
@@ -1214,6 +1342,22 @@ always_comb begin
           threshold_o[3][2:0] = req_i.wdata[2:0];
           threshold_we_o[3] = 1'b1;
         end
+        32'hc204000: begin
+          threshold_o[4][2:0] = req_i.wdata[2:0];
+          threshold_we_o[4] = 1'b1;
+        end
+        32'hc205000: begin
+          threshold_o[5][2:0] = req_i.wdata[2:0];
+          threshold_we_o[5] = 1'b1;
+        end
+        32'hc206000: begin
+          threshold_o[6][2:0] = req_i.wdata[2:0];
+          threshold_we_o[6] = 1'b1;
+        end
+        32'hc207000: begin
+          threshold_o[7][2:0] = req_i.wdata[2:0];
+          threshold_we_o[7] = 1'b1;
+        end
       // CLAIM COMPLETE 
         32'hc200004: begin
           cc_o[0][7:0] = req_i.wdata[7:0];
@@ -1230,6 +1374,22 @@ always_comb begin
         32'hc203004: begin
           cc_o[3][7:0] = req_i.wdata[7:0];
           cc_we_o[3] = 1'b1;
+        end
+        32'hc204004: begin
+          cc_o[4][7:0] = req_i.wdata[7:0];
+          cc_we_o[4] = 1'b1;
+        end
+        32'hc205004: begin
+          cc_o[5][7:0] = req_i.wdata[7:0];
+          cc_we_o[5] = 1'b1;
+        end
+        32'hc206004: begin
+          cc_o[6][7:0] = req_i.wdata[7:0];
+          cc_we_o[6] = 1'b1;
+        end
+        32'hc207004: begin
+          cc_o[7][7:0] = req_i.wdata[7:0];
+          cc_we_o[7] = 1'b1;
         end
         default: resp_o.error = 1'b1;
       endcase
@@ -2423,6 +2583,134 @@ always_comb begin
           resp_o.rdata[31:0] = ie_i[3][255:224];
           ie_re_o[3] = 1'b1;
         end
+        32'hc002200: begin
+          resp_o.rdata[31:0] = ie_i[4][31:0];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc002204: begin
+          resp_o.rdata[31:0] = ie_i[4][63:32];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc002208: begin
+          resp_o.rdata[31:0] = ie_i[4][95:64];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc00220c: begin
+          resp_o.rdata[31:0] = ie_i[4][127:96];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc002210: begin
+          resp_o.rdata[31:0] = ie_i[4][159:128];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc002214: begin
+          resp_o.rdata[31:0] = ie_i[4][191:160];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc002218: begin
+          resp_o.rdata[31:0] = ie_i[4][223:192];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc00221c: begin
+          resp_o.rdata[31:0] = ie_i[4][255:224];
+          ie_re_o[4] = 1'b1;
+        end
+        32'hc002280: begin
+          resp_o.rdata[31:0] = ie_i[5][31:0];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc002284: begin
+          resp_o.rdata[31:0] = ie_i[5][63:32];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc002288: begin
+          resp_o.rdata[31:0] = ie_i[5][95:64];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc00228c: begin
+          resp_o.rdata[31:0] = ie_i[5][127:96];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc002290: begin
+          resp_o.rdata[31:0] = ie_i[5][159:128];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc002294: begin
+          resp_o.rdata[31:0] = ie_i[5][191:160];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc002298: begin
+          resp_o.rdata[31:0] = ie_i[5][223:192];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc00229c: begin
+          resp_o.rdata[31:0] = ie_i[5][255:224];
+          ie_re_o[5] = 1'b1;
+        end
+        32'hc002300: begin
+          resp_o.rdata[31:0] = ie_i[6][31:0];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc002304: begin
+          resp_o.rdata[31:0] = ie_i[6][63:32];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc002308: begin
+          resp_o.rdata[31:0] = ie_i[6][95:64];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc00230c: begin
+          resp_o.rdata[31:0] = ie_i[6][127:96];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc002310: begin
+          resp_o.rdata[31:0] = ie_i[6][159:128];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc002314: begin
+          resp_o.rdata[31:0] = ie_i[6][191:160];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc002318: begin
+          resp_o.rdata[31:0] = ie_i[6][223:192];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc00231c: begin
+          resp_o.rdata[31:0] = ie_i[6][255:224];
+          ie_re_o[6] = 1'b1;
+        end
+        32'hc002380: begin
+          resp_o.rdata[31:0] = ie_i[7][31:0];
+          ie_re_o[7] = 1'b1;
+        end
+        32'hc002384: begin
+          resp_o.rdata[31:0] = ie_i[7][63:32];
+          ie_re_o[7] = 1'b1;
+        end
+        32'hc002388: begin
+          resp_o.rdata[31:0] = ie_i[7][95:64];
+          ie_re_o[7] = 1'b1;
+        end
+        32'hc00238c: begin
+          resp_o.rdata[31:0] = ie_i[7][127:96];
+          ie_re_o[7] = 1'b1;
+        end
+        32'hc002390: begin
+          resp_o.rdata[31:0] = ie_i[7][159:128];
+          ie_re_o[7] = 1'b1;
+        end
+        32'hc002394: begin
+          resp_o.rdata[31:0] = ie_i[7][191:160];
+          ie_re_o[7] = 1'b1;
+        end
+        32'hc002398: begin
+          resp_o.rdata[31:0] = ie_i[7][223:192];
+          ie_re_o[7] = 1'b1;
+        end
+        32'hc00239c: begin
+          resp_o.rdata[31:0] = ie_i[7][255:224];
+          ie_re_o[7] = 1'b1;
+        end
       // THRESHOLD
         32'hc200000: begin
           resp_o.rdata[2:0] = threshold_i[0][2:0];
@@ -2440,6 +2728,22 @@ always_comb begin
           resp_o.rdata[2:0] = threshold_i[3][2:0];
           threshold_re_o[3] = 1'b1;
         end
+        32'hc204000: begin
+          resp_o.rdata[2:0] = threshold_i[4][2:0];
+          threshold_re_o[4] = 1'b1;
+        end
+        32'hc205000: begin
+          resp_o.rdata[2:0] = threshold_i[5][2:0];
+          threshold_re_o[5] = 1'b1;
+        end
+        32'hc206000: begin
+          resp_o.rdata[2:0] = threshold_i[6][2:0];
+          threshold_re_o[6] = 1'b1;
+        end
+        32'hc207000: begin
+          resp_o.rdata[2:0] = threshold_i[7][2:0];
+          threshold_re_o[7] = 1'b1;
+        end
       // CLAIM COMPLETE 
         32'hc200004: begin
           resp_o.rdata[7:0] = cc_i[0][7:0];
@@ -2456,6 +2760,22 @@ always_comb begin
         32'hc203004: begin
           resp_o.rdata[7:0] = cc_i[3][7:0];
           cc_re_o[3] = 1'b1;
+        end
+        32'hc204004: begin
+          resp_o.rdata[7:0] = cc_i[4][7:0];
+          cc_re_o[4] = 1'b1;
+        end
+        32'hc205004: begin
+          resp_o.rdata[7:0] = cc_i[5][7:0];
+          cc_re_o[5] = 1'b1;
+        end
+        32'hc206004: begin
+          resp_o.rdata[7:0] = cc_i[6][7:0];
+          cc_re_o[6] = 1'b1;
+        end
+        32'hc207004: begin
+          resp_o.rdata[7:0] = cc_i[7][7:0];
+          cc_re_o[7] = 1'b1;
         end
         default: resp_o.error = 1'b1;
       endcase
