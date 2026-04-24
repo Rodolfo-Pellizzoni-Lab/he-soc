@@ -1,0 +1,1542 @@
+
+bazel-out/k8-fastbuild-ST-2cc462681f62/bin/sw/tests/opentitan/addr_test/addr_test_sim_verilator.elf:     file format elf32-littleriscv
+bazel-out/k8-fastbuild-ST-2cc462681f62/bin/sw/tests/opentitan/addr_test/addr_test_sim_verilator.elf
+architecture: riscv:rv32, flags 0x00000112:
+EXEC_P, HAS_SYMS, D_PAGED
+start address 0xe0000080
+
+Program Header:
+    LOAD off    0x00001000 vaddr 0xe0000000 paddr 0xe0000000 align 2**12
+         filesz 0x00000654 memsz 0x00000654 flags rwx
+    LOAD off    0x00000000 vaddr 0xe0008000 paddr 0xe0008000 align 2**12
+         filesz 0x00000000 memsz 0x00002000 flags rw-
+   STACK off    0x00000000 vaddr 0x00000000 paddr 0x00000000 align 2**4
+         filesz 0x00000000 memsz 0x00000000 flags rw-
+
+Sections:
+Idx Name              Size      VMA       LMA       File off  Algn  Flags
+  0 .vectors          00000084  e0000000  e0000000  00001000  2**0  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  1 .text             0000051e  e0000084  e0000084  00001084  2**2  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  2 .rodata           0000009f  e00005a2  e00005a2  000015a2  2**0  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  3 .data             00000013  e0000641  e0000641  00001641  2**0  CONTENTS, ALLOC, LOAD, DATA
+  4 .bss              00000000  e0000654  e0000654  00000000  2**0  ALLOC
+  5 .logs.fields      00000000  e0000654  e0000654  00001654  2**0  CONTENTS
+  6 .stack            00002000  e0008000  e0008000  00002000  2**0  ALLOC
+  7 .debug_loc        00000b06  00000000  00000000  00001654  2**0  CONTENTS, READONLY, DEBUGGING, OCTETS
+  8 .debug_abbrev     00000430  00000000  00000000  0000215a  2**0  CONTENTS, READONLY, DEBUGGING, OCTETS
+  9 .debug_info       00000bc4  00000000  00000000  0000258a  2**0  CONTENTS, READONLY, DEBUGGING, OCTETS
+ 10 .debug_ranges     00000198  00000000  00000000  0000314e  2**0  CONTENTS, READONLY, DEBUGGING, OCTETS
+ 11 .debug_str        000002c0  00000000  00000000  000032e6  2**0  CONTENTS, READONLY, DEBUGGING, OCTETS
+ 12 .comment          00000074  00000000  00000000  000035a6  2**0  CONTENTS, READONLY
+ 13 .riscv.attributes 00000026  00000000  00000000  0000361a  2**0  CONTENTS, READONLY
+ 14 .debug_frame      00000184  00000000  00000000  00003640  2**2  CONTENTS, READONLY, DEBUGGING, OCTETS
+ 15 .debug_line       00000c97  00000000  00000000  000037c4  2**0  CONTENTS, READONLY, DEBUGGING, OCTETS
+ 16 .debug_aranges    00000028  00000000  00000000  0000445b  2**0  CONTENTS, READONLY, DEBUGGING, OCTETS
+SYMBOL TABLE:
+e0000000 l    d  .vectors       00000000 .vectors
+e0000084 l    d  .text  00000000 .text
+e00005a2 l    d  .rodata        00000000 .rodata
+e0000641 l    d  .data  00000000 .data
+e0000654 l    d  .bss   00000000 .bss
+e0000654 l    d  .logs.fields   00000000 .logs.fields
+e0008000 l    d  .stack 00000000 .stack
+00000000 l    d  .debug_loc     00000000 .debug_loc
+00000000 l    d  .debug_abbrev  00000000 .debug_abbrev
+00000000 l    d  .debug_info    00000000 .debug_info
+00000000 l    d  .debug_ranges  00000000 .debug_ranges
+00000000 l    d  .debug_str     00000000 .debug_str
+00000000 l    d  .comment       00000000 .comment
+00000000 l    d  .riscv.attributes      00000000 .riscv.attributes
+00000000 l    d  .debug_frame   00000000 .debug_frame
+00000000 l    d  .debug_line    00000000 .debug_line
+00000000 l    d  .debug_aranges 00000000 .debug_aranges
+00000000 l    df *ABS*  00000000 crt0.o
+e0000084 l       .text  00000000 default_exc_handler
+e0000084 l       .text  00000000 
+e000010e l       .text  00000000 sleep_loop
+e0000084 l       .text  00000000 
+e0000086 l       .text  00000000 reset_handler
+e0000086 l       .text  00000000 
+e0000086 l       .text  00000000 
+e00000cc l       .text  00000000 
+e00000ea l       .text  00000000 zero_loop_end
+e00000e0 l       .text  00000000 zero_loop
+e00000e0 l       .text  00000000 
+e00000ea l       .text  00000000 
+e00000ea l       .text  00000000 main_entry
+e00000ea l       .text  00000000 
+e00000ee l       .text  00000000 
+e0000102 l       .text  00000000 success
+e00000f2 l       .text  00000000 
+e00000f4 l       .text  00000000 
+e0000100 l       .text  00000000 
+e0000102 l       .text  00000000 
+e0000102 l       .text  00000000 
+e000010e l       .text  00000000 
+e0000112 l       .text  00000000 
+e0000000 l       .vectors       00000000 
+e000002c l       .vectors       00000000 
+e0000030 l       .vectors       00000000 
+e000007c l       .vectors       00000000 
+e0000080 l       .vectors       00000000 
+00000a4d l       .debug_info    00000000 
+00000411 l       .debug_abbrev  00000000 
+e0000114 l       .text  00000000 
+e0000084 l       .vectors       00000000 
+00000170 l       .debug_ranges  00000000 
+00000000 l    df *ABS*  00000000 addr_test.c
+e0000114 l       .text  00000000 
+e0000114 l       .text  00000000 
+e0000114 l       .text  00000000 
+e0000116 l       .text  00000000 
+e0000116 l       .text  00000000 
+e0000120 l       .text  00000000 
+e0000120 l       .text  00000000 
+e0000122 l       .text  00000000 
+e0000122 l       .text  00000000 
+e0000126 l       .text  00000000 
+e0000128 l       .text  00000000 
+e000012e l       .text  00000000 
+e0000136 l       .text  00000000 
+e0000136 l       .text  00000000 
+e0000138 l       .text  00000000 
+e0000140 l       .text  00000000 
+e0000140 l       .text  00000000 
+e0000142 l       .text  00000000 
+e0000144 l       .text  00000000 
+e0000148 l       .text  00000000 
+e0000148 l       .text  00000000 
+e0000156 l       .text  00000000 
+e0000156 l       .text  00000000 
+e0000156 l       .text  00000000 
+e0000156 l       .text  00000000 
+e0000156 l       .text  00000000 
+e0000158 l       .text  00000000 
+e000015e l       .text  00000000 
+e0000160 l       .text  00000000 
+e0000162 l       .text  00000000 
+e0000162 l       .text  00000000 
+e000016c l       .text  00000000 
+e000016c l       .text  00000000 
+e000016e l       .text  00000000 
+e000016e l       .text  00000000 
+e0000172 l       .text  00000000 
+e0000172 l       .text  00000000 
+e0000176 l       .text  00000000 
+e000017a l       .text  00000000 
+e000017e l       .text  00000000 
+e0000182 l       .text  00000000 
+e0000184 l       .text  00000000 
+e0000184 l       .text  00000000 
+e0000186 l       .text  00000000 
+e0000186 l       .text  00000000 
+e0000188 l       .text  00000000 
+e000018c l       .text  00000000 
+e000018e l       .text  00000000 
+e000018e l       .text  00000000 
+e0000198 l       .text  00000000 
+e0000198 l       .text  00000000 
+e000019e l       .text  00000000 
+e000019e l       .text  00000000 
+e00001aa l       .text  00000000 
+e00001aa l       .text  00000000 
+e00001aa l       .text  00000000 
+e00001aa l       .text  00000000 
+e00001aa l       .text  00000000 
+e00001ac l       .text  00000000 
+e00001ac l       .text  00000000 
+e00001ae l       .text  00000000 
+e00001b2 l       .text  00000000 
+e00001b4 l       .text  00000000 
+e00001b4 l       .text  00000000 
+e00001b6 l       .text  00000000 
+e00001b8 l       .text  00000000 
+e00001b8 l       .text  00000000 
+e00001c0 l       .text  00000000 
+e00001c0 l       .text  00000000 
+e00001ca l       .text  00000000 
+e00001ca l       .text  00000000 
+e00001d2 l       .text  00000000 
+e00001d8 l       .text  00000000 
+e00001d8 l       .text  00000000 
+e00001e0 l       .text  00000000 
+e00001e0 l       .text  00000000 
+00000000 l       .debug_loc     00000000 
+00000020 l       .debug_loc     00000000 
+0000003f l       .debug_loc     00000000 
+00000065 l       .debug_loc     00000000 
+00000080 l       .debug_loc     00000000 
+000000a6 l       .debug_loc     00000000 
+000000cd l       .debug_loc     00000000 
+000000e8 l       .debug_loc     00000000 
+00000103 l       .debug_loc     00000000 
+0000011e l       .debug_loc     00000000 
+00000139 l       .debug_loc     00000000 
+00000155 l       .debug_loc     00000000 
+0000017b l       .debug_loc     00000000 
+000001ac l       .debug_loc     00000000 
+000001c7 l       .debug_loc     00000000 
+00000218 l       .debug_loc     00000000 
+00000233 l       .debug_loc     00000000 
+0000024e l       .debug_loc     00000000 
+0000026e l       .debug_loc     00000000 
+00000000 l       .debug_str     00000000 
+00000074 l       .debug_str     00000000 
+0000009d l       .debug_str     00000000 
+00000000 l       .debug_ranges  00000000 
+000000b5 l       .debug_str     00000000 
+000000b9 l       .debug_str     00000000 
+000000ac l       .debug_str     00000000 
+000000c2 l       .debug_str     00000000 
+000000cf l       .debug_str     00000000 
+00000136 l       .debug_str     00000000 
+00000150 l       .debug_str     00000000 
+000000ee l       .debug_str     00000000 
+00000153 l       .debug_str     00000000 
+00000274 l       .debug_str     00000000 
+000000de l       .debug_str     00000000 
+000002a0 l       .debug_str     00000000 
+000000e5 l       .debug_str     00000000 
+000002b5 l       .debug_str     00000000 
+000000f3 l       .debug_str     00000000 
+000000fd l       .debug_str     00000000 
+0000010e l       .debug_str     00000000 
+000000f7 l       .debug_str     00000000 
+00000107 l       .debug_str     00000000 
+00000141 l       .debug_str     00000000 
+00000158 l       .debug_str     00000000 
+00000112 l       .debug_str     00000000 
+0000011e l       .debug_str     00000000 
+00000128 l       .debug_str     00000000 
+00000132 l       .debug_str     00000000 
+0000014b l       .debug_str     00000000 
+00000160 l       .debug_str     00000000 
+00000165 l       .debug_str     00000000 
+0000016a l       .debug_str     00000000 
+00000000 l       .debug_frame   00000000 
+e0000156 l       .text  00000000 
+e00001aa l       .text  00000000 
+e00001e0 l       .text  00000000 
+00000000 l    df *ABS*  00000000 utils.c
+e00001e0 l       .text  00000000 
+e00001e0 l       .text  00000000 
+e00001e0 l       .text  00000000 
+e00001e2 l       .text  00000000 
+e00001fc l       .text  00000000 
+e00001fe l       .text  00000000 
+e0000212 l       .text  00000000 
+e0000212 l       .text  00000000 
+e0000234 l       .text  00000000 
+e0000234 l       .text  00000000 
+e0000238 l       .text  00000000 
+e0000240 l       .text  00000000 
+e0000244 l       .text  00000000 
+e0000248 l       .text  00000000 
+e0000248 l       .text  00000000 
+e0000254 l       .text  00000000 
+e000025a l       .text  00000000 
+e000025a l       .text  00000000 
+e000025e l       .text  00000000 
+e0000264 l       .text  00000000 
+e0000264 l       .text  00000000 
+e0000268 l       .text  00000000 
+e0000268 l       .text  00000000 
+e000026a l       .text  00000000 
+e000026c l       .text  00000000 
+e000026c l       .text  00000000 
+e0000270 l       .text  00000000 
+e0000272 l       .text  00000000 
+e0000276 l       .text  00000000 
+e000027a l       .text  00000000 
+e000027a l       .text  00000000 
+e000027e l       .text  00000000 
+e000027e l       .text  00000000 
+e0000280 l       .text  00000000 
+e0000284 l       .text  00000000 
+e0000288 l       .text  00000000 
+e0000296 l       .text  00000000 
+e0000298 l       .text  00000000 
+e0000298 l       .text  00000000 
+e00002a0 l       .text  00000000 
+e00002a4 l       .text  00000000 
+e00002a6 l       .text  00000000 
+e00002aa l       .text  00000000 
+e00002aa l       .text  00000000 
+e00002b2 l       .text  00000000 
+e00002b6 l       .text  00000000 
+e00002b8 l       .text  00000000 
+e00002bc l       .text  00000000 
+e00002bc l       .text  00000000 
+e00002d4 l       .text  00000000 
+e00002da l       .text  00000000 
+e00002e4 l       .text  00000000 
+e00002f8 l       .text  00000000 
+e00002f8 l       .text  00000000 
+e00002fc l       .text  00000000 
+e00002fc l       .text  00000000 
+e00002fe l       .text  00000000 
+e00002fe l       .text  00000000 
+e0000306 l       .text  00000000 
+e0000308 l       .text  00000000 
+e000030a l       .text  00000000 
+e000030a l       .text  00000000 
+e0000310 l       .text  00000000 
+e0000318 l       .text  00000000 
+e000031e l       .text  00000000 
+e0000322 l       .text  00000000 
+e0000326 l       .text  00000000 
+e000032a l       .text  00000000 
+e00003a4 l     F .text  000000c4 qprints
+e0000330 l       .text  00000000 
+e0000332 l       .text  00000000 
+e0000338 l       .text  00000000 
+e000033c l       .text  00000000 
+e0000342 l       .text  00000000 
+e0000344 l       .text  00000000 
+e0000468 l     F .text  0000013a qprinti
+e000034c l       .text  00000000 
+e000034e l       .text  00000000 
+e000034e l       .text  00000000 
+e0000350 l       .text  00000000 
+e0000352 l       .text  00000000 
+e0000352 l       .text  00000000 
+e0000364 l       .text  00000000 
+e0000372 l       .text  00000000 
+e0000372 l       .text  00000000 
+e0000372 l       .text  00000000 
+e0000372 l       .text  00000000 
+e0000372 l       .text  00000000 
+e0000376 l       .text  00000000 
+e000037a l       .text  00000000 
+e000037c l       .text  00000000 
+e0000380 l       .text  00000000 
+e0000382 l       .text  00000000 
+e0000386 l       .text  00000000 
+e0000386 l       .text  00000000 
+e000038c l       .text  00000000 
+e0000390 l       .text  00000000 
+e0000392 l       .text  00000000 
+e0000394 l       .text  00000000 
+e0000398 l       .text  00000000 
+e000039c l       .text  00000000 
+e000039e l       .text  00000000 
+e00003a0 l       .text  00000000 
+e00003a0 l       .text  00000000 
+e00003a0 l       .text  00000000 
+e00003a0 l       .text  00000000 
+e00003a0 l       .text  00000000 
+e00003a0 l       .text  00000000 
+e00003a4 l       .text  00000000 
+e00003a4 l       .text  00000000 
+e00003a4 l       .text  00000000 
+e00003a4 l       .text  00000000 
+e00003a4 l       .text  00000000 
+e00003a4 l       .text  00000000 
+e00003a8 l       .text  00000000 
+e00003a8 l       .text  00000000 
+e00003ac l       .text  00000000 
+e00003ae l       .text  00000000 
+e00003b0 l       .text  00000000 
+e00003b4 l       .text  00000000 
+e00003b4 l       .text  00000000 
+e00003bc l       .text  00000000 
+e00003c0 l       .text  00000000 
+e00003c0 l       .text  00000000 
+e00003c2 l       .text  00000000 
+e00003c6 l       .text  00000000 
+e00003c6 l       .text  00000000 
+e00003c8 l       .text  00000000 
+e00003ce l       .text  00000000 
+e00003d0 l       .text  00000000 
+e00003d0 l       .text  00000000 
+e00003da l       .text  00000000 
+e00003dc l       .text  00000000 
+e00003dc l       .text  00000000 
+e00003e4 l       .text  00000000 
+e00003e6 l       .text  00000000 
+e00003e6 l       .text  00000000 
+e00003ea l       .text  00000000 
+e00003ea l       .text  00000000 
+e00003f6 l       .text  00000000 
+e00003f6 l       .text  00000000 
+e00003fa l       .text  00000000 
+e0000402 l       .text  00000000 
+e0000404 l       .text  00000000 
+e0000404 l       .text  00000000 
+e0000406 l       .text  00000000 
+e000040a l       .text  00000000 
+e000040c l       .text  00000000 
+e000040c l       .text  00000000 
+e0000410 l       .text  00000000 
+e0000410 l       .text  00000000 
+e0000412 l       .text  00000000 
+e0000416 l       .text  00000000 
+e0000416 l       .text  00000000 
+e000041a l       .text  00000000 
+e000041a l       .text  00000000 
+e000041e l       .text  00000000 
+e0000422 l       .text  00000000 
+e0000422 l       .text  00000000 
+e0000426 l       .text  00000000 
+e0000428 l       .text  00000000 
+e000042c l       .text  00000000 
+e000042c l       .text  00000000 
+e000042e l       .text  00000000 
+e0000434 l       .text  00000000 
+e0000434 l       .text  00000000 
+e0000438 l       .text  00000000 
+e0000438 l       .text  00000000 
+e000043a l       .text  00000000 
+e000043a l       .text  00000000 
+e000043e l       .text  00000000 
+e0000440 l       .text  00000000 
+e0000442 l       .text  00000000 
+e0000444 l       .text  00000000 
+e0000444 l       .text  00000000 
+e000044c l       .text  00000000 
+e000044c l       .text  00000000 
+e0000450 l       .text  00000000 
+e0000450 l       .text  00000000 
+e0000452 l       .text  00000000 
+e0000456 l       .text  00000000 
+e0000458 l       .text  00000000 
+e0000458 l       .text  00000000 
+e000045a l       .text  00000000 
+e000045a l       .text  00000000 
+e000045e l       .text  00000000 
+e000045e l       .text  00000000 
+e0000462 l       .text  00000000 
+e0000462 l       .text  00000000 
+e0000464 l       .text  00000000 
+e0000464 l       .text  00000000 
+e0000468 l       .text  00000000 
+e0000468 l       .text  00000000 
+e0000468 l       .text  00000000 
+e0000468 l       .text  00000000 
+e0000468 l       .text  00000000 
+e000046a l       .text  00000000 
+e000046a l       .text  00000000 
+e000046e l       .text  00000000 
+e000046e l       .text  00000000 
+e000046e l       .text  00000000 
+e0000470 l       .text  00000000 
+e0000474 l       .text  00000000 
+e0000474 l       .text  00000000 
+e000047c l       .text  00000000 
+e000048a l       .text  00000000 
+e000048e l       .text  00000000 
+e000048e l       .text  00000000 
+e0000492 l       .text  00000000 
+e0000492 l       .text  00000000 
+e0000494 l       .text  00000000 
+e0000498 l       .text  00000000 
+e000049c l       .text  00000000 
+e000049e l       .text  00000000 
+e00004a2 l       .text  00000000 
+e00004a6 l       .text  00000000 
+e00004a8 l       .text  00000000 
+e00004a8 l       .text  00000000 
+e00004aa l       .text  00000000 
+e00004aa l       .text  00000000 
+e00004ac l       .text  00000000 
+e00004b0 l       .text  00000000 
+e00004b2 l       .text  00000000 
+e00004b4 l       .text  00000000 
+e00004b4 l       .text  00000000 
+e00004b8 l       .text  00000000 
+e00004bc l       .text  00000000 
+e00004bc l       .text  00000000 
+e00004c0 l       .text  00000000 
+e00004c4 l       .text  00000000 
+e00004c4 l       .text  00000000 
+e00004c6 l       .text  00000000 
+e00004c6 l       .text  00000000 
+e00004cc l       .text  00000000 
+e00004cc l       .text  00000000 
+e00004d0 l       .text  00000000 
+e00004d0 l       .text  00000000 
+e00004d4 l       .text  00000000 
+e00004d8 l       .text  00000000 
+e00004dc l       .text  00000000 
+e00004de l       .text  00000000 
+e00004e0 l       .text  00000000 
+e00004e0 l       .text  00000000 
+e00004e2 l       .text  00000000 
+e00004e2 l       .text  00000000 
+e00004e4 l       .text  00000000 
+e00004e8 l       .text  00000000 
+e00004ec l       .text  00000000 
+e00004f6 l       .text  00000000 
+e00004f6 l       .text  00000000 
+e00004fa l       .text  00000000 
+e00004fe l       .text  00000000 
+e0000500 l       .text  00000000 
+e0000504 l       .text  00000000 
+e0000506 l       .text  00000000 
+e0000508 l       .text  00000000 
+e0000508 l       .text  00000000 
+e000050a l       .text  00000000 
+e000050e l       .text  00000000 
+e000050e l       .text  00000000 
+e0000512 l       .text  00000000 
+e0000512 l       .text  00000000 
+e0000516 l       .text  00000000 
+e0000518 l       .text  00000000 
+e0000518 l       .text  00000000 
+e000051c l       .text  00000000 
+e000051e l       .text  00000000 
+e0000522 l       .text  00000000 
+e0000524 l       .text  00000000 
+e0000528 l       .text  00000000 
+e000052a l       .text  00000000 
+e000052e l       .text  00000000 
+e000052e l       .text  00000000 
+e0000532 l       .text  00000000 
+e0000534 l       .text  00000000 
+e0000534 l       .text  00000000 
+e0000538 l       .text  00000000 
+e0000538 l       .text  00000000 
+e000053a l       .text  00000000 
+e000053c l       .text  00000000 
+e000053e l       .text  00000000 
+e000053e l       .text  00000000 
+e0000544 l       .text  00000000 
+e0000546 l       .text  00000000 
+e0000546 l       .text  00000000 
+e000054a l       .text  00000000 
+e000054e l       .text  00000000 
+e000054e l       .text  00000000 
+e0000556 l       .text  00000000 
+e000055a l       .text  00000000 
+e000055c l       .text  00000000 
+e0000560 l       .text  00000000 
+e0000560 l       .text  00000000 
+e0000564 l       .text  00000000 
+e000056a l       .text  00000000 
+e000056a l       .text  00000000 
+e000056c l       .text  00000000 
+e000056e l       .text  00000000 
+e000056e l       .text  00000000 
+e0000572 l       .text  00000000 
+e0000572 l       .text  00000000 
+e0000576 l       .text  00000000 
+e000057a l       .text  00000000 
+e000057a l       .text  00000000 
+e000057c l       .text  00000000 
+e0000580 l       .text  00000000 
+e0000582 l       .text  00000000 
+e0000582 l       .text  00000000 
+e000058a l       .text  00000000 
+e000058c l       .text  00000000 
+e000058c l       .text  00000000 
+e000058e l       .text  00000000 
+e0000590 l       .text  00000000 
+e0000590 l       .text  00000000 
+e0000594 l       .text  00000000 
+e0000598 l       .text  00000000 
+e0000598 l       .text  00000000 
+e000059a l       .text  00000000 
+e000059a l       .text  00000000 
+e00005a2 l       .text  00000000 
+e00005a2 l       .text  00000000 
+0000028d l       .debug_loc     00000000 
+000002b3 l       .debug_loc     00000000 
+000002db l       .debug_loc     00000000 
+00000301 l       .debug_loc     00000000 
+0000035e l       .debug_loc     00000000 
+00000386 l       .debug_loc     00000000 
+000003ac l       .debug_loc     00000000 
+000003e1 l       .debug_loc     00000000 
+00000421 l       .debug_loc     00000000 
+0000043c l       .debug_loc     00000000 
+0000045d l       .debug_loc     00000000 
+00000478 l       .debug_loc     00000000 
+00000493 l       .debug_loc     00000000 
+000004ae l       .debug_loc     00000000 
+000004c9 l       .debug_loc     00000000 
+000004f1 l       .debug_loc     00000000 
+00000522 l       .debug_loc     00000000 
+00000557 l       .debug_loc     00000000 
+0000057f l       .debug_loc     00000000 
+0000059b l       .debug_loc     00000000 
+000005b6 l       .debug_loc     00000000 
+00000608 l       .debug_loc     00000000 
+0000062e l       .debug_loc     00000000 
+0000066e l       .debug_loc     00000000 
+00000696 l       .debug_loc     00000000 
+000006bc l       .debug_loc     00000000 
+000006fc l       .debug_loc     00000000 
+0000072e l       .debug_loc     00000000 
+0000075a l       .debug_loc     00000000 
+00000775 l       .debug_loc     00000000 
+00000790 l       .debug_loc     00000000 
+000007b1 l       .debug_loc     00000000 
+000007cc l       .debug_loc     00000000 
+000007f2 l       .debug_loc     00000000 
+0000082e l       .debug_loc     00000000 
+00000854 l       .debug_loc     00000000 
+00000885 l       .debug_loc     00000000 
+000008b6 l       .debug_loc     00000000 
+000008f2 l       .debug_loc     00000000 
+0000091a l       .debug_loc     00000000 
+00000977 l       .debug_loc     00000000 
+000009a1 l       .debug_loc     00000000 
+000009e3 l       .debug_loc     00000000 
+00000a61 l       .debug_loc     00000000 
+00000a7c l       .debug_loc     00000000 
+00000aa2 l       .debug_loc     00000000 
+00000ac8 l       .debug_loc     00000000 
+00000ae5 l       .debug_loc     00000000 
+00000000 l       .debug_str     00000000 
+0000016c l       .debug_str     00000000 
+0000009d l       .debug_str     00000000 
+00000108 l       .debug_ranges  00000000 
+00000184 l       .debug_str     00000000 
+000002a0 l       .debug_str     00000000 
+00000191 l       .debug_str     00000000 
+000000ac l       .debug_str     00000000 
+000000b5 l       .debug_str     00000000 
+00000210 l       .debug_str     00000000 
+000000de l       .debug_str     00000000 
+000001b0 l       .debug_str     00000000 
+000001b7 l       .debug_str     00000000 
+000001d0 l       .debug_str     00000000 
+000001a5 l       .debug_str     00000000 
+000001ac l       .debug_str     00000000 
+000001cc l       .debug_str     00000000 
+000001d3 l       .debug_str     00000000 
+000001d9 l       .debug_str     00000000 
+00000105 l       .debug_str     00000000 
+000001c4 l       .debug_str     00000000 
+000001ba l       .debug_str     00000000 
+000001dd l       .debug_str     00000000 
+00000182 l       .debug_str     00000000 
+000001eb l       .debug_str     00000000 
+000001f3 l       .debug_str     00000000 
+000001fe l       .debug_str     00000000 
+00000266 l       .debug_str     00000000 
+00000296 l       .debug_str     00000000 
+0000029d l       .debug_str     00000000 
+0000010e l       .debug_str     00000000 
+00000292 l       .debug_str     00000000 
+00000060 l       .debug_ranges  00000000 
+00000078 l       .debug_ranges  00000000 
+00000090 l       .debug_ranges  00000000 
+000000a8 l       .debug_ranges  00000000 
+000000c0 l       .debug_ranges  00000000 
+000000d8 l       .debug_ranges  00000000 
+0000026e l       .debug_str     00000000 
+00000274 l       .debug_str     00000000 
+0000016a l       .debug_str     00000000 
+000002af l       .debug_str     00000000 
+000002b2 l       .debug_str     00000000 
+000002a5 l       .debug_str     00000000 
+000002ba l       .debug_str     00000000 
+000002bc l       .debug_str     00000000 
+000000c0 l       .debug_str     00000000 
+000000f0 l       .debug_ranges  00000000 
+000000c2 l       .debug_str     00000000 
+00000276 l       .debug_str     00000000 
+0000027d l       .debug_str     00000000 
+00000223 l       .debug_str     00000000 
+0000022d l       .debug_str     00000000 
+0000023a l       .debug_str     00000000 
+0000024c l       .debug_str     00000000 
+00000030 l       .debug_ranges  00000000 
+00000048 l       .debug_ranges  00000000 
+00000251 l       .debug_str     00000000 
+00000202 l       .debug_str     00000000 
+00000294 l       .debug_str     00000000 
+00000209 l       .debug_str     00000000 
+00000126 l       .debug_str     00000000 
+000002a3 l       .debug_str     00000000 
+00000289 l       .debug_str     00000000 
+000000cf l       .debug_str     00000000 
+00000088 l       .debug_frame   00000000 
+e0000372 l       .text  00000000 
+e00003a0 l       .text  00000000 
+e00003a4 l       .text  00000000 
+e0000468 l       .text  00000000 
+e00005a2 l       .text  00000000 
+e00003a0  w    F .text  00000004 external_irq_handler
+e00001e0 g     F .text  00000192 printf
+00008000 g       *ABS*  00000000 _stack_len
+e0000654 g       .bss   00000000 _bss_start
+e0000156 g     F .text  00000054 addr_test
+e000a000 g       .stack 00000000 stack
+e0000114 g     F .text  00000042 printf_mem
+e0000080 g       *ABS*  00000000 _entry_point
+e0000654 g       .bss   00000000 _bss_end
+e0000372 g     F .text  0000002e uart_set_cfg
+e00000cc g       .text  00000000 _start
+e0000644 g     O .data  00000010 remu10_table
+e00001aa g     F .text  00000036 main
+e0000084 g       .vectors       00000000 _vectors_end
+e0010000 g       .vectors       00000000 _stack_start
+00002000 g       *ABS*  00000000 _min_stack
+e0010010 g       *ABS*  00000000 fromhost
+00020008 g       *ABS*  00000000 tohost
+e000a000 g       .stack 00000000 _stack
+e0000000 g       .vectors       00000000 _vectors_start
+
+
+
+Disassembly of section .vectors:
+
+e0000000 <_vectors_start>:
+e0000000:       0840006f                j       e0000084 <_vectors_end>
+e0000004:       0800006f                j       e0000084 <_vectors_end>
+e0000008:       07c0006f                j       e0000084 <_vectors_end>
+e000000c:       0780006f                j       e0000084 <_vectors_end>
+e0000010:       0740006f                j       e0000084 <_vectors_end>
+e0000014:       0700006f                j       e0000084 <_vectors_end>
+e0000018:       06c0006f                j       e0000084 <_vectors_end>
+e000001c:       0680006f                j       e0000084 <_vectors_end>
+e0000020:       0640006f                j       e0000084 <_vectors_end>
+e0000024:       0600006f                j       e0000084 <_vectors_end>
+e0000028:       05c0006f                j       e0000084 <_vectors_end>
+e000002c:       3740006f                j       e00003a0 <external_irq_handler>
+e0000030:       0540006f                j       e0000084 <_vectors_end>
+e0000034:       0500006f                j       e0000084 <_vectors_end>
+e0000038:       04c0006f                j       e0000084 <_vectors_end>
+e000003c:       0480006f                j       e0000084 <_vectors_end>
+e0000040:       0440006f                j       e0000084 <_vectors_end>
+e0000044:       0400006f                j       e0000084 <_vectors_end>
+e0000048:       03c0006f                j       e0000084 <_vectors_end>
+e000004c:       0380006f                j       e0000084 <_vectors_end>
+e0000050:       0340006f                j       e0000084 <_vectors_end>
+e0000054:       0300006f                j       e0000084 <_vectors_end>
+e0000058:       02c0006f                j       e0000084 <_vectors_end>
+e000005c:       0280006f                j       e0000084 <_vectors_end>
+e0000060:       0240006f                j       e0000084 <_vectors_end>
+e0000064:       0200006f                j       e0000084 <_vectors_end>
+e0000068:       01c0006f                j       e0000084 <_vectors_end>
+e000006c:       0180006f                j       e0000084 <_vectors_end>
+e0000070:       0140006f                j       e0000084 <_vectors_end>
+e0000074:       0100006f                j       e0000084 <_vectors_end>
+e0000078:       00c0006f                j       e0000084 <_vectors_end>
+e000007c:       0080006f                j       e0000084 <_vectors_end>
+e0000080:       0060006f                j       e0000086 <reset_handler>
+
+Disassembly of section .text:
+
+e0000084 <default_exc_handler>:
+default_exc_handler():
+e0000084:       a069                    j       e000010e <sleep_loop>
+
+e0000086 <reset_handler>:
+reset_handler():
+e0000086:       4081                    li      ra,0
+e0000088:       8106                    mv      sp,ra
+e000008a:       8186                    mv      gp,ra
+e000008c:       8206                    mv      tp,ra
+e000008e:       8286                    mv      t0,ra
+e0000090:       8306                    mv      t1,ra
+e0000092:       8386                    mv      t2,ra
+e0000094:       8406                    mv      s0,ra
+e0000096:       8486                    mv      s1,ra
+e0000098:       8506                    mv      a0,ra
+e000009a:       8586                    mv      a1,ra
+e000009c:       8606                    mv      a2,ra
+e000009e:       8686                    mv      a3,ra
+e00000a0:       8706                    mv      a4,ra
+e00000a2:       8786                    mv      a5,ra
+e00000a4:       8806                    mv      a6,ra
+e00000a6:       8886                    mv      a7,ra
+e00000a8:       8906                    mv      s2,ra
+e00000aa:       8986                    mv      s3,ra
+e00000ac:       8a06                    mv      s4,ra
+e00000ae:       8a86                    mv      s5,ra
+e00000b0:       8b06                    mv      s6,ra
+e00000b2:       8b86                    mv      s7,ra
+e00000b4:       8c06                    mv      s8,ra
+e00000b6:       8c86                    mv      s9,ra
+e00000b8:       8d06                    mv      s10,ra
+e00000ba:       8d86                    mv      s11,ra
+e00000bc:       8e06                    mv      t3,ra
+e00000be:       8e86                    mv      t4,ra
+e00000c0:       8f06                    mv      t5,ra
+e00000c2:       8f86                    mv      t6,ra
+e00000c4:       00010117                auipc   sp,0x10
+e00000c8:       f3c10113                addi    sp,sp,-196 # e0010000 <_stack_start>
+
+e00000cc <_start>:
+e00000cc:       00000d17                auipc   s10,0x0
+e00000d0:       588d0d13                addi    s10,s10,1416 # e0000654 <_bss_end>
+e00000d4:       00000d97                auipc   s11,0x0
+e00000d8:       580d8d93                addi    s11,s11,1408 # e0000654 <_bss_end>
+e00000dc:       01bd5763                bge     s10,s11,e00000ea <main_entry>
+
+e00000e0 <zero_loop>:
+zero_loop():
+e00000e0:       /-> 000d2023            sw      zero,0(s10)
+e00000e4:       |   0d11                        addi    s10,s10,4
+e00000e6:       \-- ffaddde3            bge     s11,s10,e00000e0 <zero_loop>
+
+e00000ea <main_entry>:
+zero_loop_end():
+e00000ea:       4501                    li      a0,0
+e00000ec:       4581                    li      a1,0
+e00000ee:       0bc000ef                jal     ra,e00001aa <main>
+e00000f2:       c901                    beqz    a0,e0000102 <success>
+e00000f4:       c11c0537                lui     a0,0xc11c0
+e00000f8:       0561                    addi    a0,a0,24
+e00000fa:       52fd                    li      t0,-1
+e00000fc:       00552023                sw      t0,0(a0) # c11c0000 <fromhost+0xe11afff0>
+e0000100:       a039                    j       e000010e <sleep_loop>
+
+e0000102 <success>:
+success():
+e0000102:       c11c0537                lui     a0,0xc11c0
+e0000106:       0561                    addi    a0,a0,24
+e0000108:       4285                    li      t0,1
+e000010a:       00552023                sw      t0,0(a0) # c11c0000 <fromhost+0xe11afff0>
+
+e000010e <sleep_loop>:
+sleep_loop():
+e000010e:       /-> 10500073            wfi
+e0000112:       \-- bff5                        j       e000010e <sleep_loop>
+
+e0000114 <printf_mem>:
+printf_mem():
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:34
+  int baud_rate = 9600;
+  int test_freq = 25000000;
+  uart_set_cfg(0,(test_freq/baud_rate)>>4);
+}
+
+void printf_mem(uint32_t b1, uint32_t size) {
+e0000114:              1101                     addi    sp,sp,-32
+e0000116:              ce06                     sw      ra,28(sp)
+e0000118:              cc22                     sw      s0,24(sp)
+e000011a:              ca26                     sw      s1,20(sp)
+e000011c:              c84a                     sw      s2,16(sp)
+e000011e:              c64e                     sw      s3,12(sp)
+e0000120:              4611                     li      a2,4
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:36
+  uint32_t* ptr1 = (uint32_t*) b1;
+  for (uint32_t i = 0; i < size/4; ++i) {
+e0000122:       /----- 02c5e363                 bltu    a1,a2,e0000148 <printf_mem+0x34>
+e0000126:       |      842a                     mv      s0,a0
+e0000128:       |      4481                     li      s1,0
+e000012a:       |      0025d993                 srli    s3,a1,0x2
+e000012e:       |      00000917                 auipc   s2,0x0
+e0000132:       |      47690913                 addi    s2,s2,1142 # e00005a4 <qprinti+0x13c>
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:37
+    printf("%d - 0x%x: %x\r\n", i, &(ptr1[i]), ptr1[i]);
+e0000136:       |  /-> 4014                     lw      a3,0(s0)
+e0000138:       |  |   854a                     mv      a0,s2
+e000013a:       |  |   85a6                     mv      a1,s1
+e000013c:       |  |   8622                     mv      a2,s0
+e000013e:       |  |   204d                     jal     e00001e0 <printf>
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:36
+  for (uint32_t i = 0; i < size/4; ++i) {
+e0000140:       |  |   0485                     addi    s1,s1,1
+e0000142:       |  |   0411                     addi    s0,s0,4
+e0000144:       |  \-- fe9999e3                 bne     s3,s1,e0000136 <printf_mem+0x22>
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:39
+   }
+}
+e0000148:       \----> 49b2                     lw      s3,12(sp)
+e000014a:              4942                     lw      s2,16(sp)
+e000014c:              44d2                     lw      s1,20(sp)
+e000014e:              4462                     lw      s0,24(sp)
+e0000150:              40f2                     lw      ra,28(sp)
+e0000152:              6105                     addi    sp,sp,32
+e0000154:              8082                     ret
+
+e0000156 <addr_test>:
+addr_test():
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:49
+    for (size_t i = 0; i < num_words; ++i) {
+        ptr[i] = mod ? num_words - i + 1 : 0;
+    }
+}
+
+bool addr_test(uint32_t b1, uint32_t size) {
+e0000156:              1141                     addi    sp,sp,-16
+e0000158:              c606                     sw      ra,12(sp)
+e000015a:              c422                     sw      s0,8(sp)
+e000015c:              c226                     sw      s1,4(sp)
+e000015e:              842e                     mv      s0,a1
+e0000160:              84aa                     mv      s1,a0
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:51
+  int next_id;
+  printf(" --- init memory ---\r\n");
+e0000162:              00000517                 auipc   a0,0x0
+e0000166:              45250513                 addi    a0,a0,1106 # e00005b4 <qprinti+0x14c>
+e000016a:              289d                     jal     e00001e0 <printf>
+e000016c:              4511                     li      a0,4
+mem_init():
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:44
+    for (size_t i = 0; i < num_words; ++i) {
+e000016e:       /----- 02a46063                 bltu    s0,a0,e000018e <addr_test+0x38>
+e0000172:       |      00245593                 srli    a1,s0,0x2
+e0000176:       |      4605                     li      a2,1
+e0000178:       |      852e                     mv      a0,a1
+e000017a:       |  /-- 00b66363                 bltu    a2,a1,e0000180 <addr_test+0x2a>
+e000017e:       |  |   4505                     li      a0,1
+e0000180:       |  \-> 0585                     addi    a1,a1,1
+e0000182:       |      8626                     mv      a2,s1
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:45
+        ptr[i] = mod ? num_words - i + 1 : 0;
+e0000184:       |  /-> c20c                     sw      a1,0(a2)
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:44
+    for (size_t i = 0; i < num_words; ++i) {
+e0000186:       |  |   15fd                     addi    a1,a1,-1
+e0000188:       |  |   157d                     addi    a0,a0,-1
+e000018a:       |  |   0611                     addi    a2,a2,4
+e000018c:       |  \-- fd65                     bnez    a0,e0000184 <addr_test+0x2e>
+addr_test():
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:53
+  mem_init(b1, size, 1);
+  printf(" --- print memory content ---\r\n");
+e000018e:       \----> 00000517                 auipc   a0,0x0
+e0000192:              43d50513                 addi    a0,a0,1085 # e00005cb <qprinti+0x163>
+e0000196:              20a9                     jal     e00001e0 <printf>
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:54
+  printf_mem(b1, size);
+e0000198:              8526                     mv      a0,s1
+e000019a:              85a2                     mv      a1,s0
+e000019c:              3fa5                     jal     e0000114 <printf_mem>
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:55
+  return 0;
+e000019e:              4501                     li      a0,0
+e00001a0:              4492                     lw      s1,4(sp)
+e00001a2:              4422                     lw      s0,8(sp)
+e00001a4:              40b2                     lw      ra,12(sp)
+e00001a6:              0141                     addi    sp,sp,16
+e00001a8:              8082                     ret
+
+e00001aa <main>:
+main():
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:58
+}
+
+int main(int argc, char **argv) {
+e00001aa:       1141                    addi    sp,sp,-16
+e00001ac:       c606                    sw      ra,12(sp)
+e00001ae:       1a104537                lui     a0,0x1a104
+e00001b2:       4585                    li      a1,1
+printf_init():
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:26
+  *tmp = 1;
+e00001b4:       d96c                    sw      a1,116(a0)
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:28
+  *tmp = 1;
+e00001b6:       dd6c                    sw      a1,124(a0)
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:31
+  uart_set_cfg(0,(test_freq/baud_rate)>>4);
+e00001b8:       0a200593                li      a1,162
+e00001bc:       4501                    li      a0,0
+e00001be:       2a55                    jal     e0000372 <uart_set_cfg>
+main():
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:63
+  bool b=0;
+
+  printf_init();
+
+  printf("--------------------- FROM HRAM TO TCDM ---------------------\r\n");
+e00001c0:       00000517                auipc   a0,0x0
+e00001c4:       42b50513                addi    a0,a0,1067 # e00005eb <qprinti+0x183>
+e00001c8:       2821                    jal     e00001e0 <printf>
+e00001ca:       a0000537                lui     a0,0xa0000
+e00001ce:       f0050513                addi    a0,a0,-256 # 9fffff00 <fromhost+0xbffefef0>
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:64
+  b = b || addr_test(0x9fffff00, SIZE);
+e00001d2:       08000593                li      a1,128
+e00001d6:       3741                    jal     e0000156 <addr_test>
+/proc/self/cwd/sw/tests/opentitan/addr_test/addr_test.c:66
+
+  return b;
+e00001d8:       4501                    li      a0,0
+e00001da:       40b2                    lw      ra,12(sp)
+e00001dc:       0141                    addi    sp,sp,16
+e00001de:       8082                    ret
+
+e00001e0 <printf>:
+printf():
+/proc/self/cwd/sw/tests/common/utils.c:312
+
+  return pc;
+}
+
+int printf(const char *format, ...)
+{
+e00001e0:                                      711d                     addi    sp,sp,-96
+e00001e2:                                      de06                     sw      ra,60(sp)
+e00001e4:                                      dc22                     sw      s0,56(sp)
+e00001e6:                                      da26                     sw      s1,52(sp)
+e00001e8:                                      d84a                     sw      s2,48(sp)
+e00001ea:                                      d64e                     sw      s3,44(sp)
+e00001ec:                                      d452                     sw      s4,40(sp)
+e00001ee:                                      d256                     sw      s5,36(sp)
+e00001f0:                                      d05a                     sw      s6,32(sp)
+e00001f2:                                      ce5e                     sw      s7,28(sp)
+e00001f4:                                      cc62                     sw      s8,24(sp)
+e00001f6:                                      ca66                     sw      s9,20(sp)
+e00001f8:                                      c86a                     sw      s10,16(sp)
+e00001fa:                                      c66e                     sw      s11,12(sp)
+e00001fc:                                      84aa                     mv      s1,a0
+e00001fe:                                      4a01                     li      s4,0
+e0000200:                                      cec6                     sw      a7,92(sp)
+e0000202:                                      ccc2                     sw      a6,88(sp)
+e0000204:                                      cabe                     sw      a5,84(sp)
+e0000206:                                      c8ba                     sw      a4,80(sp)
+e0000208:                                      c6b6                     sw      a3,76(sp)
+e000020a:                                      c4b2                     sw      a2,72(sp)
+e000020c:                                      c2ae                     sw      a1,68(sp)
+e000020e:                                      04410d13                 addi    s10,sp,68
+/proc/self/cwd/sw/tests/common/utils.c:316
+  int pc;
+  va_list va;
+
+  va_start(va, format);
+e0000212:                                      c26a                     sw      s10,4(sp)
+e0000214:                                      02500913                 li      s2,37
+e0000218:                                      02d00993                 li      s3,45
+e000021c:                                      03000b13                 li      s6,48
+e0000220:                                      4aa5                     li      s5,9
+e0000222:                                      4429                     li      s0,10
+e0000224:                                      07200b93                 li      s7,114
+e0000228:                                      05800c13                 li      s8,88
+e000022c:                                      07800d93                 li      s11,120
+e0000230:                                      40000cb7                 lui     s9,0x40000
+qprint():
+/proc/self/cwd/sw/tests/common/utils.c:249
+  for (; *format != 0; ++format)
+e0000234:       /----------------------------> 0004c583                 lbu     a1,0(s1)
+e0000238:       |                          /-- 01258463                 beq     a1,s2,e0000240 <printf+0x60>
+e000023c:       |                 /--------|-- ed99                     bnez    a1,e000025a <printf+0x7a>
+e000023e:       |  /--------------|--------|-- aa11                     j       e0000352 <printf+0x172>
+/proc/self/cwd/sw/tests/common/utils.c:255
+      if (*format == '\0') break;
+e0000240:       |  |              |        \-> 0014c603                 lbu     a2,1(s1)
+/proc/self/cwd/sw/tests/common/utils.c:253
+      ++format;
+e0000244:       |  |              |            00148513                 addi    a0,s1,1
+/proc/self/cwd/sw/tests/common/utils.c:255
+      if (*format == '\0') break;
+e0000248:       |  |              |        /-- 01260863                 beq     a2,s2,e0000258 <printf+0x78>
+e000024c:       |  |              |  /-----|-- 03360063                 beq     a2,s3,e000026c <printf+0x8c>
+e0000250:       |  +--------------|--|-----|-- 10060163                 beqz    a2,e0000352 <printf+0x172>
+e0000254:       |  |              |  |     |   4581                     li      a1,0
+e0000256:       |  |              |  |  /--|-- a831                     j       e0000272 <printf+0x92>
+e0000258:       |  |              |  |  |  \-> 84aa                     mv      s1,a0
+uart_sendchar():
+/proc/self/cwd/sw/tests/common/utils.c:79
+  while( (*(volatile unsigned int*)(UART_REG_LSR) & 0x20) == 0);
+e000025a:       |  |              >--|--|----> 014ca503                 lw      a0,20(s9) # 40000014 <tohost+0x3ffe000c>
+e000025e:       |  |              |  |  |      02057513                 andi    a0,a0,32
+e0000262:       |  |              \--|--|----- dd65                     beqz    a0,e000025a <printf+0x7a>
+/proc/self/cwd/sw/tests/common/utils.c:82
+  *(volatile unsigned int*)(UART_REG_THR) = c;
+e0000264:       |  |                 |  |      00bca023                 sw      a1,0(s9)
+qprint():
+/proc/self/cwd/sw/tests/common/utils.c:303
+      ++pc;
+e0000268:       |  |                 |  |      0a05                     addi    s4,s4,1
+e000026a:       |  |  /--------------|--|----- a0d5                     j       e000034e <printf+0x16e>
+/proc/self/cwd/sw/tests/common/utils.c:259
+        ++format;
+e000026c:       |  |  |              \--|----> 00248513                 addi    a0,s1,2
+e0000270:       |  |  |                 |      4585                     li      a1,1
+e0000272:       |  |  |                 \----> 0025e613                 ori     a2,a1,2
+/proc/self/cwd/sw/tests/common/utils.c:262
+      while (*format == '0')
+e0000276:       |  |  |                        fff50493                 addi    s1,a0,-1
+e000027a:       |  |  |                    /-> 0014c503                 lbu     a0,1(s1)
+e000027e:       |  |  |                    |   872e                     mv      a4,a1
+e0000280:       |  |  |                    |   0485                     addi    s1,s1,1
+e0000282:       |  |  |                    |   85b2                     mv      a1,a2
+e0000284:       |  |  |                    \-- ff650be3                 beq     a0,s6,e000027a <printf+0x9a>
+/proc/self/cwd/sw/tests/common/utils.c:267
+      for ( ; *format >= '0' && *format <= '9'; ++format) {
+e0000288:       |  |  |                        fd050593                 addi    a1,a0,-48
+e000028c:       |  |  |                        4681                     li      a3,0
+e000028e:       |  |  |                        0ff5f593                 andi    a1,a1,255
+e0000292:       |  |  |                 /----- 02bae563                 bltu    s5,a1,e00002bc <printf+0xdc>
+e0000296:       |  |  |                 |      85a6                     mv      a1,s1
+e0000298:       |  |  |                 |  /-> 0ff57613                 andi    a2,a0,255
+e000029c:       |  |  |                 |  |   0015c503                 lbu     a0,1(a1)
+/proc/self/cwd/sw/tests/common/utils.c:268
+        width *= 10;
+e00002a0:       |  |  |                 |  |   028686b3                 mul     a3,a3,s0
+/proc/self/cwd/sw/tests/common/utils.c:269
+        width += *format - '0';
+e00002a4:       |  |  |                 |  |   9636                     add     a2,a2,a3
+/proc/self/cwd/sw/tests/common/utils.c:267
+      for ( ; *format >= '0' && *format <= '9'; ++format) {
+e00002a6:       |  |  |                 |  |   00158493                 addi    s1,a1,1
+e00002aa:       |  |  |                 |  |   fd050593                 addi    a1,a0,-48
+e00002ae:       |  |  |                 |  |   0ff5f793                 andi    a5,a1,255
+/proc/self/cwd/sw/tests/common/utils.c:269
+        width += *format - '0';
+e00002b2:       |  |  |                 |  |   fd060693                 addi    a3,a2,-48
+e00002b6:       |  |  |                 |  |   85a6                     mv      a1,s1
+/proc/self/cwd/sw/tests/common/utils.c:267
+      for ( ; *format >= '0' && *format <= '9'; ++format) {
+e00002b8:       |  |  |                 |  \-- fe87e0e3                 bltu    a5,s0,e0000298 <printf+0xb8>
+/proc/self/cwd/sw/tests/common/utils.c:271
+      if( *format == 's' ) {
+e00002bc:       |  |  |                 \--/-X 02abc463                 blt     s7,a0,e00002e4 <printf+0x104>
+e00002c0:       |  |  |                 /--|-- 05850563                 beq     a0,s8,e000030a <printf+0x12a>
+e00002c4:       |  |  |                 |  |   06300593                 li      a1,99
+e00002c8:       |  |  |        /--------|--|-- 04b50863                 beq     a0,a1,e0000318 <printf+0x138>
+e00002cc:       |  |  |        |        |  |   06400593                 li      a1,100
+e00002d0:       |  |  +--------|--------|--|-- 06b51f63                 bne     a0,a1,e000034e <printf+0x16e>
+/proc/self/cwd/sw/tests/common/utils.c:277
+        pc += qprinti (out, va_arg(va, int), 10, 1, width, pad, 'a');
+e00002d4:       |  |  |        |        |  |   000d2503                 lw      a0,0(s10)
+e00002d8:       |  |  |        |        |  |   0d11                     addi    s10,s10,4
+e00002da:       |  |  |        |        |  |   45a9                     li      a1,10
+e00002dc:       |  |  |        |        |  |   4605                     li      a2,1
+e00002de:       |  |  |        |        |  |   06100793                 li      a5,97
+e00002e2:       |  |  |  /-----|--------|--|-- a0a5                     j       e000034a <printf+0x16a>
+/proc/self/cwd/sw/tests/common/utils.c:271
+      if( *format == 's' ) {
+e00002e4:       |  |  |  |     |  /-----|--\-X 05b50763                 beq     a0,s11,e0000332 <printf+0x152>
+e00002e8:       |  |  |  |     |  |     |      07500593                 li      a1,117
+e00002ec:       |  |  |  |  /--|--|-----|----- 04b50863                 beq     a0,a1,e000033c <printf+0x15c>
+e00002f0:       |  |  |  |  |  |  |     |      07300593                 li      a1,115
+e00002f4:       |  |  +--|--|--|--|-----|----- 04b51d63                 bne     a0,a1,e000034e <printf+0x16e>
+/proc/self/cwd/sw/tests/common/utils.c:272
+        register char *s = va_arg(va, char*);
+e00002f8:       |  |  |  |  |  |  |     |      000d2503                 lw      a0,0(s10)
+/proc/self/cwd/sw/tests/common/utils.c:273
+        pc += qprints (out, s?s:"(null)", width, pad);
+e00002fc:       |  |  |  |  |  |  |     |  /-- e509                     bnez    a0,e0000306 <printf+0x126>
+e00002fe:       |  |  |  |  |  |  |     |  |   00000517                 auipc   a0,0x0
+e0000302:       |  |  |  |  |  |  |     |  |   33c50513                 addi    a0,a0,828 # e000063a <qprinti+0x1d2>
+e0000306:       |  |  |  |  |  |  |     |  \-> 0d11                     addi    s10,s10,4
+e0000308:       |  |  |  |  |  |  |     |  /-- a00d                     j       e000032a <printf+0x14a>
+/proc/self/cwd/sw/tests/common/utils.c:289
+        pc += qprinti (out, va_arg(va, uint32_t), 16, 0, width, pad, 'A');
+e000030a:       |  |  |  |  |  |  |     \--|-> 000d2503                 lw      a0,0(s10)
+e000030e:       |  |  |  |  |  |  |        |   0d11                     addi    s10,s10,4
+e0000310:       |  |  |  |  |  |  |        |   45c1                     li      a1,16
+e0000312:       |  |  |  |  |  |  |        |   04100793                 li      a5,65
+e0000316:       |  |  |  |  |  |  |  /-----|-- a80d                     j       e0000348 <printf+0x168>
+/proc/self/cwd/sw/tests/common/utils.c:293
+        scr[0] = va_arg(va, int);
+e0000318:       |  |  |  |  |  \--|--|-----|-> 000d2503                 lw      a0,0(s10)
+e000031c:       |  |  |  |  |     |  |     |   0d11                     addi    s10,s10,4
+e000031e:       |  |  |  |  |     |  |     |   00a10523                 sb      a0,10(sp)
+/proc/self/cwd/sw/tests/common/utils.c:294
+        scr[1] = '\0';
+e0000322:       |  |  |  |  |     |  |     |   000105a3                 sb      zero,11(sp)
+/proc/self/cwd/sw/tests/common/utils.c:295
+        pc += qprints (out, scr, width, pad);
+e0000326:       |  |  |  |  |     |  |     |   00a10513                 addi    a0,sp,10
+e000032a:       |  |  |  |  |     |  |     \-> 85b6                     mv      a1,a3
+e000032c:       |  |  |  |  |     |  |         863a                     mv      a2,a4
+e000032e:       |  |  |  |  |     |  |         289d                     jal     e00003a4 <qprints>
+e0000330:       |  |  |  |  |     |  |  /----- a831                     j       e000034c <printf+0x16c>
+/proc/self/cwd/sw/tests/common/utils.c:285
+        pc += qprinti (out, va_arg(va, uint32_t), 16, 0, width, pad, 'a');
+e0000332:       |  |  |  |  |     \--|--|----> 000d2503                 lw      a0,0(s10)
+e0000336:       |  |  |  |  |        |  |      0d11                     addi    s10,s10,4
+e0000338:       |  |  |  |  |        |  |      45c1                     li      a1,16
+e000033a:       |  |  |  |  |        |  |  /-- a029                     j       e0000344 <printf+0x164>
+/proc/self/cwd/sw/tests/common/utils.c:281
+        pc += qprinti (out, va_arg(va, unsigned int), 10, 0, width, pad, 'a');
+e000033c:       |  |  |  |  \--------|--|--|-> 000d2503                 lw      a0,0(s10)
+e0000340:       |  |  |  |           |  |  |   0d11                     addi    s10,s10,4
+e0000342:       |  |  |  |           |  |  |   45a9                     li      a1,10
+e0000344:       |  |  |  |           |  |  \-> 06100793                 li      a5,97
+e0000348:       |  |  |  |           \--|----> 4601                     li      a2,0
+e000034a:       |  |  |  \--------------|----> 2a39                     jal     e0000468 <qprinti>
+e000034c:       |  |  |                 \----> 9a2a                     add     s4,s4,a0
+/proc/self/cwd/sw/tests/common/utils.c:249
+  for (; *format != 0; ++format)
+e000034e:       |  |  \----------------------> 0485                     addi    s1,s1,1
+e0000350:       \--|-------------------------- b5d5                     j       e0000234 <printf+0x54>
+printf():
+/proc/self/cwd/sw/tests/common/utils.c:322
+
+  pc = qprint(0, format, va);
+
+  va_end(va);
+
+  return pc;
+e0000352:          \-------------------------> 8552                     mv      a0,s4
+e0000354:                                      4db2                     lw      s11,12(sp)
+e0000356:                                      4d42                     lw      s10,16(sp)
+e0000358:                                      4cd2                     lw      s9,20(sp)
+e000035a:                                      4c62                     lw      s8,24(sp)
+e000035c:                                      4bf2                     lw      s7,28(sp)
+e000035e:                                      5b02                     lw      s6,32(sp)
+e0000360:                                      5a92                     lw      s5,36(sp)
+e0000362:                                      5a22                     lw      s4,40(sp)
+e0000364:                                      59b2                     lw      s3,44(sp)
+e0000366:                                      5942                     lw      s2,48(sp)
+e0000368:                                      54d2                     lw      s1,52(sp)
+e000036a:                                      5462                     lw      s0,56(sp)
+e000036c:                                      50f2                     lw      ra,60(sp)
+e000036e:                                      6125                     addi    sp,sp,96
+e0000370:                                      8082                     ret
+
+e0000372 <uart_set_cfg>:
+uart_set_cfg():
+/proc/self/cwd/sw/tests/common/utils.c:42
+void uart_set_cfg(int parity, uint16_t clk_counter) {
+e0000372:       40000537                lui     a0,0x40000
+e0000376:       08300613                li      a2,131
+/proc/self/cwd/sw/tests/common/utils.c:44
+  *(volatile unsigned int*)(UART_REG_LCR) = 0x83; //sets 8N1 and set DLAB to 1
+e000037a:       c550                    sw      a2,12(a0)
+/proc/self/cwd/sw/tests/common/utils.c:45
+  *(volatile unsigned int*)(UART_REG_DLM) = (clk_counter >> 8) & 0xFF;
+e000037c:       0085d613                srli    a2,a1,0x8
+e0000380:       c150                    sw      a2,4(a0)
+/proc/self/cwd/sw/tests/common/utils.c:46
+  *(volatile unsigned int*)(UART_REG_DLL) =  clk_counter       & 0xFF;
+e0000382:       0ff5f593                andi    a1,a1,255
+e0000386:       c10c                    sw      a1,0(a0)
+e0000388:       0a700593                li      a1,167
+/proc/self/cwd/sw/tests/common/utils.c:47
+  *(volatile unsigned int*)(UART_REG_FCR) = 0xA7; //enables 16byte FIFO and clear FIFOs
+e000038c:       c50c                    sw      a1,8(a0)
+e000038e:       458d                    li      a1,3
+/proc/self/cwd/sw/tests/common/utils.c:48
+  *(volatile unsigned int*)(UART_REG_LCR) = 0x03; //sets 8N1 and set DLAB to 0
+e0000390:       c54c                    sw      a1,12(a0)
+/proc/self/cwd/sw/tests/common/utils.c:50
+  *(volatile unsigned int*)(UART_REG_IER) = ((*(volatile unsigned int*)(UART_REG_IER)) & 0xF0) | 0x02; // set IER (interrupt enable register) on UART
+e0000392:       414c                    lw      a1,4(a0)
+e0000394:       0f05f593                andi    a1,a1,240
+e0000398:       0025e593                ori     a1,a1,2
+e000039c:       c14c                    sw      a1,4(a0)
+/proc/self/cwd/sw/tests/common/utils.c:51
+}
+e000039e:       8082                    ret
+
+e00003a0 <external_irq_handler>:
+external_irq_handler():
+/proc/self/cwd/sw/tests/common/utils.c:339
+
+  return i;
+}
+
+void __attribute__((weak)) external_irq_handler(void)  {
+}
+e00003a0:       30200073                mret
+
+e00003a4 <qprints>:
+qprints():
+/proc/self/cwd/sw/tests/common/utils.c:159
+  if (width > 0) {
+e00003a4:             /----- 02b05163           blez    a1,e00003c6 <qprints+0x22>
+/proc/self/cwd/sw/tests/common/utils.c:162
+    for (ptr = string; *ptr; ++ptr) ++len;
+e00003a8:             |      00054683           lbu     a3,0(a0)
+e00003ac:          /--|----- c28d                       beqz    a3,e00003ce <qprints+0x2a>
+e00003ae:          |  |      4781                       li      a5,0
+e00003b0:          |  |      00150813           addi    a6,a0,1
+e00003b4:          |  |  /-> 00f806b3           add     a3,a6,a5
+e00003b8:          |  |  |   0006c703           lbu     a4,0(a3)
+e00003bc:          |  |  |   00178693           addi    a3,a5,1
+e00003c0:          |  |  |   87b6                       mv      a5,a3
+e00003c2:          |  |  \-- fb6d                       bnez    a4,e00003b4 <qprints+0x10>
+e00003c4:          |  |  /-- a031                       j       e00003d0 <qprints+0x2c>
+e00003c6:          |  \--|-> 4601                       li      a2,0
+e00003c8:          |     |   02000893           li      a7,32
+e00003cc:       /--|-----|-- a899                       j       e0000422 <qprints+0x7e>
+e00003ce:       |  \-----|-> 4681                       li      a3,0
+/proc/self/cwd/sw/tests/common/utils.c:163
+    if (len >= width) width = 0;
+e00003d0:       |        \-> 40d587b3           sub     a5,a1,a3
+e00003d4:       |            873e                       mv      a4,a5
+e00003d6:       |        /-- 00b6c363           blt     a3,a1,e00003dc <qprints+0x38>
+e00003da:       |        |   4701                       li      a4,0
+/proc/self/cwd/sw/tests/common/utils.c:165
+    if (pad & PAD_ZERO) padchar = '0';
+e00003dc:       |        \-> 00267593           andi    a1,a2,2
+e00003e0:       |            02000893           li      a7,32
+e00003e4:       |        /-- c199                       beqz    a1,e00003ea <qprints+0x46>
+e00003e6:       |        |   03000893           li      a7,48
+/proc/self/cwd/sw/tests/common/utils.c:167
+  if (!(pad & PAD_RIGHT)) {
+e00003ea:       |        \-> 00167593           andi    a1,a2,1
+e00003ee:       |            0015b593           seqz    a1,a1
+e00003f2:       |            00e02633           sgtz    a2,a4
+e00003f6:       |            8df1                       and     a1,a1,a2
+e00003f8:       |  /-------- c19d                       beqz    a1,e000041e <qprints+0x7a>
+e00003fa:       |  |         4601                       li      a2,0
+e00003fc:       |  |         400005b7           lui     a1,0x40000
+e0000400:       |  |         4805                       li      a6,1
+e0000402:       |  |  /----> 873e                       mv      a4,a5
+uart_sendchar():
+/proc/self/cwd/sw/tests/common/utils.c:79
+  while( (*(volatile unsigned int*)(UART_REG_LSR) & 0x20) == 0);
+e0000404:       |  |  |  /-> 49dc                       lw      a5,20(a1)
+e0000406:       |  |  |  |   0207f793           andi    a5,a5,32
+e000040a:       |  |  |  \-- dfed                       beqz    a5,e0000404 <qprints+0x60>
+/proc/self/cwd/sw/tests/common/utils.c:82
+  *(volatile unsigned int*)(UART_REG_THR) = c;
+e000040c:       |  |  |      0115a023           sw      a7,0(a1) # 40000000 <tohost+0x3ffdfff8>
+qprints():
+/proc/self/cwd/sw/tests/common/utils.c:170
+      ++pc;
+e0000410:       |  |  |      0605                       addi    a2,a2,1
+/proc/self/cwd/sw/tests/common/utils.c:168
+    for ( ; width > 0; --width) {
+e0000412:       |  |  |      fff70793           addi    a5,a4,-1 # 3fffffff <tohost+0x3ffdfff7>
+e0000416:       |  |  \----- fee846e3           blt     a6,a4,e0000402 <qprints+0x5e>
+e000041a:       |  |         85be                       mv      a1,a5
+e000041c:       +--|-------- a019                       j       e0000422 <qprints+0x7e>
+e000041e:       |  \-------> 4601                       li      a2,0
+e0000420:       |            85ba                       mv      a1,a4
+/proc/self/cwd/sw/tests/common/utils.c:173
+  for ( ; *string ; ++string) {
+e0000422:       \----------> 00054783           lbu     a5,0(a0)
+e0000426:             /----- cf99                       beqz    a5,e0000444 <qprints+0xa0>
+e0000428:             |      40000737           lui     a4,0x40000
+uart_sendchar():
+/proc/self/cwd/sw/tests/common/utils.c:79
+  while( (*(volatile unsigned int*)(UART_REG_LSR) & 0x20) == 0);
+e000042c:             |  /-> 4b54                       lw      a3,20(a4)
+e000042e:             |  |   0206f693           andi    a3,a3,32
+e0000432:             |  +-- deed                       beqz    a3,e000042c <qprints+0x88>
+qprints():
+/proc/self/cwd/sw/tests/common/utils.c:174
+    qprintchar (out, *string);
+e0000434:             |  |   0ff7f693           andi    a3,a5,255
+uart_sendchar():
+/proc/self/cwd/sw/tests/common/utils.c:82
+  *(volatile unsigned int*)(UART_REG_THR) = c;
+e0000438:             |  |   c314                       sw      a3,0(a4)
+qprints():
+/proc/self/cwd/sw/tests/common/utils.c:173
+  for ( ; *string ; ++string) {
+e000043a:             |  |   00154783           lbu     a5,1(a0)
+e000043e:             |  |   0505                       addi    a0,a0,1
+/proc/self/cwd/sw/tests/common/utils.c:175
+    ++pc;
+e0000440:             |  |   0605                       addi    a2,a2,1
+/proc/self/cwd/sw/tests/common/utils.c:173
+  for ( ; *string ; ++string) {
+e0000442:             |  \-- f7ed                       bnez    a5,e000042c <qprints+0x88>
+/proc/self/cwd/sw/tests/common/utils.c:177
+  for ( ; width > 0; --width) {
+e0000444:          /--\----X 02b05063           blez    a1,e0000464 <qprints+0xc0>
+e0000448:          |         00c58533           add     a0,a1,a2
+e000044c:          |         400005b7           lui     a1,0x40000
+uart_sendchar():
+/proc/self/cwd/sw/tests/common/utils.c:79
+  while( (*(volatile unsigned int*)(UART_REG_LSR) & 0x20) == 0);
+e0000450:          |     /-> 49d4                       lw      a3,20(a1)
+e0000452:          |     |   0206f693           andi    a3,a3,32
+e0000456:          |     +-- deed                       beqz    a3,e0000450 <qprints+0xac>
+qprints():
+/proc/self/cwd/sw/tests/common/utils.c:179
+    ++pc;
+e0000458:          |     |   0605                       addi    a2,a2,1
+uart_sendchar():
+/proc/self/cwd/sw/tests/common/utils.c:82
+  *(volatile unsigned int*)(UART_REG_THR) = c;
+e000045a:          |     |   0115a023           sw      a7,0(a1) # 40000000 <tohost+0x3ffdfff8>
+qprints():
+/proc/self/cwd/sw/tests/common/utils.c:177
+  for ( ; width > 0; --width) {
+e000045e:          |     \-- fea619e3           bne     a2,a0,e0000450 <qprints+0xac>
+e0000462:          |         862a                       mv      a2,a0
+/proc/self/cwd/sw/tests/common/utils.c:182
+  return pc;
+e0000464:          \-------> 8532                       mv      a0,a2
+e0000466:                    8082                       ret
+
+e0000468 <qprinti>:
+qprinti():
+/proc/self/cwd/sw/tests/common/utils.c:186
+{
+e0000468:                          7179                 addi    sp,sp,-48
+e000046a:                          d606                 sw      ra,44(sp)
+e000046c:                          d422                 sw      s0,40(sp)
+/proc/self/cwd/sw/tests/common/utils.c:192
+  if (i == 0)
+e000046e:             /----------- cd39                 beqz    a0,e00004cc <qprinti+0x64>
+/proc/self/cwd/sw/tests/common/utils.c:199
+  if (sg && b == 10 && i < 0)
+e0000470:             |            00c03633             snez    a2,a2
+e0000474:             |            ff658413             addi    s0,a1,-10
+e0000478:             |            00143413             seqz    s0,s0
+e000047c:             |            8e61                 and     a2,a2,s0
+e000047e:             |            00052413             slti    s0,a0,0
+e0000482:             |            00867833             and     a6,a2,s0
+e0000486:             |        /-- 00080463             beqz    a6,e000048e <qprinti+0x26>
+e000048a:             |        |   40a00533             neg     a0,a0
+/proc/self/cwd/sw/tests/common/utils.c:205
+  s = print_buf + PRINT_BUF_LEN-1;
+e000048e:             |        \-> 02710613             addi    a2,sp,39
+e0000492:             |            4441                 li      s0,16
+/proc/self/cwd/sw/tests/common/utils.c:206
+  *s = '\0';
+e0000494:             |            020103a3             sb      zero,39(sp)
+/proc/self/cwd/sw/tests/common/utils.c:209
+  if(b == 16) {
+e0000498:             |  /-------- 04859563             bne     a1,s0,e00004e2 <qprinti+0x7a>
+/proc/self/cwd/sw/tests/common/utils.c:211
+    while (u) {
+e000049c:       /-----|--|-------- c961                 beqz    a0,e000056c <qprinti+0x104>
+e000049e:       |     |  |         0c678793             addi    a5,a5,198
+e00004a2:       |     |  |         48a5                 li      a7,9
+e00004a4:       |     |  |         42c1                 li      t0,16
+e00004a6:       |     |  |  /----> 842a                 mv      s0,a0
+/proc/self/cwd/sw/tests/common/utils.c:212
+      int t = u & 0xF;
+e00004a8:       |     |  |  |      893d                 andi    a0,a0,15
+e00004aa:       |     |  |  |      85be                 mv      a1,a5
+/proc/self/cwd/sw/tests/common/utils.c:214
+      if (t >= 10)
+e00004ac:       |     |  |  |  /-- 00a8e363             bltu    a7,a0,e00004b2 <qprinti+0x4a>
+e00004b0:       |     |  |  |  |   4581                 li      a1,0
+e00004b2:       |     |  |  |  \-> 952e                 add     a0,a0,a1
+/proc/self/cwd/sw/tests/common/utils.c:217
+      *--s = t + '0';
+e00004b4:       |     |  |  |      03050513             addi    a0,a0,48 # 40000030 <tohost+0x3ffe0028>
+e00004b8:       |     |  |  |      fff60593             addi    a1,a2,-1
+e00004bc:       |     |  |  |      fea60fa3             sb      a0,-1(a2)
+/proc/self/cwd/sw/tests/common/utils.c:218
+      u >>= 4;
+e00004c0:       |     |  |  |      00445513             srli    a0,s0,0x4
+e00004c4:       |     |  |  |      862e                 mv      a2,a1
+/proc/self/cwd/sw/tests/common/utils.c:211
+    while (u) {
+e00004c6:       |     |  |  \----- fe5470e3             bgeu    s0,t0,e00004a6 <qprinti+0x3e>
+e00004ca:       |     |  |  /----- a8b5                 j       e0000546 <qprinti+0xde>
+e00004cc:       |     \--|--|----> 03000513             li      a0,48
+/proc/self/cwd/sw/tests/common/utils.c:194
+    print_buf[0] = '0';
+e00004d0:       |        |  |      00a10423             sb      a0,8(sp)
+/proc/self/cwd/sw/tests/common/utils.c:195
+    print_buf[1] = '\0';
+e00004d4:       |        |  |      000104a3             sb      zero,9(sp)
+/proc/self/cwd/sw/tests/common/utils.c:196
+    return qprints (out, print_buf, width, pad);
+e00004d8:       |        |  |      0028                 addi    a0,sp,8
+e00004da:       |        |  |      85b6                 mv      a1,a3
+e00004dc:       |        |  |      863a                 mv      a2,a4
+e00004de:       |        |  |      35d9                 jal     e00003a4 <qprints>
+e00004e0:       |  /-----|--|----- a86d                 j       e000059a <qprinti+0x132>
+/proc/self/cwd/sw/tests/common/utils.c:222
+    while (u) {
+e00004e2:       +--|-----\--|----X c549                 beqz    a0,e000056c <qprinti+0x104>
+e00004e4:       |  |        |      1999a5b7             lui     a1,0x1999a
+e00004e8:       |  |        |      99958893             addi    a7,a1,-1639 # 19999999 <tohost+0x19979991>
+e00004ec:       |  |        |      00000317             auipc   t1,0x0
+e00004f0:       |  |        |      15830313             addi    t1,t1,344 # e0000644 <remu10_table>
+e00004f4:       |  |        |      52d9                 li      t0,-10
+remu10():
+/proc/self/cwd/sw/tests/common/utils.c:134
+  n = (0x19999999 * n + (n >> 1) + (n >> 3)) >> 28;
+e00004f6:       |  |        |  /-> 031505b3             mul     a1,a0,a7
+e00004fa:       |  |        |  |   00155413             srli    s0,a0,0x1
+e00004fe:       |  |        |  |   95a2                 add     a1,a1,s0
+e0000500:       |  |        |  |   00355793             srli    a5,a0,0x3
+e0000504:       |  |        |  |   95be                 add     a1,a1,a5
+e0000506:       |  |        |  |   81f1                 srli    a1,a1,0x1c
+/proc/self/cwd/sw/tests/common/utils.c:135
+  return remu10_table[n];
+e0000508:       |  |        |  |   959a                 add     a1,a1,t1
+e000050a:       |  |        |  |   00058583             lb      a1,0(a1)
+qprinti():
+/proc/self/cwd/sw/tests/common/utils.c:223
+      *--s = remu10(u) + '0';
+e000050e:       |  |        |  |   03058793             addi    a5,a1,48
+divu10():
+/proc/self/cwd/sw/tests/common/utils.c:118
+  q = (n >> 1) + (n >> 2);
+e0000512:       |  |        |  |   00255593             srli    a1,a0,0x2
+e0000516:       |  |        |  |   95a2                 add     a1,a1,s0
+/proc/self/cwd/sw/tests/common/utils.c:119
+  q = q + (q >> 4);
+e0000518:       |  |        |  |   0045d413             srli    s0,a1,0x4
+e000051c:       |  |        |  |   95a2                 add     a1,a1,s0
+/proc/self/cwd/sw/tests/common/utils.c:120
+  q = q + (q >> 8);
+e000051e:       |  |        |  |   0085d413             srli    s0,a1,0x8
+e0000522:       |  |        |  |   95a2                 add     a1,a1,s0
+/proc/self/cwd/sw/tests/common/utils.c:121
+  q = q + (q >> 16);
+e0000524:       |  |        |  |   0105d413             srli    s0,a1,0x10
+e0000528:       |  |        |  |   95a2                 add     a1,a1,s0
+/proc/self/cwd/sw/tests/common/utils.c:122
+  q = q >> 3;
+e000052a:       |  |        |  |   0035d413             srli    s0,a1,0x3
+/proc/self/cwd/sw/tests/common/utils.c:123
+  r = n - q * 10;
+e000052e:       |  |        |  |   025405b3             mul     a1,s0,t0
+e0000532:       |  |        |  |   952e                 add     a0,a0,a1
+qprinti():
+/proc/self/cwd/sw/tests/common/utils.c:223
+      *--s = remu10(u) + '0';
+e0000534:       |  |        |  |   fff60593             addi    a1,a2,-1
+divu10():
+/proc/self/cwd/sw/tests/common/utils.c:125
+  return q + ((r + 6) >> 4);
+e0000538:       |  |        |  |   0519                 addi    a0,a0,6
+e000053a:       |  |        |  |   8111                 srli    a0,a0,0x4
+e000053c:       |  |        |  |   9522                 add     a0,a0,s0
+qprinti():
+/proc/self/cwd/sw/tests/common/utils.c:223
+      *--s = remu10(u) + '0';
+e000053e:       |  |        |  |   fef60fa3             sb      a5,-1(a2)
+e0000542:       |  |        |  |   862e                 mv      a2,a1
+/proc/self/cwd/sw/tests/common/utils.c:222
+    while (u) {
+e0000544:       |  |        |  \-- f94d                 bnez    a0,e00004f6 <qprinti+0x8e>
+/proc/self/cwd/sw/tests/common/utils.c:228
+  if (neg) {
+e0000546:       |  |  /-----\----X 02080663             beqz    a6,e0000572 <qprinti+0x10a>
+/proc/self/cwd/sw/tests/common/utils.c:229
+    if( width && (pad & PAD_ZERO) )
+e000054a:       |  |  |     /----> 0016b513             seqz    a0,a3
+e000054e:       |  |  |     |      00277613             andi    a2,a4,2
+e0000552:       |  |  |     |      00163613             seqz    a2,a2
+e0000556:       |  |  |     |      8d51                 or      a0,a0,a2
+e0000558:       |  |  |     |  /-- cd19                 beqz    a0,e0000576 <qprinti+0x10e>
+e000055a:       |  |  |     |  |   4401                 li      s0,0
+/proc/self/cwd/sw/tests/common/utils.c:237
+      *--s = '-';
+e000055c:       |  |  |     |  |   fff58513             addi    a0,a1,-1
+e0000560:       |  |  |     |  |   02d00613             li      a2,45
+e0000564:       |  |  |     |  |   fec58fa3             sb      a2,-1(a1)
+e0000568:       |  |  |     |  |   85aa                 mv      a1,a0
+e000056a:       |  |  |  /--|--|-- a01d                 j       e0000590 <qprinti+0x128>
+e000056c:       \--|--|--|--|--|-> 85b2                 mv      a1,a2
+/proc/self/cwd/sw/tests/common/utils.c:228
+  if (neg) {
+e000056e:          |  |  |  \--|-- fc081ee3             bnez    a6,e000054a <qprinti+0xe2>
+e0000572:          |  \--|-----|-> 4401                 li      s0,0
+e0000574:          |     +-----|-- a831                 j       e0000590 <qprinti+0x128>
+e0000576:          |     |     \-> 40000537             lui     a0,0x40000
+uart_sendchar():
+/proc/self/cwd/sw/tests/common/utils.c:79
+  while( (*(volatile unsigned int*)(UART_REG_LSR) & 0x20) == 0);
+e000057a:          |     |     /-> 4950                 lw      a2,20(a0)
+e000057c:          |     |     |   02067613             andi    a2,a2,32
+e0000580:          |     |     \-- de6d                 beqz    a2,e000057a <qprinti+0x112>
+e0000582:          |     |         40000537             lui     a0,0x40000
+e0000586:          |     |         02d00613             li      a2,45
+/proc/self/cwd/sw/tests/common/utils.c:82
+  *(volatile unsigned int*)(UART_REG_THR) = c;
+e000058a:          |     |         c110                 sw      a2,0(a0)
+qprinti():
+/proc/self/cwd/sw/tests/common/utils.c:233
+      --width;
+e000058c:          |     |         16fd                 addi    a3,a3,-1
+e000058e:          |     |         4405                 li      s0,1
+/proc/self/cwd/sw/tests/common/utils.c:240
+  return pc + qprints (out, s, width, pad);
+e0000590:          |     \-------> 852e                 mv      a0,a1
+e0000592:          |               85b6                 mv      a1,a3
+e0000594:          |               863a                 mv      a2,a4
+e0000596:          |               3539                 jal     e00003a4 <qprints>
+e0000598:          |               9522                 add     a0,a0,s0
+/proc/self/cwd/sw/tests/common/utils.c:241
+}
+e000059a:          \-------------> 5422                 lw      s0,40(sp)
+e000059c:                          50b2                 lw      ra,44(sp)
+e000059e:                          6145                 addi    sp,sp,48
+e00005a0:                          8082                 ret
