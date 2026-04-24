@@ -1,0 +1,8 @@
+package:
+  name: sdio_vip
+
+sources:
+  files:
+    - target: vip
+      files:
+      - rtl/sdModel.v

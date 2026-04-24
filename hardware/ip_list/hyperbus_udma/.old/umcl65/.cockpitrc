@@ -1,0 +1,110 @@
+[cockpit]
+  # Do not change this section
+  config = hs16
+
+  # Still Work in Progress
+
+[library]
+  # Setup files will be generated for these libraries/rams.
+  # 
+  # - only libraries that can be found in the "kit.ascii" database
+  #   can be used (see cockpit.log for the full unix path)
+  #   Standard cells, Low VT (fast), Regular VT and High VT (slow) are possible.
+  #   Note that you can mix and match all VTs.. 
+  # - use "-update" or "-rewrite" for the changes to take effect  
+  #
+  # The following libraries are available:
+  #   technology    : umc65ll
+  #
+  #                   IC 5141 (CDB)      IC610 (OA)
+  #   designkit     :                    designkit_B07_PB
+  #                                      designkit_B10_PB
+  #                   designkit_B12_PB   designkit_B11_PB
+  #
+  #   packages      : package_miniasic         (64 QFN)  56 I/O,
+  #                                                      10 power pins,
+  #                                                      10 ground connected to groundplane
+  #                   package_miniasic-ep      (64 QFN)  52 I/O,
+  #                                                      12 power pins,
+  #                                                      12 ground connected to groundplane
+  #                   package_2_miniasic       (64 QFN)  52 I/O,
+  #                                                      12 power pins,
+  #                                                      24 ground connected to groundplane
+  #                   package_120pin           144 real pads bonded to a 120 pin package
+  #                   package_ninth_module     (40 QFN)  36 I/O,
+  #                                                       4 power pins,
+  #                                                       4 ground connected to groundplane
+  #                   package_ninth_module-ep  (40 QFN)  32 I/O,
+  #                                                       6 power pins,
+  #                                                       6 ground connected to groundplane
+  #                   package_2_ninth_module   (56 QFN)  48 I/O,
+  #                                                      10 power pins,
+  #                                                      10 ground connected to groundplane
+  #                   package_4_ninth_module   (64 QFN)  52 I/O,
+  #                                                      24 power pins,
+  #                                                      24 ground connected to groundplane
+  #
+  #   libraries     : Low VT (fast)        Regular VT           High VT (slow)
+  #                   uk65lscllmvbbl_a02   uk65lscllmvbbr_a02   uk65lscllmvbbh_a02
+  #                   uk65lscllmvbbl_b03   uk65lscllmvbbr_b03   uk65lscllmvbbh_b03
+  #   pad-libraries : u065gioll25mvir_a03 
+  #                   u065gioll25mvir_b04 
+  #   mem compiler  : fse0k_a_memaker_200901.1.2
+  #                   fse0k_a_memaker_201101.1.1
+  #                   fse0k_a_memaker_201101.1.2
+  #                   fse0k_a_memaker_201301.1.1
+
+  libs    = umc65ll designkit_B11_PB package_ninth_module \
+            uk65lscllmvbbl_b03 \
+            uk65lscllmvbbr_b03 \
+            uk65lscllmvbbh_b03 \
+            u065gioll25mvir_b04 \
+            fse0k_a_memaker_201301.1.1
+
+  # send an e-mail to <kgf@ee.ethz.ch> to ask for macros. Currently available
+  # macro datasheets are available under:
+  #   /usr/pack/umc-65-kgf/faraday/ll/memaker/201301.1.1/datasheet.dz
+  
+  macros  = 
+  
+[version]
+  # Setup files will be generated for these software versions. 
+  # - only versions that can be found in the "kit.ascii" database
+  #   can be used (see cockpit.log for the full unix path)
+  # - if you change a version you might need to adjust some
+  #   startups in the [command] section too... 
+  # - use "-update" or "-rewrite" for the changes to take effect  
+
+  # WARNING: The primary purpose is to keep version settings within each
+  # project. Fiddling around will most likely result in an unsupported
+  # combinations and perl errors. Better update this file as a whole
+  # with '-updaterc'. 
+
+  modelsim  =  modelsim-10.5a
+  synopsys  =  synopsys-2016.03
+  tetramax  =  tetramax-2016.03
+  encounter =  encounter-16
+  dfii      =  ic-610
+  calibre   =  calibre-2016.2
+
+[command]
+  # Startup commands available through the GUI buttons.
+  # - startup commands can be modified but need to be compatible with the
+  #   setup file versions selected in the [version] section 
+  # - to add more modelsim/synopsys startups to the GUI just put your own entries
+  #   of the form "(modelsim|synopsys):<label> = <command>" there 
+  # - changes will take effect the next time you start
+
+  emacs                        =  emacs -f vhdl-mode
+  modelsim:behavioural         =  vsim-10.5a
+  modelsim:gatelevel (adapt_me)=  vsim-10.5a -t 1ps -L uk65lscllmvbbr_vlog -L u065gioll25mvir_vlog  \
+                                             -sdftyp Inst_mut=../encounter/out/chip.sdf-fixed.gz +sdf_verbose \ 
+                                             -voptargs="+acc" tb_chip
+  synopsys:DC Shell       =  xterm -g 120x40 -T synopsys-2016.03 -e "sh -c 'synopsys-2016.03 dc_shell -64bit | tee view_command.log'"
+  synopsys:DesignVision   =  xterm -g 120x40 -T synopsys-2016.03 -e "sh -c 'synopsys-2016.03 design_vision -64bit | tee view_command.log'"
+  tetramax                     =  synopsys-2016.03 tmax
+  encounter                    =  xterm -g 136x40 -T innovus-16.10 -e "cds_innovus-16.10.000 innovus"
+  calibre                      =  xterm -g 120x40 -T calibredrv-2016.2 -e "./start_calibre 2016.2"
+  dfii                         =  ./start_dfii
+  dz:llama                     = llama
+

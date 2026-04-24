@@ -1,0 +1,39 @@
+---
+packages:
+  axi:
+    revision: 8e29e19d31582e7f10259fb429235b6fd563e166
+    version: ~
+    source:
+      Git: "https://github.com/AlSaqr-platform/axi.git"
+    dependencies:
+      - common_cells
+      - common_verification
+      - tech_cells_generic
+  common_cells:
+    revision: ad22699793d98ef714f120c6268fe92d096a61e1
+    version: 1.33.1
+    source:
+      Git: "https://github.com/pulp-platform/common_cells.git"
+    dependencies:
+      - common_verification
+      - tech_cells_generic
+  common_verification:
+    revision: 9c07fa860593b2caabd9b5681740c25fac04b878
+    version: 0.2.3
+    source:
+      Git: "https://github.com/pulp-platform/common_verification.git"
+    dependencies: []
+  ibex_pmu:
+    revision: 66f9e85247feffa7afa47ed2aca7eb73fab300d1
+    version: 1.0.0
+    source:
+      Git: "git@github.com:Arshaan-256/ibex.git"
+    dependencies:
+      - tech_cells_generic
+  tech_cells_generic:
+    revision: 7968dd6e6180df2c644636bc6d2908a49f2190cf
+    version: 0.2.13
+    source:
+      Git: "https://github.com/pulp-platform/tech_cells_generic.git"
+    dependencies:
+      - common_verification

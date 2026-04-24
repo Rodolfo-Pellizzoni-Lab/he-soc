@@ -1,0 +1,38 @@
+pulp_cluster:
+  vlog_opts: [
+    -L fpnew_lib,
+    -L hci_lib,
+    -L common_cells_lib,
+    -L axi_lib
+  ]
+  incdirs: [
+    ../../rtl/includes,
+    packages,
+    ../axi/axi/include,
+    ../axi/axi/include/axi,
+  ]
+  files: [
+    ../axi/axi/include/axi/typedef.svh,
+    packages/pulp_cluster_package.sv,
+    rtl/instr_width_converter.sv,
+    rtl/core_region.sv,
+    rtl/core_demux.sv,
+    rtl/periph_demux.sv,
+    rtl/cluster_interconnect_wrap.sv,
+    rtl/tcdm_banks_wrap.sv,
+    rtl/per_demux_wrap.sv,
+    rtl/periph_FIFO.sv,
+    rtl/xbar_pe_wrap.sv,
+    rtl/cluster_peripherals.sv,
+    rtl/cluster_clock_gate.sv,
+    rtl/cluster_timer_wrap.sv,
+    rtl/cluster_event_map.sv,
+    rtl/dmac_wrap.sv,
+    rtl/hwpe_subsystem.sv,
+    rtl/cluster_bus_wrap.sv,
+    rtl/axi2mem_wrap.sv,
+    rtl/axi2per_wrap.sv,
+    rtl/per2axi_wrap.sv,
+    rtl/pulp_cluster.sv,
+    ../pulp_soc/rtl/components/pulp_interfaces.sv,
+  ]

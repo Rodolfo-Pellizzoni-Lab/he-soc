@@ -1,0 +1,38 @@
+package:
+  name: pmu_v1.0
+  authors:
+    - Mohammed Sajjad Jafri
+
+dependencies:
+  axi: { git: "https://github.com/AlSaqr-platform/axi.git" , rev: "8e29e19d31582e7f10259fb429235b6fd563e166" }
+  common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.21.0 }
+  common_verification: { git: "https://github.com/pulp-platform/common_verification.git", version: 0.2.0 }
+  tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.9 }
+  ibex_pmu: { git: "git@github.com:alsaqr-platform/ibex.git", rev: "a6dfcb42c16aa2469ff8e2fdb70edb85c35a1328" } # branch: mc/alsaqr-dev
+
+sources:
+  # Source files grouped in levels. Files in level 0 have no dependencies on files in this
+  # package. Files in level 1 only depend on files in level 0, files in level 2 on files in
+  # levels 1 and 0, etc. Files within a level are ordered alphabetically.
+  # Level 0
+  - src/pmu_pkg.sv
+  - src/pmu_port.sv
+  - src/pmu_gnt_to_axi_lite.sv
+  - src/pmu_ispm.sv
+  - src/pmu_dspm.sv
+  - src/pmu_counter.sv
+  - src/pmu_core.sv
+  # Level 1
+  # Level 2
+  - src/pmu_port_wrap.sv
+  # Level 3
+  - src/pmu_top.sv
+
+
+#  - target: test
+#    include_dirs:
+#      - test
+#    files:
+#      # Level 0:
+#      - test/tb_axi_llc.sv
+

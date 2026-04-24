@@ -1,0 +1,25 @@
+# Copyright 2023 ETH Zurich and University of Bologna.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
+
+# Author: Nils Wistoff <nwistoff@iis.ee.ethz.ch>
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  CFLAGS: '-D_GLIBCXX_USE_CXX11_ABI=0'
+  CXXFLAGS: '-D_GLIBCXX_USE_CXX11_ABI=0'
+  PRFX: cva6
+  MCMP7: /home/nwistoff/.opam/centos/bin/mcompare7
+
+stages:
+  - test
+
+litmus:
+  stage: test
+  needs:
+  timeout: 20hrs
+  script:
+    - corev_apu/rv_plic/rtl/gen_plic_addrmap.py -t4 > corev_apu/rv_plic/rtl/plic_regmap.sv
+    - ${PRFX} ci/build-riscv-litmus-tests.sh
+    - ${PRFX} make -j12 run-litmus-tests-verilator defines=RVFI_PORT=1 target=cv64a6_dual
+    - ${PRFX} make check-litmus-tests

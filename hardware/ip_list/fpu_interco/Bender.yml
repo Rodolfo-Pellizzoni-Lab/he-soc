@@ -1,0 +1,38 @@
+package: 
+  name: fpu_interco
+  authors: 
+    - "Igor Loi <igor.loi@greenwaves-technologies.com>"
+    - "Stefan Mach <smach@iis.ee.ethz.ch>"
+    - "Florent Rotenberg <florent.rotenberg@greenwaves-technologies.com>"
+    - "Francesco Conti <f.conti@unibo.it>"
+
+dependencies:
+  fpnew: { git: "https://github.com/pulp-platform/cvfpu.git", rev: "pulp-v0.1.3" }
+  riscv: { git: "https://github.com/AlSaqr-platform/riscv_nn.git", rev: "9092e58e6c7d41e4dd19308576ef5fbcbc8c84c2"} # branch: shaheen
+
+sources:
+  # Source files grouped in levels. Files in level 0 have no dependencies on files in this
+  # package. Files in level 1 only depend on files in level 0, files in level 2 on files in
+  # levels 1 and 0, etc. Files within a level are ordered alphabetically.
+  # Level 0
+  - FP_WRAP/fp_iter_divsqrt_msv_wrapper_2_STAGE.sv
+  - FP_WRAP/fpnew_wrapper.sv
+  - RTL/AddressDecoder_Resp_FPU.sv
+  - RTL/FanInPrimitive_Req_FPU.sv
+  - RTL/FanInPrimitive_Resp_FPU.sv
+  - RTL/FPU_clock_gating.sv
+  - RTL/fpu_demux.sv
+  - RTL/LFSR_FPU.sv
+  - RTL/optimal_alloc.sv
+  - RTL/RR_Flag_Req_FPU.sv
+  # Level 1
+  - RTL/AddressDecoder_Req_FPU.sv
+  - RTL/ArbitrationTree_FPU.sv
+  - RTL/RequestBlock_FPU.sv
+  - RTL/ResponseTree_FPU.sv
+  # Level 2
+  - RTL/ResponseBlock_FPU.sv
+  # Level 3
+  - RTL/XBAR_FPU.sv
+  # Level 4
+  - RTL/shared_fpu_cluster.sv

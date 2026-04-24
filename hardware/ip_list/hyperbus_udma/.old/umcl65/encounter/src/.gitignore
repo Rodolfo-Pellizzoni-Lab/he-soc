@@ -1,0 +1,10 @@
+sample
+insert_specialpads
+specialpads-ll.v
+.ordinatorConf
+io2ps.pl
+io2ps.pads
+*.VSS.pp
+*.VDD.pp
+prepare_chip.pl
+*.20[0-9]*-[0-9]*-[0-9]*-[0-9]*:[0-9]*:[0-9]*

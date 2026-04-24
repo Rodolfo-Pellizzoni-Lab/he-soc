@@ -1,0 +1,439 @@
+image: registry.gitlab.com/canfd/server-tools/ghdl
+before_script:
+    - "export PATH=/opt/ghdl/bin:$PATH"
+    - export LC_ALL=C.UTF-8
+    - export LANG=C.UTF-8
+    - export PYTHONUNBUFFERED=1
+
+stages:
+    - precheck
+    #- test_driver
+    - build
+    - test_rtl
+    - test_gates
+    - coverage
+    - deploy
+
+check_component:
+    stage: precheck
+    script:
+        - scripts/gen_vivado_component.py
+        - cd scripts && ./update_reg_map
+        - git diff --exit-code || (echo "Vivado component file or register map products are not up-to-date. Either run scripts/gen_vivado_component.py and scripts/update_reg_map or download the files from this job's artifacts."; exit 1)
+    artifacts:
+        expire_in: 1 week
+        paths:
+            - src/component.xml
+            - doc/core/registerMap.lyx
+            - driver/ctucanfd_regs.h
+            - driver/ctucanfd_frame.h
+            - src/lib/can_fd_register_map.vhd
+
+###############################################################################
+# Build stage
+###############################################################################
+
+build_ip_and_tests:
+    stage: build
+    artifacts:
+        paths: &vunit_build_paths
+            - test/build
+        expire_in: 12 hrs
+    script:
+        - cd test
+        - make elaborate
+        # Do not include the huge binaries in artifacts.
+        - rm -R build/vunit_out/test_output
+    only: &only
+        - master     # Run on all changes to master branch
+        - tags       # Run on all tags
+        - triggers   # Run by trigger (on merge request)
+        - web        # Run by manual request from web UI
+
+build_driver:
+    stage: build
+    only: *only
+    script:
+        - cd driver
+        - "make -j`nproc`"
+
+build_doc:
+    stage: build
+    only: *only
+    image: registry.gitlab.com/canfd/server-tools/lyx
+    script:
+        - export LC_ALL=en_US.UTF-8
+        - export LANG=en_US.UTF-8
+        - make -C doc/core
+        - make -C doc/driver
+    artifacts:
+        paths:
+            - doc/core/Progdokum.pdf
+            - doc/core/ctu_can_fd_architecture.pdf
+            - doc/core/tb_architecture.pdf
+            - doc/driver/build
+
+build_linux_driver:
+    stage: build
+    only: *only
+    image: registry.gitlab.com/canfd/server-tools/ctucanfd_drvtest
+    script:
+        - cd driver/linux
+        - "make -j`nproc` KDIR=/linux/build CROSS_COMPILE=arm-linux-gnueabihf- ARCH=arm"
+        - "make checkpatch KDIR=/linux/build CROSS_COMPILE=arm-linux-gnueabihf- ARCH=arm"
+    artifacts:
+        paths:
+            - driver/linux/ctucanfd.ko
+
+export_available_tests:
+    stage: build
+    only:
+        - master
+    script:
+        - cd scripts
+        - python3 export_test_names.py
+    artifacts:
+        paths:
+            - test/test_list.txt
+
+run_synthesis:
+    stage: build
+    only: *only
+    tags:
+        - vps
+    script:
+        - source /opt/xilinx/vivado-2018.2/settings.sh
+        - cd synthesis/Vivado/ci_benchmark
+        - vivado -mode tcl -source vivado_bechmark_script.tcl
+        # Remove reference to UNISIM library, all cell models are included in netlist!
+        - sed -i 's\library UNISIM;\\g' typical_design_config/can_top_level.vhd
+    artifacts:
+        paths:
+            - synthesis/Vivado/ci_benchmark/*_design_config
+        expire_in: 12 hrs
+
+
+###############################################################################
+# Run emulator tests (on ZynQ MZ_APO board)
+###############################################################################
+
+# Disable for now. Multi-project pipelines are available only in Premium Gitlab
+# Edition!
+
+#run_emulator_tests:
+#    stage: test_driver
+#    only:
+#        - master
+#
+    # Trigger pipeline in MZ_APO Zynq top repo. This will:
+    #   1. Update sub-modules (CTU CAN FDs latest master is taken in Zynq build).
+    #   2. Build Vivado design with CTU CAN FD, SJA1000, Zlogan etc...
+    #   3. Build CTU CAN FD driver (from latest CTU CAN FD master)
+    #   3. Run test on MZ_APO board which:
+    #       1. Loads driver
+    #       2. Sends frames over SocketCAN between CTU CAN FD and SJA100 in various
+    #          combinations. This is sort-of driver sanity check, not its full
+    #          verification!
+    #trigger:
+    #    project: canbus/zynq/zynq-can-sja1000-top
+    #    strategy: depend
+
+
+###############################################################################
+# Test RTL stage (fast + nightly)
+###############################################################################
+test_fast_asic:
+    stage: test_rtl
+    only: *only
+    dependencies: [build_ip_and_tests]
+    script:
+        - cd test
+        - make tests_fast_asic
+    after_script:
+        - cd test
+        - make tests_fast_asic_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_fast_asic.sim_time
+            - test/tests_fast_asic.gz
+            - test/tests_fast_asic_summary
+
+test_fast_fpga:
+    stage: test_rtl
+    only: *only
+    dependencies: [build_ip_and_tests]
+    script:
+        - cd test
+        - make tests_fast_fpga
+    after_script:
+        - cd test
+        - make tests_fast_fpga_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_fast_fpga.sim_time
+            - test/tests_fast_fpga.gz
+            - test/tests_fast_fpga_summary
+
+test_nightly:
+    stage: test_rtl
+    dependencies: [build_ip_and_tests]
+    only:
+        - master
+    script:
+        - cd test
+        - make tests_nightly
+    after_script:
+        - cd test
+        - make tests_nightly_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_nightly.sim_time
+            - test/tests_nightly.gz
+            - test/tests_nightly_summary
+            - test/build/code_coverage_tests_nightly
+            - test/build/functional_coverage
+            - test/build/vunit_out/preprocessed
+            - test/rtl_lst.txt
+            - test/tb_lst.txt
+
+    # Nightly tests might fail due to randomization. It is not preffered to
+    # kill whole follow-up coverage processing due to this failure!
+    # OTOH, fast pipeline can't fail because it must pass before merge!
+    allow_failure: true
+
+
+###############################################################################
+# Test RTL stage (Compliance test runs)
+###############################################################################
+test_compliance_short:
+    stage: test_rtl
+    dependencies: [build_ip_and_tests]
+    only: *only
+    script:
+        - cd test
+        - make tests_compliance_short
+    after_script:
+        - cd test
+        - make tests_compliance_short_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_compliance_short.sim_time
+            - test/tests_compliance_short.gz
+            - test/tests_compliance_short_summary
+
+    # For now not all compliance tests are debugged, allow failure...
+    allow_failure: true
+    
+test_compliance_full_typ:
+    stage: test_rtl
+    dependencies: [build_ip_and_tests]
+    only:
+        - master
+    script:
+        - cd test
+        - make tests_compliance_full_typ
+    after_script:
+        - cd test
+        - make tests_compliance_full_typ_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_compliance_full_typ.sim_time
+            - test/tests_compliance_full_typ.gz
+            - test/tests_compliance_full_typ_summary
+            - test/build/code_coverage_tests_compliance_full_typ
+            - test/build/functional_coverage
+            - test/build/vunit_out/preprocessed
+
+    # For now not all compliance tests are debugged, allow failure...
+    allow_failure: true
+
+test_compliance_full_max:
+    stage: test_rtl
+    dependencies: [build_ip_and_tests]
+    only:
+        - master
+    script:
+        - cd test
+        - make tests_compliance_full_max
+    after_script:
+        - cd test
+        - make tests_compliance_full_max_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_compliance_full_max.sim_time
+            - test/tests_compliance_full_max.gz
+            - test/tests_compliance_full_max_summary
+
+    # For now not all compliance tests are debugged, allow failure...
+    allow_failure: true
+
+
+# TODO: Add min run if we find reasonable compromise for run time
+
+
+###############################################################################
+# Test gates (Gate level simulation on post synthesis netlist)
+###############################################################################
+test_gates_simple:
+    stage: test_gates
+    dependencies: [build_ip_and_tests, run_synthesis]
+    only:
+        - master
+    script:
+        - cd test
+        - make tests_gates_simple
+    after_script:
+        - cd test
+        - make tests_gates_simple_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_gates_simple.sim_time
+            - test/tests_gates_simple.gz
+            - test/tests_gates_simple_summary
+
+    # Some gates might fail, TODO: Debug
+    allow_failure: true
+
+test_gates_compliance:
+    stage: test_gates
+    dependencies: [build_ip_and_tests, run_synthesis]
+    only:
+        - master
+    script:
+        - cd test
+        - make tests_gates_compliance
+    after_script:
+        - cd test
+        - make tests_gates_compliance_logs
+    artifacts:
+        when: always
+        paths:
+            - test/tests_gates_compliance.sim_time
+            - test/tests_gates_compliance.gz
+            - test/tests_gates_compliance_summary
+
+    # Still some compliance tests are not yet fully debugged!
+    allow_failure: true
+
+
+
+###############################################################################
+# Results processing
+###############################################################################
+
+process_coverage:
+    stage: coverage
+    dependencies: [build_ip_and_tests, test_compliance_full_typ, test_nightly]
+    only:
+        - master
+    script:
+        # Merge code coverage outputs from nightly and compliance stages, process code coverage
+        - cd test/build
+
+        # Coverage collection temporarily disabled, gcov-tool merge NOT WORKING!
+        #
+        #- gcov-tool merge -o code_coverage_merged code_coverage_tests_nightly code_coverage_tests_compliance_full_typ
+        #- mv code_coverage_tests_nightly/*.gcno code_coverage_merged
+        - cd ..
+
+        #- make coverage_merged
+        - make functional_coverage
+
+        - cd ../scripts
+        - chmod +x gen_vrm
+        - ./gen_vrm
+
+    coverage: "/lines......: ([^%]+%)/"
+    artifacts:
+        when: always
+        paths:
+            - test/code_html
+            - test/build/functional_coverage
+            - scripts/VRM.html
+
+pages:
+    stage: deploy
+    when: always
+    script:
+        - echo "Creating delivery package..."
+
+        # Create directory structure for release
+        - mkdir -p public
+        - mkdir -p public/rtl
+        - mkdir -p public/tb
+        - mkdir -p public/doc
+        - mkdir -p public/doc/linux_driver
+        - mkdir -p public/regression_results
+        - mkdir -p public/synthesis
+        - mkdir -p public/vivado_component
+
+        # Copy RTL
+        - cp src/*.vhd public/rtl/
+        - cp src/**/*.vhd public/rtl/
+        - cp src/**/**/*.vhd public/rtl/
+        - cp test/rtl_lst.txt public/
+
+        # Copy TB
+        - cp test/main_tb/*.vhd public/tb/
+        - cp test/main_tb/**/*.vhd public/tb/
+        - cp test/main_tb/**/**/*.vhd public/tb/
+        - cp test/tb_lst.txt public/
+
+        # Copy test list
+        - cp test/test_list.txt public/
+
+        # Compliance test library
+        - cp test/main_tb/compliance_library/libSIMULATOR_INTERFACE_LIB.so public/
+
+        # Copy regression results and code coverage
+        - cp test/tests_*.gz public/regression_results/
+        - cp test/*_summary public/regression_results/
+        - tar -czvf public/regression_results/regression_summary.gz public/regression_results/*_summary
+        
+        # Coverage collection temporarily disabled!
+        #- mv test/code_html public/regression_results/coverage || true
+        
+        # Measure total simulation time
+        - cat test/*.sim_time | paste -sd+ | bc > total.sim_time
+        - echo "Total simulation time is `cat total.sim_time` fs."
+
+        # Copy documentation
+        - mv doc/core/Progdokum.pdf public/doc/Datasheet.pdf || true
+        - cp doc/core/ctu_can_fd_architecture.pdf public/doc/System_Architecture.pdf || true
+        - cp doc/core/tb_architecture.pdf public/doc/Testbench.pdf || true
+        - cp -R doc/driver/build public/doc/linux_driver || true
+
+        # Copy functional coverage HTML reports
+        - mkdir public/regression_results/functional_coverage
+        - cp test/build/functional_coverage/*.html public/regression_results/functional_coverage || true
+        - cp -R test/build/functional_coverage/html public/regression_results/functional_coverage || true
+
+        # Copy synthesis results + constraints
+        - cp -R synthesis/Vivado/ci_benchmark/*_design_config public/synthesis
+        - cp synthesis/Constraints/ctu_can_fd.sdc public/synthesis
+
+        # Copy Vivado component
+        - cp src/component.xml public/vivado_component
+
+        # VRM result
+        - cp scripts/VRM.html public/regression_results/ || true
+
+        # Check size, compress, check again
+        - echo "Size of artifacts:"
+        - du -skh public/*
+        
+    only:
+        - master
+    artifacts:
+        paths:
+            - public
+
+variables:
+    GIT_SUBMODULE_STRATEGY: recursive

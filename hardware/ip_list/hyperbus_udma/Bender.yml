@@ -1,0 +1,68 @@
+package:
+  name: hyperbus_udma
+  authors:
+    - "Armin Berger <bergerar@ethz.ch>"
+    - "Stephan Keck <kecks@ethz.ch>"
+    - "Thomas Benz <tbenz@iis.ee.ethz.ch>"
+    - "Paul Scheffler <paulsc@iis.ee.ethz.ch>"
+    - "Luca Valente <luca.valente@unibo.it>"
+
+dependencies:
+  common_cells:        { git: "https://github.com/pulp-platform/common_cells.git", version: 1.30.0 }
+  axi:                 { git: "https://github.com/pulp-platform/axi.git", version: 0.39.1-beta }
+  udma_core:           { git: "https://github.com/Alsaqr-platform/udma_core.git", version: 2.0.0 }
+  tech_cells_generic:  { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.11  }
+  register_interface:  { git: "git@github.com:AlSaqr-platform/register_interface.git",   version:  0.3.2 }
+  common_pads:         { git: "git@github.com:AlSaqr-platform/common_pads.git", version: 0.0.4 }
+  hyperbus:            { git: "https://github.com/pulp-platform/hyperbus.git", rev: 232e127430c55b7f2c33e6241e4fe1c464053535 }
+
+sources:
+  files:
+    - target: all(synthesis)
+      files:
+        - src/hyperbus_synth_wrap.sv
+    - target: all(synthesis,tsmc65)
+      files:
+        - tsmc65/sourcecode/tc_clk.sv
+    - target: all(fpga,xilinx)
+      defines:
+        FPGA_EMUL: ~
+      files:
+        - models/generic_delay_D4_O1_3P750_CG0.fpga.sv
+    - target: test
+      files:
+        - models/generic_delay_D4_O1_3P750_CG0.behav.sv
+    - target: all(asic,gf22)
+      defines:
+        GF22_DELAY_LINES: ~
+      files:
+        - models/techcells/tc_clk_gf22.sv
+    - src/udma_hyper/udma_hyper_busy.sv
+    - src/udma_hyper/udma_cmd_queue.sv
+    - src/udma_hyper/udma_hyper_reg_if_common.sv
+    - src/udma_hyper/udma_hyper_reg_if_mulid.sv
+    - src/udma_hyper/hyper_twd_trans_spliter.sv
+    - src/udma_hyper/udma_rxbuffer.sv
+    - src/udma_hyper/udma_txbuffer.sv
+    - src/udma_hyper/udma_hyper_ctrl.sv
+    - src/udma_hyper/hyper_unpack.sv
+    - src/udma_hyper/udma_cfg_outbuff.sv
+    - src/udma_hyper/udma_hyper_busy_phy.sv
+    - src/udma_hyper/udma_hyper.sv
+    - src/hyper_pad_reg_pkg.sv
+    - src/hyper_pad_reg_top.sv
+    - src/hyperbus_arbiter.sv
+    - src/hyperbus_async_macro.sv
+    - src/hyperbus_udma.sv
+
+    - target: post_synth_sim
+      files:
+        - gf22/innovus/trial3/out/hyperbus_synth_wrap.v
+
+    - target: test_tb
+      files:
+        # Device models. TODO: extend
+        - models/s27ks0641/s27ks0641.v
+        # Testbench
+        - test/fixture_hyperbus_udma.sv
+        - test/hyperbus_udma_tb.sv

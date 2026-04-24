@@ -1,0 +1,3 @@
+[submodule "pyXact_generator"]
+	path = scripts/pyXact_generator
+	url = https://github.com/Blebowski/Reg_Map_Gen

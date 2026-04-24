@@ -1,0 +1,63 @@
+packages:
+  axi:
+    revision: fccffb5953ec8564218ba05e20adbedec845e014
+    version: 0.39.1
+    source:
+      Git: https://github.com/pulp-platform/axi.git
+    dependencies:
+    - common_cells
+    - common_verification
+    - tech_cells_generic
+  common_cells:
+    revision: 53b0b58af2db5bd3c850a7038fae170ed78326bb
+    version: 1.31.1
+    source:
+      Git: https://github.com/pulp-platform/common_cells.git
+    dependencies:
+    - common_verification
+    - tech_cells_generic
+  common_pads:
+    revision: 4ce2907ab2313e67836e251f6deea67d885aef5f
+    version: 0.0.4
+    source:
+      Git: git@github.com:AlSaqr-platform/common_pads.git
+    dependencies: []
+  common_verification:
+    revision: 9c07fa860593b2caabd9b5681740c25fac04b878
+    version: 0.2.3
+    source:
+      Git: https://github.com/pulp-platform/common_verification.git
+    dependencies: []
+  hyperbus:
+    revision: f263dd96394ffe46cfa81cbd474e0f187cada56a
+    version: 0.0.3
+    source:
+      Git: https://github.com/pulp-platform/hyperbus.git
+    dependencies:
+    - axi
+    - common_cells
+    - register_interface
+    - tech_cells_generic
+  register_interface:
+    revision: e4666935f3288db371a250fc6ef7641ad0af62ab
+    version: 0.3.2
+    source:
+      Git: git@github.com:AlSaqr-platform/register_interface.git
+    dependencies:
+    - axi
+    - common_cells
+  tech_cells_generic:
+    revision: 298b7297d220ba2601d0f24f684f97ff32f61123
+    version: 0.2.12
+    source:
+      Git: https://github.com/pulp-platform/tech_cells_generic.git
+    dependencies:
+    - common_verification
+  udma_core:
+    revision: 5e8781bfad6e7c43f6aa4e0ee79f6fac5cc45337
+    version: 2.0.0
+    source:
+      Git: https://github.com/Alsaqr-platform/udma_core.git
+    dependencies:
+    - common_cells
+    - tech_cells_generic

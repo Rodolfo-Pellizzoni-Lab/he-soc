@@ -1,0 +1,7 @@
+*.log
+*.jou
+*.cache
+hyperbus\.hw
+hyperbus\.runs
+hyperbus\.sim
+hyperbus\.ip_user_files

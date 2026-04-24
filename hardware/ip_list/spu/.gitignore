@@ -1,0 +1,12 @@
+.bender
+scripts/*.wlf
+scripts/*.log
+scripts/*.jou
+scripts/axi_log
+scripts/spu_log
+*.log
+*.jou
+scripts/work
+scripts/compile.tcl
+scripts/transcript
+transcript

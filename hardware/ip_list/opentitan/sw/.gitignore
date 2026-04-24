@@ -1,0 +1,7 @@
+*.a
+*.bin
+*.d
+*.map
+*.o
+*_regs.h
+*.map

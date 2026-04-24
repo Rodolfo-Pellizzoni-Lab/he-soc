@@ -1,0 +1,30 @@
+# Copyright 2023 ETH Zurich and University of Bologna.
+# Solderpad Hardware License, Version 0.51, see LICENSE for details.
+# SPDX-License-Identifier: SHL-0.51
+
+# Authors:
+# - Thomas Benz <tbenz@iis.ee.ethz.ch>
+
+stages:
+  - init
+  - idma
+
+init:
+  stage: init
+  script:
+    - make idma_nonfree_init
+    - make idma_nonfree_ci
+  artifacts:
+      paths:
+        - nonfree/ci/ci.yml
+
+idma:
+  stage: idma
+  needs: [ init ]
+  except:
+    - /^__deploy__.*$/
+  trigger:
+    include:
+      - artifact: nonfree/ci/ci.yml
+        job: init
+    strategy: depend

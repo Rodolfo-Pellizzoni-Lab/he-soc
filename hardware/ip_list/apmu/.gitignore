@@ -1,0 +1,7 @@
+.bender
+scripts/compile.tcl
+scripts/synth_apmu
+scripts/*.log
+scripts/*.jou
+scripts/work
+scripts/transcript

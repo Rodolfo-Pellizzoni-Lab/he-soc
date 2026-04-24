@@ -1,0 +1,41 @@
+package:
+  name: spu
+  authors:
+    - Mohammed Sajjad Jafri
+
+dependencies:
+  axi: { git: "https://github.com/pulp-platform/axi.git", version: 0.39.0-beta.2 }
+  ace: { git: "https://github.com/planvtech/ace.git", rev: "fc2056f9f560ec55192c6b09ef682c822fad90fe" } # branch: pulp
+  common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.21.0 }
+  common_verification: { git: "https://github.com/pulp-platform/common_verification.git", version: 0.2.0 }
+  tech_cells_generic: { git: "https://github.com/pulp-platform/tech_cells_generic.git", version: 0.2.9 }
+  apmu: { git: "git@github.com:Arshaan-256/pmu_v1.0.git", version: "1.5.2" }
+
+export_include_dirs:
+  - include
+
+sources:
+  # Source files grouped in levels. Files in level 0 have no dependencies on files in this
+  # package. Files in level 1 only depend on files in level 0, files in level 2 on files in
+  # levels 1 and 0, etc. Files within a level are ordered alphabetically.
+  # Level 0
+  - src/spu_pkg.sv
+  - src/spu_arbiter.sv
+  # Level 1
+  - src/spu_ax_chan.sv
+  - src/spu_r_chan.sv
+  - src/spu_w_chan.sv
+  # Level 2
+  # Level 3
+  - src/axi_spu_top.sv
+  - src/ace_spu_top.sv
+
+  - target: test
+    include_dirs:
+      - test
+    files:
+      # Level 0:
+      - test/tb_spu.sv
+      - test/spu_test.sv
+
+

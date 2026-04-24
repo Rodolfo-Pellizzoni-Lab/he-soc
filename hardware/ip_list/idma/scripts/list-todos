@@ -1,0 +1,35 @@
+#!/bin/bash
+# Copyright 2023 ETH Zurich and University of Bologna.
+# Solderpad Hardware License, Version 0.51, see LICENSE for details.
+# SPDX-License-Identifier: SHL-0.51
+
+# Authors:
+# - Thomas Benz <tbenz@iis.ee.ethz.ch>
+
+set -e
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+EXCLUDED=" \
+    encoding.h \
+    list-todos.py \
+    doc/source/conf.py \
+    Makefile \
+"
+
+python3 util/list-todos.py " \
+    .c \
+    .h \
+    .py \
+    .sv \
+    .yml \
+    .tpl \
+    .verible \
+    .rst \
+    Makefile \
+    .sh \
+    .gitignore \
+    .S \
+    .svh \
+    .json \
+    .hjson \
+" "$EXCLUDED"

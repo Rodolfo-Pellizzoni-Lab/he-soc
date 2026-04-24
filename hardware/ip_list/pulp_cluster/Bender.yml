@@ -1,0 +1,92 @@
+# Copyright 2023 ETH Zurich and University of Bologna
+# Solderpad Hardware License, Version 0.51, see LICENSE for details.
+# SPDX-License-Identifier: SHL-0.51
+
+package:
+  name: pulp_cluster
+  authors:
+    - "Pirmin Vogel <vogelpi@lowrisc.org>"
+    - "Angelo Garofalo <angelo.garofalo@unibo.it>"
+    - "Francesco Conti <f.conti@unibo.it>"
+    - "Jie Chen <jie.chen@greenwaves-technologies.com>"
+    - "Michael Rogenmoser <michaero@student.ethz.ch>"
+
+dependencies:
+  axi2tcdm:               { git: "https://github.com/AlSaqr-platform/axi2mem.git", rev: "0311ca4a6c7b9454b2eee7399f98538ebfd464d6" } # branch: master
+  axi2per:                { git: "https://github.com/pulp-platform/axi2per.git", rev: "a99ef2fac9f3b087671109a27c766f25e8e0f115" } # v 1.0.1
+  per2axi:                { git: "https://github.com/pulp-platform/per2axi.git", rev: 892fcad60b6374fe558cbde76f4a529d473ba5ca } # v 1.0.4
+  cluster_interconnect:   { git: "https://github.com/pulp-platform/cluster_interconnect.git", rev: "7d0a4f8acae71a583a6713cab5554e60b9bb8d27" } #v 1.2.1
+  event_unit_flex:        { git: "https://github.com/pulp-platform/event_unit_flex.git", rev: "53fb3a1093aaaedfe883739fd8a3155d601210bc" }
+  mchan:                  { git: "https://github.com/pulp-platform/mchan.git", rev: "a9c71f2d9845a4ca05cf2c6ad089b4753f76fc2e" } # v 1.2.3
+  hier-icache:            { git: "https://github.com/alsaqr-platform/hier-icache.git", rev: "7daa3f6b2d7c3578813c0c49aad24467df9c81c7" } # branch: alsaqr-2
+  icache_mp_128_pf:       { git: "https://github.com/pulp-platform/icache_mp_128_pf.git", rev: "6f2e54102001230db9c82432bf9e011842419a48" }
+  icache_private:         { git: "https://github.com/AlSaqr-platform/icache_private.git", rev: "84436443d3a2dbad0b94a85c2c5cc8915632fd26" }
+  cluster_peripherals:    { git: "https://github.com/pulp-platform/cluster_peripherals.git", rev: "d388a790d9e1129e3ec57b2e0075ee21e454c3b1" } # v 2.1.0
+  fpu_interco:            { git: "https://github.com/AlSaqr-platform/fpu_interco.git", rev: "555c345a2f982b456b4b091c315ef7d115f41208" } # branch: alsaqr-2.0
+  axi:                    { git: "https://github.com/pulp-platform/axi.git", rev: "39f5f2d51c5e524f6fc5cf8b6e901f7dcc5622d7" } # v 0.39.6
+  timer_unit:             { git: "https://github.com/pulp-platform/timer_unit.git", rev: "4c69615c89db9397a9747d6f6d6a36727854f0bc" } # v 1.0.3
+  common_cells:           { git: "https://github.com/pulp-platform/common_cells.git", rev: "c27bce39ebb2e6bae52f60960814a2afca7bd4cb" } # v 1.37.0
+  tech_cells_generic:     { git: "https://github.com/pulp-platform/tech_cells_generic.git", rev: "7968dd6e6180df2c644636bc6d2908a49f2190cf" } # v 0.2.13
+  riscv:                  { git: "https://github.com/AlSaqr-platform/riscv_nn.git", rev: "4f35da2270e97e24723bdfa51cf2665cee05c2bd"} # branch: alsaqr-2.0
+  scm:                    { git: "https://github.com/pulp-platform/scm.git", rev: "998466d2a3c2d7d572e43d2666d93c4f767d8d60"} # v 1.1.1
+  hwpe-datamover-example: { git: "https://github.com/pulp-platform/hwpe-datamover-example.git", rev: "47e7fe8a38331b123d763ecab11be4058d425021" } # v 1.0.1
+  hci:                    { git: "https://github.com/pulp-platform/hci.git", rev: "b2e6f391aa6c10c03f45b693d80a0aaddecf169b" }
+  redmule:                { git: "https://github.com/pulp-platform/redmule.git", rev: "402615da8ae98242fb48147a7a08d2502fd42e43" }
+
+sources:
+    # Source files grouped in levels. Files in level 0 have no dependencies on files in this
+    # package. Files in level 1 only depend on files in level 0, files in level 2 on files in
+    # levels 1 and 0, etc. Files within a level are ordered alphabetically.
+    # Level 0
+  - packages/pulp_cluster_package.sv
+  - rtl/axi2mem_wrap.sv
+  - rtl/axi2per_wrap.sv
+  - rtl/cluster_bus_wrap.sv
+  - rtl/cluster_clock_gate.sv
+  - rtl/cluster_event_map.sv
+  - rtl/xbar_pe_wrap.sv
+  - rtl/cluster_interconnect_wrap.sv
+  - rtl/cluster_timer_wrap.sv
+  - rtl/dmac_wrap.sv
+  - rtl/hwpe_subsystem.sv
+  - rtl/instr_width_converter.sv
+  - rtl/per2axi_wrap.sv
+  - rtl/per_demux_wrap.sv
+  - rtl/periph_FIFO.sv
+  - rtl/tcdm_banks_wrap.sv
+  - rtl/periph_demux.sv
+    # Level 1
+  - rtl/cluster_peripherals.sv
+  - rtl/core_demux.sv
+    # Level 2
+  - target: test
+    defines:
+      TRACE_EXECUTION: ~
+    files:
+      - rtl/core_region.sv
+  - target: not(test)
+    files:
+      - rtl/core_region.sv
+    # Level 3
+  - rtl/pulp_cluster.sv
+  
+  - target: tb_cluster_standalone
+    files:
+      - tb/mock_uart.sv
+      - tb/axi2apb_64_32.sv
+      - tb/mock_uart_axi.sv
+      - tb/pulp_cluster_tb.sv
+
+  - target: cluster_standalone
+    files:
+      - include/pulp_interfaces.sv
+
+  - target: macro_cluster_standalone
+    defines:
+      TARGET_ASIC: ~
+    files:
+      - gf22/macro_wrap/r2pv_wrap_gf22.sv
+      - gf22/macro_wrap/memwrap_gf22.sv
+      - gf22/macro_wrap/tc_sram_gf22.sv
+      - gf22/macro_wrap/tc_clk_gf22.sv
+      - gf22/macro_wrap/configurable_delay_gf22.sv

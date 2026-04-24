@@ -1,0 +1,297 @@
+#!/usr/sepp/bin/perl -w
+
+# v0.2 - <kgf@ee.ethz.ch> - Tue Nov  3 10:45:40 CET 2009
+# - removed the " from the names
+# v0.1 - braendli 2/april/04
+
+use strict;
+use POSIX qw( floor );
+#use Data::Dumper;
+my ($me) = ($0 =~ m|([^/]*)$|i);
+
+my $time_init = 90;         # initial timestamp
+my $max_vect = 1000000;     # max vectors per file
+my $version = 'v1.0b';
+my %sig;
+my @sig;
+my $period;
+my $unit;
+my $vector;
+my $format_data;
+my $format_comment;
+my $numvect = 0;
+my $out;
+my $outfile_no = 1;
+my $have_bidir = 0;
+my $header;
+my @pretty;
+
+usage() unless (scalar @ARGV == 2 or scalar @ARGV == 3);
+
+print STDERR "\n";
+print STDERR " -- max. vectors per file is set to '$max_vect'\n";
+print STDERR " -- first timestamp is set to '$time_init'\n";
+
+my ($infile, $outfile, $pinfile) = @ARGV;
+if ($infile=~/\.gz$/i) {
+    open (IN,"gzcat $infile |") or die "\n  *** error: could not open file '$infile': $!\n\n";
+}else {
+    open (IN,"$infile") or die "\n  *** error: could not open file '$infile': $!\n\n";
+}
+print STDERR " -- reading from file '$infile'\n";
+
+my $time = $time_init;
+
+while (<IN>) {
+
+   chomp;
+   my $in_signal  = /^\s*signal\s*$/i .. /^\s*end\s*$/i;
+   my $in_pattern = /^\s*pattern\s+/i .. /^\s*end\s*$/i;
+
+   if ($in_signal && $in_signal > 1 && $in_signal !~ /E0$/) { #in signal section, parse all signals 
+       if (/^\s*([^\s:]+)\s*:\s*(input|bidir|output)\s*;/i) {
+           my $name = $1;
+           my $dir  = $2;
+           $name =~ s/"//g;
+           $have_bidir = 1 if $dir eq "bidir";
+           if ($name =~ /^(.*)\[(\d+)\]$/) { #bus
+	       $name = $1;
+               push @sig, $name unless exists $sig{$name};
+               push @{$sig{$name}{'index'}}, $2;
+	   }else { #scalar
+	       push @sig, $name;
+	   }
+	   $sig{$name}{'width'}++;
+           $sig{$name}{'dir'} = $dir;
+       }else {
+	   print STDERR "\n *** error: unexpected signal data in file '$infile' on line $. : $_\n";
+       }
+       next;
+   }
+
+   if ($in_signal && $in_signal =~ /E0$/) { #end of signal section, write pin declarations
+       $header .= "\n";
+       $header .= "#\n";
+       $header .= "# pin declarations\n";
+       $header .= "#\n\n";
+
+       if (! $pinfile) { #extra file to swap in for pindecl?
+
+          foreach my $name (@sig) { #create pindecl based on parsed signals (wgl)
+	      my $busext = '';
+              my $maxlen = length($name);
+	      if (exists $sig{$name}{'index'}) { #bus
+ 	          my @index = @{$sig{$name}{'index'}};
+                  $maxlen += (sort {$b <=> $a} map {length($_)} @index)[0]; 
+                  my $range;
+                  if (scalar @index > 1){
+                      my @diff = map {$index[$_+1]-$index[$_]} (0..$#index-1);
+                      my @diff2 = map {$diff[$_+1]-$diff[$_]} (0..$#diff-1);
+                      my @masked = map {($diff2[$_]==0 && abs($diff[$_])==1) ? '' : $index[$_+1]} (0..$#diff2);
+                      $range = join(',',$index[0],@masked,$index[-1]);
+                      $range =~ s/,{2,}/:/g;
+                  }else{
+                      $range = $index[0];
+                  }
+                  $busext = '(' . $range . ')';
+	      }
+              $sig{$name}{'maxlen'} = $maxlen;
+              $sig{$name}{'pindecl'} = uc(substr($sig{$name}{'dir'},0,3)) . " $name$busext ;";
+          }
+          #-------------------------------------------------------------
+          my $max = (sort {$b <=> $a} map {$sig{$_}{'maxlen'}} @sig)[0];
+          if ($max <= 16) { #ok, no shortening required 
+             foreach my $name (@sig) {
+                $header .= $sig{$name}{'pindecl'} . "\n";
+             } 
+          } else { #too long for hp tester, write them to file and exit
+            pin_too_long();
+          }
+          #-------------------------------------------------------------
+
+       } else { #get user pindecl
+
+          open (PIN,"$pinfile") or die "\n  *** error: could not open file '$pinfile': $!\n\n";
+          print STDERR " -- reading pin declarations from file '$pinfile'\n";
+          while(<PIN>){
+             chomp;
+             next if /^\s*#/;
+             next if /^\s*$/;
+
+             if (/^\s*(INP|OUT|BID)\s+([^\s;]+)\s*(;)/i) {
+                $header .= join(' ',$1,$2,$3) . "\n";
+             }else {
+                print STDERR "\n *** error: unexpected data in file '$pinfile' on line $. : $_\n";
+             }
+          }
+          close(PIN); 
+
+       }
+
+       my $format = join(' ', map {'%s' x $sig{$_}{'width'}} @sig);
+       $format_data    = '%10s  '  . $format . ' %s';
+       $format_comment = '%-10s  ' . $format . ' %s';
+
+       $max_vect = floor($max_vect/2) if $have_bidir;
+       print STDERR " -- setting max. vectors per file to '$max_vect' due to bidirectionals\n" if $have_bidir;
+       next;
+   }
+
+
+   if (/^\s*timeplate\s+\S+\s+period\s+([\d.]+)\s*(.s)\s*$/i) { #get period and time unit
+       $period = $1;
+       my $period_fake = $have_bidir ? $period/2 : $period ;
+       $unit = $2;
+       $header .= "\n";
+       $header .= "#\n";
+       $header .= "# vector data\n";
+       $header .= "#\n\n";
+       $header .= "TIME_UNIT\n";
+       $header .= "  1" . lc($unit) . " ;\n\n";
+       $header .= "PERIOD\n";
+       $header .= "  ". $period_fake . lc($unit) . " ;\n\n";
+       next;
+   }
+
+   if ($in_pattern && $in_pattern == 1) { #start of pattern section, do pretty print and format
+       foreach my $name (@sig) {
+	   if (exists $sig{$name}{'index'}) { #bus
+	       push @pretty, map { $name . '(' . $_ . ')'} @{$sig{$name}{'index'}}
+	   }else{
+	       push @pretty, $name;
+	   }
+       }
+       my $maxlen = (sort {$b <=> $a} map {length($_)} @pretty)[0];
+       map {$_ .= '.' x ($maxlen-length($_))} @pretty;
+       for (my $offset = 0; $offset < $maxlen; $offset++) {
+	   $header .= sprintf $format_comment, '#', (map { substr($_,$offset,1) } @pretty), "\n";
+       }
+       $header .= "\n";
+       $header .= "TABLE_FORMAT\n";
+       my $totalbit = 0;
+       map {$totalbit += $sig{$_}{'width'}} @sig;
+       $header .= sprintf $format_data, 'D', split(//,'c' x $totalbit), ";\n";
+       $header .= "\n";
+       $header .= "DATA_SECTION\n";
+
+       open(OUT, ">$outfile") or die "\n  *** error: could not open file '$outfile' for writing: $!\n\n";
+       print STDERR " -- writing to file '$outfile'\n";
+
+       my $bidir_info = $have_bidir ? '(bidir present)' : '(no bidir present)'; 
+       my $tmp = "#\n";
+       $tmp .= "# file generated by wgl2hp $version\n";
+       $tmp .= "#\n";
+       $tmp .= "# settings : max. vectors per file = $max_vect $bidir_info\n";
+       $tmp .= "#            first timestamp       = $time_init\n";
+       $tmp .= "# command  : $0 " . join(' ', @ARGV) . "\n";
+       $tmp .= "#\n\n";
+       $header = $tmp . $header;
+
+       print OUT $header;
+       next;
+   }
+
+
+   if ($in_pattern && $in_pattern > 1 && $in_pattern !~ /E0$/) { #in pattern section
+
+       my $in_vec = /^\s*vector\(/i .. /\]\s*;/;
+
+       if ($in_vec){
+	   $vector .= $_;
+	   if ($in_vec =~ /E0$/){ #vector now complete
+	       if ($vector =~ /^\s*vector\(.*\)\s*:=\s*\[(.*)\]\s*;/i) {
+                   my $pat = $1;
+		   $pat =~ s/^\s+//;
+                   switch_outfile() if ($numvect % $max_vect == 0) && ($time != $time_init);
+		   printf OUT $format_data, $time, split(/\s+/,$pat), "\n";
+                   $numvect++;
+		   $time += $period;
+	       }else {
+		   print STDERR "\n *** error: unexpected vector data in file '$infile' on line $. : $_\n";
+	       }
+	       $vector = ();
+	   }
+       }
+   }
+}
+close(IN);
+close(OUT);
+
+print STDERR "\n";
+
+
+#-----------------------------------------------------------------------------------------------
+sub usage {
+print STDERR <<USG;
+
+Usage:   $me  pattern.wgl[.gz]  pattern.hp  [pattern.hp_pindecl]
+
+Purpose
+       o This script translates test patterns from the WGL_Flat format (written by
+         Synopsys TetraMax) to the HP 83000 tabular format.
+
+       o If there are more than $max_vect vectors in the input file (pattern.wgl)
+         output will be split into multiple files (pattern.hp, pattern.hp_1, ...).
+         remark: in the presence of bidirectionals above value will be halved.
+
+       o In case of too long pin names (>16 char) the pin declarations are written
+         to an extra file (pattern.hp_pindecl) which can be edited and then
+         supplied as a third argument in order to replace the original (too long)
+         pin declarations.
+         
+
+USG
+exit 1;
+}
+
+sub switch_outfile {
+   close(OUT);
+   $out = $outfile . '_' . $outfile_no;
+   $outfile_no++;
+   open(OUT, ">$out") or die "\n  *** error: could not open file '$out' for writing: $!\n\n";
+   print STDERR " -- writing to file '$out'\n";
+   print OUT $header;
+   $time = $time_init;
+}
+
+sub pin_too_long {
+    my $pindecl_file = $outfile . '_pindecl';
+    print STDERR <<MARK;
+
+ *** error: Some pin name(s) are too long (>16 characters), writing pin declarations
+            to file './$pindecl_file'. Please edit the file and rerun with the
+            command:  '$0 $infile $outfile $pindecl_file' 
+
+MARK
+    open(PIN, ">$pindecl_file") or die "\n  *** error: could not open file '$pindecl_file' for writing: $!\n\n";
+          
+    print PIN <<MARK;
+#
+# - shorten the pin names as indicated by the comment behind each line  
+#   (do not touch bus extensions, modify only the base-name)  
+# - make sure the new names are unique
+# - DO NOT REORDER LINES
+# - almost no checks will be done on this file, so do it right! 
+# - you can leave all comments, they will be removed automatically 
+#
+MARK
+    my $pindecl_maxlen = (sort {$b <=> $a} map {length($sig{$_}{'pindecl'})} @sig)[0];
+    my $format_pindecl = "%-${pindecl_maxlen}s   # %-s\n";
+    my $message;
+    foreach my $name (@sig) {
+       my $diff = $sig{$name}{'maxlen'} - 16 ;
+       if ($diff > 0) {
+          $message = "to long by $diff character(s)";   
+       }else {
+          $message = "ok"; 
+       }
+       printf PIN $format_pindecl, $sig{$name}{'pindecl'}, $message;
+    } 
+    close(PIN);
+
+    exit 1;
+}
+
+#print Dumper(\%sig);
+#print join("\n",@sig)
+

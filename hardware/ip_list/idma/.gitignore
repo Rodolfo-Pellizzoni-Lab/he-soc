@@ -1,0 +1,13 @@
+.bender
+doc/build
+scripts/__pycache__
+contributions.txt
+open_todos.txt
+gmon.out
+.nfs*
+nonfree
+!target/*
+working_dir
+bender
+morty
+todo

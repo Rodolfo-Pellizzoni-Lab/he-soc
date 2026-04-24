@@ -1,0 +1,16 @@
+package:
+  name: common_pads
+  description: "Different target pads, same interface"
+
+sources:
+  - target: all(fpga, xilinx, not(asic))
+    files:
+      - src/pad_alsaqr.fpga.sv
+
+  - target: all(asic, not(all(fpga, xilinx)))
+    files:
+      - src/pad_alsaqr.gf22.sv
+
+  - target: all(any(not(synthesis)))
+    files:
+      - src/pad_alsaqr.behav.sv

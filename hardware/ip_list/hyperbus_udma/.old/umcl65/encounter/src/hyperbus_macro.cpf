@@ -1,0 +1,94 @@
+##########################################################################
+#  Title      : Sample Common Power Format (cpf).file.
+#  Project    : umc 65 dz flow
+##########################################################################
+#  File       : chip.cpf
+#  Author     : Beat Muheim  <muheim@ee.ethz.ch>
+#  Company    : Microelectronics Design Center (DZ), ETH Zurich
+##########################################################################
+#  Description : Sample file to create the power intent of a design, 
+#                withe one default power domain,
+#                The power domain have do be linked to a delay corner withe
+#                'update_delay_corner' don in our case in to "mmmc.view.tcl".
+#
+#                Please note these are just for reference, adapt according
+#                to your design!
+#
+#                Perform:
+#                read_power_intent -cpf <cpf-file>
+#                commit_power_intent
+#
+#  Inputs      : 
+#  Outputs     : 
+#  Resources   :
+##########################################################################
+#  Copyright (c) 2016 Microelectronics Design Center, ETH Zurich
+##########################################################################
+# v0.1  - bm - Wed Aug  3 14:11:23 CEST 2016
+#  - copy from stm130 v0.1 and adapt 
+##########################################################################
+
+#-------------------------------------------------------------------------------
+# setting
+#-------------------------------------------------------------------------------
+set_cpf_version 1.1
+set_hierarchy_separator "/"
+
+#include -cells-.cpf
+#..
+#include -cells-.cpf
+
+#-------------------------------------------------------------------------------
+# design name
+#-------------------------------------------------------------------------------
+set_design hyperbus_macro_inflate
+
+
+#-------------------------------------------------------------------------------
+# physical dmplementation
+#-------------------------------------------------------------------------------
+# create power domains
+create_power_domain -name PD_core -default
+create_power_domain -name PD_pad -base_domains PD_core
+
+
+#set_instance pad_In_DI_15  -model XX_H_G -domain_mapping {{PAD_GP_VDD_VSS PD_core} {PAD_GP_VDDPST_VSSPST PD_pad}}
+#..
+#set_instance pad_Clk_CI    -model XX_V_G -domain_mapping {{PAD_GP_VDD_VSS PD_core} {PAD_GP_VDDPST_VSSPST PD_pad}}
+  
+
+# declare power and ground nets
+create_power_nets  -nets VDD
+create_ground_nets -nets VSS
+update_power_domain -name PD_core -primary_power_net VDD -primary_ground_net VSS
+
+create_power_nets  -nets VDDIO
+create_ground_nets -nets VSSIO
+update_power_domain -name PD_pad -primary_power_net VDDIO -primary_ground_net VSSIO
+
+# create global connections
+create_global_connection -net VDDIO  -pins VDDIO
+create_global_connection -net VSSIO  -pins VSSIO
+
+
+# create nominal conditions
+create_nominal_condition -name 1V2 -state on  -voltage 1.2
+#create_nominal_condition -name 2V5 -state on  -voltage 2.5
+
+# create power mode
+create_power_mode -name PM_default \
+                  -domain_conditions { PD_core@1V2 } \
+                  -default
+#create_power_mode -name PM_default \
+#                  -domain_conditions { PD_core@1V2 PD_pad@2V5 } \
+#                  -default
+
+#-------------------------------------------------------------------------------
+# Rules
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 
+#-------------------------------------------------------------------------------
+end_design
