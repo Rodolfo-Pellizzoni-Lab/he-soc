@@ -717,8 +717,11 @@ axi_spu_top #(
    ) axi_lite_to_axi_pmu (
      // Slave AXI LITE port
      .in              ( axi_lite_pmu_64 ),
-     .slv_aw_cache_i  ( '0              ),
-     .slv_ar_cache_i  ( '0              ),
+    // NOTE: EMON: trying to see what is happening 
+    //  .slv_aw_cache_i  ( '0              ),
+    //  .slv_ar_cache_i  ( '0              ),
+    .slv_aw_cache_i  ( 4'b0010         ),   // axi_pkg::CACHE_MODIFIABLE
+    .slv_ar_cache_i  ( 4'b0010         ),
      .out             ( axi_iopmp_rp    )
    );
 
@@ -726,11 +729,14 @@ axi_spu_top #(
    pmu_top #(
      .NUM_PORT         ( (ariane_soc::NumCVA6)* 2 + 1   ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
-     .ISPM_NUM_WORDS   ( 512                            ),
-     .DSPM_NUM_WORDS   ( 4096                           ),
-     // APMU Addresses and SPM configuration
-     .MEMORY_BASE_ADDR ( ariane_soc::L2SPMBase          ),
-     .MEMORY_LENGTH    ( ariane_soc::L2SPMBase + ariane_soc::L2SPMLength        ),
+     .ISPM_NUM_WORDS   ( 1024                           ),  // 4 KB size
+     .DSPM_NUM_WORDS   ( 32768                           ),
+    //  // APMU Addresses and SPM configuration
+    //  .MEMORY_BASE_ADDR ( ariane_soc::L2SPMBase          ),
+    //  .MEMORY_LENGTH    ( ariane_soc::L2SPMBase + ariane_soc::L2SPMLength        ),
+    // // APMU Addresses and SPM configuration
+     .MEMORY_BASE_ADDR ( 32'h1060_6000),
+     .MEMORY_LENGTH    ( 32'h0000_0100),
      .req_lite_t       ( ariane_axi_soc::req_lite_t     ),
      .resp_lite_t      ( ariane_axi_soc::resp_lite_t    ),
      .aw_chan_lite_t   ( ariane_axi_soc::aw_chan_lite_t ),
