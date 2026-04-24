@@ -73,7 +73,7 @@ hardware/fpga/reports/
 hardware/*.riscv
 hardware/*.slm
 hardware/regression.list
-hardware/tb/vips
+# hardware/tb/vips  # vendored into repo
 hardware/compile.tcl
 hardware/work
 software/axi_tlb/cluster_code.h
