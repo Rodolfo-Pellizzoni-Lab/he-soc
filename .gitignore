@@ -74,7 +74,7 @@ hardware/*.riscv
 hardware/*.slm
 hardware/regression.list
 hardware/tb/vips
-hardware/bender
+hardware/compile.tcl
 hardware/work
 software/axi_tlb/cluster_code.h
 software/fpu_pulp/cluster_code.h
