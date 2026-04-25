@@ -32,9 +32,42 @@ AlSaqr requires the RISC-V toolchain which is available here: https://github.com
 For the PULP CLuster make sure the PULP RV32 toolchain is in your PATH. Please refer to PULP RISCV GCC toolchain to use a pre-built release: https://github.com/pulp-platform/pulp-riscv-gcc
 
 ## Repo initialization
+
+### Pellizzoni Lab repo (no `make init` needed)
+
+This lab's fork (`git@github.com:Rodolfo-Pellizzoni-Lab/he-soc.git`) has all IP dependencies, VIPs, and the bender binary vendored directly into the `esarkar/quad-core/cva6-evu-standalone` branch. No network downloads or `make init` required.
+
+**Step 1 — Clone and checkout the standalone branch first, then source:**
+```
+git clone git@github.com:Rodolfo-Pellizzoni-Lab/he-soc.git
+cd he-soc
+git checkout esarkar/quad-core/cva6-evu-standalone
+source uw_setup.sh
+```
+
+**Step 2 — Generate the QuestaSim compile script (fast, no network):**
+```
+cd hardware/
+make scripts_vip
+```
+
+**Step 3 — Compile and run a test:**
+```
+make -C ../software/hello_culsans clean all
+make clean sim
+```
+
+> **NB: Checkout the branch BEFORE sourcing `uw_setup.sh`.** The bender binary only exists on the standalone branch. Sourcing on master will fail at `make scripts_vip`.
+
+> **`source software/pulp-runtime/configs/pulp_cluster.sh`** — Only needed when running PULP cluster tests (tests under `software/pulp/`, `software/fpu_pulp/`, etc.). Skip it for all CVA6 tests including hello_culsans, PMU tests, and EVU tests.
+
+---
+
+### AlSaqr upstream repo (requires `make init`)
+
 Please change the setup file to point to your toolchains and Questasim installations in he-soc/setup.sh:
 
-** NB: this fetches the current master branch, under costant developement. **
+** NB: this fetches the current master branch, under constant development. **
 
 ```
 git clone git@github.com:AlSaqr-platform/he-soc.git
