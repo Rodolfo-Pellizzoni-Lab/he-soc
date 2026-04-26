@@ -1,0 +1,6 @@
+*.riscv
+*.dump
+*.slm
+*.o
+*.bin
+pmu_firmware/build/
