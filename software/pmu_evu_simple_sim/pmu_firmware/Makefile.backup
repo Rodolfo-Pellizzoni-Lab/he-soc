@@ -1,0 +1,79 @@
+# Makefile for PMU Firmware (RV32IM)
+# Based on APMU-OS Makefile structure
+
+# Compiler paths - adjust these to your toolchain installation
+# For now, use placeholder paths - user will need to update
+CC = clang
+OBJDUMP = llvm-objdump
+OBJCOPY = llvm-objcopy
+
+# Compiler flags for RV32IM (Ibex core)
+CFLAGS = --target=riscv32-unknown-elf \
+         -march=rv32im_zicsr -mabi=ilp32 -mcmodel=medlow \
+         -Wall -fvisibility=hidden -ffreestanding \
+         -O2 -nostdlib -flto \
+         -I include
+
+# Source files
+SRC_DIR = .
+COMMON_DIR = ./common
+SRCS = $(SRC_DIR)/crt0.s $(SRC_DIR)/main.c $(wildcard $(COMMON_DIR)/*.c)
+
+# Linker script
+LDSCRIPT = $(SRC_DIR)/linker.ld
+LDFLAGS = -T $(LDSCRIPT) -lnosys
+
+# Build directory
+BUILD_DIR = build
+
+# Output files
+TARGET = $(BUILD_DIR)/pmu_firmware.elf
+ASM_FILE = $(BUILD_DIR)/pmu_firmware.asm
+BIN_FILE = $(BUILD_DIR)/pmu_firmware.bin
+
+# Object files
+OBJ_FILES = $(BUILD_DIR)/crt0.o \
+            $(BUILD_DIR)/main.o \
+            $(patsubst $(COMMON_DIR)/%.c, $(BUILD_DIR)/%.o, $(wildcard $(COMMON_DIR)/*.c))
+
+.PHONY: all clean dump generate-bin-files
+
+all: $(TARGET) dump
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+# Compile assembly startup code
+$(BUILD_DIR)/crt0.o: $(SRC_DIR)/crt0.s | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile main.c
+$(BUILD_DIR)/main.o: $(SRC_DIR)/main.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile common .c files
+$(BUILD_DIR)/%.o: $(COMMON_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Link to create ELF
+$(TARGET): $(OBJ_FILES) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJ_FILES) -o $@
+
+# Generate disassembly and binary
+dump: $(TARGET)
+	$(OBJDUMP) -D $(TARGET) > $(ASM_FILE)
+	$(OBJCOPY) -O binary $(TARGET) $(BIN_FILE)
+
+# Generate separate binary files for .text and .data sections
+# These are used by CVA6 to load the firmware
+generate-bin-files: $(TARGET)
+	$(OBJCOPY) -O binary --only-section=.text $(TARGET) $(BUILD_DIR)/text_section.bin
+	$(OBJCOPY) -O binary --only-section=.data --only-section=.rodata --only-section=.bss $(TARGET) $(BUILD_DIR)/data_rodata_bss.bin
+	@echo ""
+	@echo "=== PMU Firmware Binary Sizes ==="
+	@ls -lh $(BUILD_DIR)/text_section.bin
+	@ls -lh $(BUILD_DIR)/data_rodata_bss.bin
+	@echo ""
+
+clean:
+	rm -rf $(BUILD_DIR)
