@@ -269,26 +269,19 @@ module pmu_core
             end
         end
     end
-    // MOHAMMED: he the following block:
+    // Route core_data_gnt from whichever subsystem the current request was sent to.
+    // Using pmc_dspm_req / pmc_axi_lite_req as selectors (both already gated by
+    // core_data_req and dec_pmc_data_valid) prevents the DSPM's default gnt=1
+    // from leaking through when no DSPM request is active — the root cause of the
+    // spurious-grant / axi_lite_from_mem assertion failure seen with target_q routing.
     always_comb begin
         core_data_gnt = 1'b0;
-        if (target_q == pmu_pkg::DSPM) begin
+        if (pmc_dspm_req) begin
             core_data_gnt = pmc_dspm_gnt;
-        end else if ((target_q == pmu_pkg::PMU_REG) || 
-                     (target_q == pmu_pkg::SYSTEM_MEMORY)) begin
+        end else if (pmc_axi_lite_req) begin
             core_data_gnt = pmc_axi_lite_gnt;
         end
     end
-    // EMON: I changed the above block to:
-    // always_comb begin
-    //     core_data_gnt = 1'b0;
-    //     if (target_d == pmu_pkg::DSPM) begin
-    //     core_data_gnt = pmc_dspm_gnt;
-    //     end else if ((target_d == pmu_pkg::PMU_REG) || 
-    //              (target_d == pmu_pkg::SYSTEM_MEMORY)) begin
-    //     core_data_gnt = pmc_axi_lite_gnt;
-    //     end
-    // end
 
     // Target: DSPM
     pmu_dspm #(
