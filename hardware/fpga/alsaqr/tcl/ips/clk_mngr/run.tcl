@@ -9,13 +9,25 @@ if [info exists ::env(BOARD)] {
 }
 if {$::env(MAIN_MEM)=="HYPER"} {
     set CLK_FREQ_MHZ 10
+    puts "###################################################"
+    puts "MAIN_MEM=HYPER => CLK_FREQ_MHZ set to $CLK_FREQ_MHZ"
+    puts "###################################################"
 } elseif {$::env(MAIN_MEM)=="DDR4"} {
     if {$::env(NUM_CORES)==4} {
         set CLK_FREQ_MHZ 20
+        puts "###################################################"
+        puts "MAIN_MEM=DDR4 and NUM_CORES=4 => CLK_FREQ_MHZ set to $CLK_FREQ_MHZ"
+        puts "###################################################"
     } elseif {$::env(USE_OT)=="1"} {
         set CLK_FREQ_MHZ 25
+        puts "###################################################"
+        puts "MAIN_MEM=DDR4 and USE_OT=1 => CLK_FREQ_MHZ set to $CLK_FREQ_MHZ"
+        puts "###################################################"
     } else {
         set CLK_FREQ_MHZ 40
+        puts "###################################################"
+        puts "MAIN_MEM=DDR4 (default case) => CLK_FREQ_MHZ set to $CLK_FREQ_MHZ"
+        puts "###################################################"
     }
 }
 

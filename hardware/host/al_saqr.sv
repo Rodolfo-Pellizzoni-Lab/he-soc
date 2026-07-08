@@ -1398,8 +1398,7 @@ module al_saqr
            assign reg_rsp.ready = 1'b1;
            assign reg_rsp.rdata = 32'hdeaddead;
            assign reg_rsp.error = 1'b0;
-           assign s_cva6_uart_rx = fpga_pad_uart_rx_i;
-           assign fpga_pad_uart_tx_o = s_cva6_uart_tx;
+           // UART already connected through simple padframe at instantiation above
     `endif // !`ifndef FPGA_EMUL
    `endif // !`ifdef SIMPLE_PADFRAME
   `endif // !`ifdef EXCLUDE_PADFRAME
