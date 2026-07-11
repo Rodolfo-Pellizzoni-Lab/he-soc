@@ -14,14 +14,16 @@ module slowdown_mem_top #(
     localparam int unsigned Throughput_COUNTER_WIDTH = $clog2(Throughput_timer_param + 1);
     
 
-    // B Channel
-    // IP of E-Mst <= OP of E-Slv
-    assign slowdown_mem_slv.b_id    = slowdown_mem_mst.b_id;
-    assign slowdown_mem_slv.b_resp  = slowdown_mem_mst.b_resp;
-    assign slowdown_mem_slv.b_user  = slowdown_mem_mst.b_user;
-    // assign slowdown_mem_slv.b_valid = slowdown_mem_mst.b_valid;      // b_valid is in the latency module
-    // IP of E-Slv <= OP of E-Mst
-    assign slowdown_mem_mst.b_ready = slowdown_mem_slv.b_ready;
+    // B Channel — the whole response (payload + valid + ready) is delayed by the
+    // handshake-aware latency pipeline below, so the delayed b_valid stays aligned
+    // with its b_id/b_resp/b_user and no response is dropped/duplicated/mismatched.
+    ariane_axi_soc::b_chan_slv_mem_t b_in, b_out;
+    assign b_in.id   = slowdown_mem_mst.b_id;
+    assign b_in.resp = slowdown_mem_mst.b_resp;
+    assign b_in.user = slowdown_mem_mst.b_user;
+    assign slowdown_mem_slv.b_id   = b_out.id;
+    assign slowdown_mem_slv.b_resp = b_out.resp;
+    assign slowdown_mem_slv.b_user = b_out.user;
 
     
     ariane_axi_soc::r_chan_slv_mem_t r_in;
@@ -44,8 +46,12 @@ module slowdown_mem_top #(
     ) i_B_chan_valid_delayed (
         .clk_i(clk_i),
         .rst_ni(rst_ni),
-        .valid(slowdown_mem_mst.b_valid),
-        .valid_delayed(slowdown_mem_slv.b_valid)
+        .b_valid          (slowdown_mem_mst.b_valid),
+        .b_ready_delayed  (slowdown_mem_mst.b_ready),
+        .b_signals        (b_in),
+        .b_valid_delayed  (slowdown_mem_slv.b_valid),
+        .b_ready          (slowdown_mem_slv.b_ready),
+        .b_signals_delayed(b_out)
     );
 
     latency_r_chan #(
