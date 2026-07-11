@@ -337,6 +337,18 @@ module host_domain
     .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
    ) mem_axi_bus_spu_o_bus();
 
+   // Intermediate AXI bus: SPU master -> slowdown regulator -> main memory
+   AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH          ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH             ),
+    `ifdef EXCLUDE_LLC
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave   ),
+    `else
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave+1 ),
+    `endif
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
+   ) mem_axi_bus_spu_mst();
+
    AXI_LITE #(
     .AXI_ADDR_WIDTH (AXI_LITE_AW),
     .AXI_DATA_WIDTH (AXI_LITE_DW)
@@ -622,8 +634,21 @@ axi_spu_top #(
      .rst_ni             ( s_synch_soc_rst             ),
      .addr_map_i         ( spu_mem_addr_map            ),
      .spu_slv            ( mem_axi_bus_spu_o_bus       ),
-     .spu_mst            ( mem_axi_bus                 ),
+     .spu_mst            ( mem_axi_bus_spu_mst         ),
      .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
+   );
+
+   // Slowdown regulator inserted between the SPU (post-LLC) and main memory.
+   slowdown_mem_top #(
+    .Latency_param            ( 20 ),  // must be >= 2
+    .Throughput_timer_param   ( 10 ),
+    .Throughput_FIFO_depth    (  8 )
+    // Throughput_COUNTER_WIDTH is a localparam ($clog2) inside the module
+   ) i_slowdown (
+    .clk_i            ( s_soc_clk           ),
+    .rst_ni           ( s_synch_soc_rst     ),
+    .slowdown_mem_slv ( mem_axi_bus_spu_mst ),
+    .slowdown_mem_mst ( mem_axi_bus         )
    );
 
    // AXI Cut for IOPMP Configuration Port
