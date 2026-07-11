@@ -401,4 +401,36 @@ package ariane_axi_soc;
       logic          r_valid;
     } resp_lite_t;
 
+    // ---- Types used by the slowdown memory-bandwidth regulator IP (ip_list/slowdown) ----
+    typedef struct packed {
+        logic             ar_valid;
+        ar_chan_slv_mem_t ar_signals;
+    } ar_fifo_entry_t;
+
+    typedef struct packed {
+        logic    w_valid;
+        w_chan_t w_signals;
+    } w_data_fifo_entry_t;
+
+    typedef struct packed {
+        id_slv_mem_t      id;
+        addr_t            addr;
+        axi_pkg::len_t    len;
+        axi_pkg::size_t   size;
+        axi_pkg::burst_t  burst;
+        logic             lock;
+        axi_pkg::cache_t  cache;
+        axi_pkg::prot_t   prot;
+        axi_pkg::qos_t    qos;
+        axi_pkg::region_t region;
+        axi_pkg::atop_t   atop; // not present in AR channel, present in AW channel
+        user_t            user;
+    } address_queue_signals_t;
+
+    typedef struct packed {
+        logic                   valid;
+        address_queue_signals_t AR_AW_signals;
+        logic                   AR_AW_tag;  // AR = 1, AW = 0
+    } address_queue_entry_t;
+
 endpackage
