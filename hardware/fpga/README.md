@@ -51,6 +51,25 @@ make clean run
 ```
 Vivado IPs shall be generated only once at the first synthesis (unless modifications to the ROMs or to clk frequency are applied)
 
+## Automated bitstream generation (`gen_alsaqr.sh`)
+
+`gen_alsaqr.sh` — archived here in `hardware/fpga/` — automates the standard MIG DDR4 bitstream build end to end: it regenerates the compile scripts, sets the configuration through `setup.sh`, builds all FPGA IPs, and runs the project flow (synthesis → implementation → bitstream).
+
+**How to use it:** the script operates on a *target directory* that **contains** the `he-soc/` clone, so copy it to the **parent directory of `he-soc`** and run it there, passing that directory as the target argument:
+
+```bash
+# starting inside he-soc/hardware/fpga
+cp gen_alsaqr.sh ../../..          # ../../.. == the directory that contains he-soc/
+cd ../../..
+./gen_alsaqr.sh -synth .           # '.' == the target dir (must contain he-soc/)
+```
+
+Notes:
+* **A target-directory argument is required** (this is the difference from the OpenDRAM branch's `gen_alsaqr_opendram.sh`, which takes none). Use `.` when running from the directory that contains `he-soc/`, or pass an absolute path.
+* `-synth` runs the full synth+impl → bitstream flow (this is also the default).
+* The script selects the config via `setup.sh` (VCU118, LLC, DDR4, OpenTitan, 4 cores → **20 MHz SoC clock, 38400-baud UART**) and applies the required `sed` tweaks to the IP Makefiles and `run.tcl` before `make clean run`. Note that it therefore modifies tracked build files (`run.tcl`, IP `Makefile`s) in place as a side effect.
+* Output bitstream: `he-soc/hardware/fpga/reports/alsaqr_xilinx.bit`. Open the serial console at **38400 8N1**.
+
 ## Running code on CVA6 only
 
 If your goal is to run/debug code uniquely from CVA6, you can connect only its JTAG without connecting OpenTitan one.
