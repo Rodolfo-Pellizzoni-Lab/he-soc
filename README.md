@@ -167,6 +167,71 @@ cd hardware/
 make run_regression
 ```
 
+### Adding RTL IP or Source Files
+
+When adding a new RTL module or IP block to the design, four things must be updated. No `make init` or Bender dependency update is required for local files that are already in the repo tree.
+
+**1. Place the RTL files**
+
+Put source files under `hardware/` somewhere sensible. Convention is:
+- `hardware/host/` for single-file host-domain shims
+- `hardware/ip_list/<ip-name>/` for multi-file IPs
+
+**2. Register with Bender**
+
+Open `hardware/Bender.yml` and add entries to the top-level `sources:` list. Order matters — a module must appear after all packages it uses and before any module that instantiates it. The `host/host_domain.sv` anchor is a useful reference point:
+
+```yaml
+sources:
+  # ... existing files ...
+  - ip_list/<ip-name>/file_a.sv
+  - ip_list/<ip-name>/file_b.sv
+  - host/host_domain.sv          # <-- new files must come before this if host_domain instantiates them
+  # ...
+```
+
+**3. Add any missing package types**
+
+If the new IP uses types defined in a custom package that do not exist in `hardware/include/ariane_axi_soc_pkg.sv`, add the `typedef` definitions there before `endpackage`. Questa will report `Failed to find the name '<type>' in scope 'ariane_axi_soc'` if any are missing.
+
+**4. Instantiate in the design**
+
+Edit the appropriate top-level file (typically `hardware/host/host_domain.sv`). If the module sits on an existing AXI path, declare an intermediate `AXI_BUS` signal to break the connection:
+
+```systemverilog
+AXI_BUS #(
+  .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH ),
+  .AXI_DATA_WIDTH ( AXI_DATA_WIDTH    ),
+  .AXI_ID_WIDTH   ( ... ),
+  .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
+) my_new_bus ();
+
+my_new_module #(...) i_my_new_module (
+  .clk_i   ( s_soc_clk       ),
+  .rst_ni  ( s_synch_soc_rst ),
+  .slv     ( upstream_bus    ),
+  .mst     ( my_new_bus      )
+);
+// downstream consumer now receives my_new_bus instead of upstream_bus
+```
+
+**5. Regenerate compile scripts**
+
+After editing `Bender.yml`, regenerate the compile scripts before simulating or building a bitstream. This is not `make init` — it only reads the existing `Bender.lock` and re-emits TCL/script files:
+
+```bash
+# QuestaSim (do this before make clean sim):
+cd hardware/
+make scripts_vip
+
+# Vivado bitstream (gen_alsaqr.sh calls this internally):
+make scripts-bender-fpga-ddr
+```
+
+The updated `compile.tcl` and Questa compile script will automatically include the new files in the correct compilation order.
+
+---
+
 ### FPGA Emulation
 
 We now support emulation on Xilinx VCU118. Please have a look to the README in the `hardware/fpga` folder.
