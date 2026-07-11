@@ -117,7 +117,11 @@ module cva6_subsystem
   // Performance Counters EVU AXI LITE Slave Interface
   input ariane_axi_soc::req_lite_t                      perfc_cfg_req_i,
   output ariane_axi_soc::resp_lite_t                    perfc_cfg_resp_o,
-  output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] perfc_evu_status_resp_o
+  output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] perfc_evu_status_resp_o,
+
+  // Token bucket AXI LITE slave cfg port
+  input  axi_lite_req_t   token_bucket_cfg_req_i,
+  output axi_lite_rsp_t   token_bucket_cfg_resp_o
 
 );
      // disable test-enable
@@ -162,6 +166,29 @@ module cva6_subsystem
 
   assign test_en = 1'b0;
   assign jtag_enable = JtagEnable;
+  //----------------------------------
+  // token bucket config: synchronous AXI-Lite (SoC clk) + async gray to wrap
+  //-----------------------------------
+  AXI_LITE #(
+    .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+    .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH )
+  ) token_bucket_cfg_lite_slv_intf();
+ 
+  AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH      ),
+    .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH      ),
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH           )
+  ) token_bucket_cfg_axi_intf();
+ 
+  AXI_BUS_ASYNC_GRAY #(
+    .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH      ),
+    .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH      ),
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH           ),
+    .LOG_DEPTH      ( 1                        )
+  ) token_bucket_cfg_slv_asynch();
+  //------------------------------------------
 
   AXI_BUS #(
     .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
@@ -967,7 +994,23 @@ module cva6_subsystem
     // PMU AXI Lite Slave
     .perfc_axi_req_i     ( perfc_cfg_req_i             ),
     .perfc_axi_resp_o     ( perfc_cfg_resp_o            ),
-    .perfc_evu_events_resp( perfc_evu_status_resp_o     )
+    .perfc_evu_events_resp( perfc_evu_status_resp_o     ),
+    // token bucket AXI LITE config slave
+    .token_bucket_cfg_aw_wptr_i ( token_bucket_cfg_slv_asynch.aw_wptr ),
+    .token_bucket_cfg_aw_data_i ( token_bucket_cfg_slv_asynch.aw_data ),
+    .token_bucket_cfg_aw_rptr_o ( token_bucket_cfg_slv_asynch.aw_rptr ),
+    .token_bucket_cfg_ar_wptr_i ( token_bucket_cfg_slv_asynch.ar_wptr ),
+    .token_bucket_cfg_ar_data_i ( token_bucket_cfg_slv_asynch.ar_data ),
+    .token_bucket_cfg_ar_rptr_o ( token_bucket_cfg_slv_asynch.ar_rptr ),
+    .token_bucket_cfg_w_wptr_i  ( token_bucket_cfg_slv_asynch.w_wptr  ),
+    .token_bucket_cfg_w_data_i  ( token_bucket_cfg_slv_asynch.w_data  ),
+    .token_bucket_cfg_w_rptr_o  ( token_bucket_cfg_slv_asynch.w_rptr  ),
+    .token_bucket_cfg_r_wptr_o  ( token_bucket_cfg_slv_asynch.r_wptr  ),
+    .token_bucket_cfg_r_data_o  ( token_bucket_cfg_slv_asynch.r_data  ),
+    .token_bucket_cfg_r_rptr_i  ( token_bucket_cfg_slv_asynch.r_rptr  ),
+    .token_bucket_cfg_b_wptr_o  ( token_bucket_cfg_slv_asynch.b_wptr  ),
+    .token_bucket_cfg_b_data_o  ( token_bucket_cfg_slv_asynch.b_data  ),
+    .token_bucket_cfg_b_rptr_i  ( token_bucket_cfg_slv_asynch.b_rptr  )
   );
 
   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core_o_temp;
@@ -1067,6 +1110,38 @@ module cva6_subsystem
       .src        ( snooper_axi_slv_32_intf ),
       .dst        ( snooper_axi_slv_asynch  )
   );
+
+  //--------------------------------------------
+  // token bucket config: flatten incoming req/resp, convert lite->axi,
+  // then CDC (SoC clk -> async gray) toward cva6_synth_wrap.
+  //---------------------------------------------
+  `AXI_LITE_ASSIGN_FROM_REQ ( token_bucket_cfg_lite_slv_intf, token_bucket_cfg_req_i )
+  `AXI_LITE_ASSIGN_TO_RESP  ( token_bucket_cfg_resp_o, token_bucket_cfg_lite_slv_intf )
+ 
+  axi_lite_to_axi_intf #(
+    .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH )
+  ) axi_lite_to_axi_token_bucket_cfg (
+    .in              ( token_bucket_cfg_lite_slv_intf ),
+    .slv_aw_cache_i  ( '0                    ),
+    .slv_ar_cache_i  ( '0                    ),
+    .out             ( token_bucket_cfg_axi_intf      )
+  );
+ 
+  axi_cdc_src_intf #(
+    .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH       ),
+    .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH       ),
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave  ),
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH            ),
+    .LOG_DEPTH      ( 1                         ),
+    .SYNC_STAGES    ( ariane_soc::CdcSyncStages )
+  ) token_bucket_cfg_slv_cdc (
+      .src_clk_i  ( clk_i               ),
+      .src_rst_ni ( ndmreset_n          ),
+      .src        ( token_bucket_cfg_axi_intf    ),
+      .dst        ( token_bucket_cfg_slv_asynch  )
+  );
+
+  //---------------------------------------------
 
   // cva6_subsystem: cycle-aligned PERFC boundary monitor
 // logic prev_top_b_valid, prev_top_b_ready;

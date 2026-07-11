@@ -180,6 +180,9 @@ module host_domain
    ariane_axi_soc::req_lite_t  axi_lite_snooper_req;
    ariane_axi_soc::resp_lite_t axi_lite_snooper_rsp;
 
+   ariane_axi_soc::req_lite_t  token_bucket_cfg_req;
+   ariane_axi_soc::resp_lite_t token_bucket_cfg_resp;
+
    // rule definitions
    typedef struct packed {
      int unsigned             idx;
@@ -494,6 +497,11 @@ module host_domain
    .AXI_DATA_WIDTH (AXI_LITE_DW)
   ) perfc_cfg_lite_bus();
 
+   AXI_LITE #(
+     .AXI_ADDR_WIDTH (AXI_LITE_AW),
+     .AXI_DATA_WIDTH (AXI_LITE_DW)
+    ) token_bucket_cfg_bus();
+
    // AXI Bus: XBAR <=> AXI Cut (IOPMP Configuration Port)
    AXI_BUS #(
      .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
@@ -736,7 +744,7 @@ axi_spu_top #(
     //  .MEMORY_LENGTH    ( ariane_soc::L2SPMBase + ariane_soc::L2SPMLength        ),
     // // APMU Addresses and SPM configuration
      .MEMORY_BASE_ADDR ( 32'h1060_6000),
-     .MEMORY_LENGTH    ( 32'h0000_0100),
+     .MEMORY_LENGTH    ( 32'h0000_0180),
      .req_lite_t       ( ariane_axi_soc::req_lite_t     ),
      .resp_lite_t      ( ariane_axi_soc::resp_lite_t    ),
      .aw_chan_lite_t   ( ariane_axi_soc::aw_chan_lite_t ),
@@ -760,6 +768,9 @@ axi_spu_top #(
 
   `AXI_LITE_ASSIGN_TO_REQ( axi_lite_perfc_cfg_req, perfc_cfg_lite_bus    )
   `AXI_LITE_ASSIGN_FROM_RESP( perfc_cfg_lite_bus, axi_lite_perfc_cfg_resp)
+
+  `AXI_LITE_ASSIGN_TO_REQ   ( token_bucket_cfg_req, token_bucket_cfg_bus )
+  `AXI_LITE_ASSIGN_FROM_RESP( token_bucket_cfg_bus, token_bucket_cfg_resp )
   `endif
 
    cva6_subsystem # (
@@ -833,7 +844,11 @@ axi_spu_top #(
         .aia_lock_xor_key_i   ( aia_lock_xor_key     ),
         .perfc_cfg_req_i       ( axi_lite_perfc_cfg_req  ),
         .perfc_cfg_resp_o       ( axi_lite_perfc_cfg_resp ),
-        .perfc_evu_status_resp_o( spu_o[0 +: ariane_soc::NumCVA6]) 
+        .perfc_evu_status_resp_o( spu_o[0 +: ariane_soc::NumCVA6]), 
+
+        // Per-core token bucket config region
+        .token_bucket_cfg_req_i  ( token_bucket_cfg_req  ),
+        .token_bucket_cfg_resp_o ( token_bucket_cfg_resp )
     );
 
    axi2tcdm_wrap #(
@@ -980,7 +995,8 @@ axi_spu_top #(
        .axi_lite_snoop_rsp_i   ( axi_lite_snooper_rsp    ),
        .doorbell_irq_o,
        .completion_irq_o,
-       .perfc_cfg_master      ( perfc_cfg_lite_bus     )
+       .perfc_cfg_master        ( perfc_cfg_lite_bus   ),
+       .token_bucket_cfg_master ( token_bucket_cfg_bus )
    );
 
 endmodule
