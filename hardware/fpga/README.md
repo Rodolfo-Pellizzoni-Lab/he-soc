@@ -51,6 +51,25 @@ make clean run
 ```
 Vivado IPs shall be generated only once at the first synthesis (unless modifications to the ROMs or to clk frequency are applied)
 
+## Automated OpenDRAM bitstream generation (`gen_alsaqr_opendram.sh`)
+
+This branch replaces the Xilinx MIG DDR4 internal command scheduler with the **OpenDRAM v5** FR-FCFS controller (the AXI interface, PHY, and pin assignments are unchanged). The helper script `gen_alsaqr_opendram.sh` — archived here in `hardware/fpga/` — automates the whole flow: it regenerates the compile scripts, builds every FPGA IP **except** DDR (which is created inline and patched with OpenDRAM), then runs `run_opendram.tcl` (synthesis → implementation → bitstream).
+
+**How to use it:** the script expects to sit **next to** the `he-soc/` clone, so copy it to the **parent directory of `he-soc`** (the directory that *contains* `he-soc/`) and run it from there:
+
+```bash
+# starting inside he-soc/hardware/fpga
+cp gen_alsaqr_opendram.sh ../../..     # ../../.. == the directory that contains he-soc/
+cd ../../..
+./gen_alsaqr_opendram.sh -synth        # full synth+impl → bitstream (~3–4 h, batch)
+```
+
+Notes:
+* **No target-directory argument** is needed — the script locates `he-soc/` relative to its own location.
+* `-synth` runs the full batch flow to a bitstream. Omit it to open the Vivado GUI (elaborate only).
+* Configuration is fixed to **VCU118, quad-core, DDR4, OpenTitan → 20 MHz SoC clock, 38400-baud UART** (hardcoded `iDLL=0x20`). The script prints the SoC clock and aborts if the UART hardcode is missing.
+* Output bitstream: `he-soc/hardware/fpga/reports/alsaqr_xilinx.bit`. Build log: `vivado_opendram.log` next to the script. Open the serial console at **38400 8N1**.
+
 ## Running code on CVA6 only
 
 If your goal is to run/debug code uniquely from CVA6, you can connect only its JTAG without connecting OpenTitan one.
