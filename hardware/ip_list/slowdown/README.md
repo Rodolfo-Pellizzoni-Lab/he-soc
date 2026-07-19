@@ -92,12 +92,38 @@ Key design choices, and *why* each one matters:
   waiting for its data could sit in front of a read and block it — a deadlock we
   actually hit. With separate queues a stalled write can never block a read.
 
-- **One shared throttle, reloaded on the ACCEPT.** A single down-counter is
-  reloaded (to `Throughput_timer_param − 1`) each time an address is *accepted
-  downstream*. Reloading on acceptance (not on offer) keeps consecutive accepted
-  requests `≥ Throughput_timer_param` cycles apart even when memory back-pressures
-  irregularly. A 1-bit round-robin bit breaks ties when a read and a write are
-  both ready, so AR and AW share the rate fairly but never block each other.
+- **One shared throttle, and its countdown only starts *after* an accept.** A
+  single down-counter (`period_cnt`) gates releases. The exact sequence for one
+  request is:
+
+  1. `period_cnt == 0` (elapsed) **and** a request is queued → **grant**: the FSM
+     moves `WAIT → SEND` and starts *offering* the FIFO head (drives
+     `ARVALID`/`AWVALID`). It does **not** pop the FIFO yet — the head is held
+     stable on the bus.
+  2. **Hold** until the slave asserts `READY`. While waiting, a `release_pending`
+     flag blocks any new grant, and `period_cnt` just **sits at 0 — it is not
+     counting**. So if memory back-pressures, we don't burn the period while
+     waiting for it.
+  3. **Handshake (`VALID & READY`)** → three things happen together: the FIFO
+     **pops**, the counter **reloads** to `Throughput_timer_param − 1`, and the
+     FSM returns to `WAIT`.
+  4. The countdown now runs (`period_cnt` → 0); no new address is offered until it
+     reaches 0.
+
+  So "reload on accept" means the counter restarts its countdown **on the
+  handshake, never before** — which guarantees consecutive *accepted* requests
+  stay `≥ Throughput_timer_param` cycles apart no matter how irregular the
+  back-pressure. (Reloading on the accept rather than on the offer is the fix for
+  a clustering bug the random-back-pressure soak caught.) A 1-bit round-robin bit
+  breaks ties when a read and a write are both ready.
+
+  ```mermaid
+  stateDiagram-v2
+      [*] --> WAIT
+      WAIT --> SEND: period_cnt==0 AND request queued (grant)
+      SEND --> SEND: hold VALID, wait for READY (counter frozen at 0)
+      SEND --> WAIT: VALID and READY (pop FIFO, reload counter)
+  ```
 
 - **A write offers its AW and its W *concurrently* (single `WR_SEND` state).**
   This is the subtle one. AXI4 forbids a master from waiting for `AWREADY` before
@@ -112,6 +138,31 @@ Key design choices, and *why* each one matters:
   never interleave — which matters because AXI4 has no `WID` to untangle them. If
   the throttle fires mid-drain, that slot can only release a *read* (a different
   channel — always safe).
+
+  The write FSM (single-in-flight, so W bursts can't interleave):
+
+  ```mermaid
+  stateDiagram-v2
+      [*] --> WR_WAIT
+      WR_WAIT --> WR_SEND: grant_write (timer elapsed, aw_fifo and dw_fifo non-empty)
+      WR_SEND --> WR_SEND: drive AWVALID and WVALID together; aw_sent on AWREADY, w_done on last W
+      WR_SEND --> WR_WAIT: aw_sent AND w_done (AW accepted and whole burst drained)
+  ```
+
+  Why the concurrent offer avoids the deadlock, against a slave that waits for
+  `WVALID` before it asserts `AWREADY`:
+
+  ```mermaid
+  sequenceDiagram
+      participant R as Regulator (master)
+      participant M as Store-and-forward slave
+      R->>M: AWVALID=1 and WVALID=1 (W already buffered)
+      M-->>R: AWREADY=1 (accepts AW after seeing WVALID)
+      M-->>R: WREADY=1 (accepts W beats)
+      R->>M: remaining W beats ... last
+      M-->>R: BVALID (write complete)
+      Note over R,M: The OLD FSM held WVALID=0 until AWREADY, so this slave never asserted AWREADY -> deadlock
+  ```
 
 ### 2. Response path → latency injection  (`latency_r_chan.sv`, `latency_b_chan.sv`)
 
