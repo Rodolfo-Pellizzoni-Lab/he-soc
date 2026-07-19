@@ -125,9 +125,9 @@ Key design choices, and *why* each one matters:
   ```mermaid
   stateDiagram-v2
       [*] --> WAIT
-      WAIT --> SEND: period_cnt==0 AND request queued (grant)
-      SEND --> SEND: hold VALID, wait for READY (counter frozen at 0)
-      SEND --> WAIT: VALID and READY (pop FIFO, reload counter)
+      WAIT --> SEND: counter at 0 and a request is queued
+      SEND --> SEND: hold VALID until the slave asserts READY
+      SEND --> WAIT: handshake pops the FIFO and reloads the counter
   ```
 
 - **A write offers its AW and its W *concurrently* (single `WR_SEND` state).**
@@ -149,10 +149,29 @@ Key design choices, and *why* each one matters:
   ```mermaid
   stateDiagram-v2
       [*] --> WR_WAIT
-      WR_WAIT --> WR_SEND: grant_write (timer elapsed, aw_fifo and dw_fifo non-empty)
-      WR_SEND --> WR_SEND: drive AWVALID and WVALID together; aw_sent on AWREADY, w_done on last W
-      WR_SEND --> WR_WAIT: aw_sent AND w_done (AW accepted and whole burst drained)
+      WR_WAIT --> WR_SEND: grant_write
+      WR_SEND --> WR_SEND: offer AWVALID and WVALID together
+      WR_SEND --> WR_WAIT: AW accepted AND whole W burst drained
   ```
+
+  **Worked example — a *slow* W burst can never let the next AW escape.** Suppose
+  the throttle period elapses while W1 is still draining:
+
+  | cycle | `wr_q` | `aw_sent` | `w_done` | `period_cnt` | AW2 released? |
+  |---|---|---|---|---|---|
+  | AW1 accepted | `WR_SEND` | 1 | 0 | reloads | — |
+  | W1 draining slowly | `WR_SEND` | 1 | 0 | counting down | no |
+  | counter hits 0, W1 not done | `WR_SEND` | 1 | 0 | **0** | **no** — a grant needs `WR_WAIT` |
+  | W1 last beat accepted | `WR_SEND` | 1 | →1 | 0 | — |
+  | FSM retires | `WR_WAIT` | 0 | 0 | 0 | **yes, immediately** |
+
+  The counter reaching 0 is *permission, not a trigger* — it never pushes anything
+  out. A write is launched only from `WR_WAIT`, so while W1 drains, AW2 simply waits
+  in `aw_fifo` and `aw_valid_o` on the downstream bus is 0 (AW1 is already accepted,
+  AW2 hasn't started). When W1's last beat lands, the FSM returns to `WR_WAIT` and —
+  because the throttle credit is already earned (counter is 0) — AW2 fires at once.
+  Memory therefore always sees **AW1 → all of W1 → AW2 → all of W2**, never
+  interleaved.
 
   Offering AW and W together works even against a slave that waits for `WVALID`
   before it asserts `AWREADY`:
