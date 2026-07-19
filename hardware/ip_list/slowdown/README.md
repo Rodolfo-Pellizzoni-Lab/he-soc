@@ -89,8 +89,9 @@ Key design choices, and *why* each one matters:
 
 - **Reads and writes have separate queues (`ar_fifo`, `aw_fifo`, `dw_fifo`).**
   AXI reads and writes are independent channels. If they shared a queue, a write
-  waiting for its data could sit in front of a read and block it — a deadlock we
-  actually hit. With separate queues a stalled write can never block a read.
+  waiting for its data could sit in front of a read and block it. Separate queues
+  let reads and writes make progress independently — a stalled write can never
+  hold up a read.
 
 - **One shared throttle, and its countdown only starts *after* an accept.** A
   single down-counter (`period_cnt`) gates releases. The exact sequence for one
@@ -113,9 +114,13 @@ Key design choices, and *why* each one matters:
   So "reload on accept" means the counter restarts its countdown **on the
   handshake, never before** — which guarantees consecutive *accepted* requests
   stay `≥ Throughput_timer_param` cycles apart no matter how irregular the
-  back-pressure. (Reloading on the accept rather than on the offer is the fix for
-  a clustering bug the random-back-pressure soak caught.) A 1-bit round-robin bit
-  breaks ties when a read and a write are both ready.
+  back-pressure. A 1-bit round-robin bit breaks ties when a read and a write are
+  both ready.
+
+  For a write, "the accept" is the **AW (address) handshake**: the counter reloads
+  the moment `AWREADY` arrives, and the W beats then drain *without* re-arming the
+  throttle. The throttle paces addresses (one AR/AW per period), not data beats —
+  so the countdown and a write's W-burst drain run in parallel.
 
   ```mermaid
   stateDiagram-v2
@@ -126,13 +131,13 @@ Key design choices, and *why* each one matters:
   ```
 
 - **A write offers its AW and its W *concurrently* (single `WR_SEND` state).**
-  This is the subtle one. AXI4 forbids a master from waiting for `AWREADY` before
-  asserting `WVALID`, precisely because a legal slave may wait for `WVALID` before
-  it asserts `AWREADY`. An earlier version drove `WVALID` only *after* the AW
-  handshake and would deadlock against such a slave (and starve reads while
-  parked). The current FSM asserts `WVALID` from the first cycle and retires the
-  write only when **both** its AW is accepted **and** its whole W burst
-  (`AWLEN+1` beats) has drained. A direct consequence: a second write's AW can
+  This is the subtle one. AXI4 requires the master to assert `WVALID` *without*
+  waiting for `AWREADY`, because a legal slave may wait for `WVALID` before it
+  asserts `AWREADY` — if the master also waited for `AWREADY` first, the two would
+  wait on each other forever. So the FSM asserts `WVALID` from the first cycle (the
+  first W beat is already buffered) and retires the write only when **both** its AW
+  is accepted **and** its whole W burst (`AWLEN+1` beats) has drained. A direct
+  consequence: a second write's AW can
   **never** be released while the first write's W burst is still draining
   (`grant_write` requires the FSM to be back in `WR_WAIT`), so two W bursts can
   never interleave — which matters because AXI4 has no `WID` to untangle them. If
@@ -149,8 +154,8 @@ Key design choices, and *why* each one matters:
       WR_SEND --> WR_WAIT: aw_sent AND w_done (AW accepted and whole burst drained)
   ```
 
-  Why the concurrent offer avoids the deadlock, against a slave that waits for
-  `WVALID` before it asserts `AWREADY`:
+  Offering AW and W together works even against a slave that waits for `WVALID`
+  before it asserts `AWREADY`:
 
   ```mermaid
   sequenceDiagram
@@ -161,7 +166,6 @@ Key design choices, and *why* each one matters:
       M-->>R: WREADY=1 (accepts W beats)
       R->>M: remaining W beats ... last
       M-->>R: BVALID (write complete)
-      Note over R,M: The OLD FSM held WVALID=0 until AWREADY, so this slave never asserted AWREADY -> deadlock
   ```
 
 ### 2. Response path → latency injection  (`latency_r_chan.sv`, `latency_b_chan.sv`)
@@ -245,8 +249,8 @@ See the two reference tests:
 ```
 cd hardware/ip_list/slowdown/test
 make            # T1–T16 + always-on checks (all AXI corners, random back-pressure)
-make t19        # store-and-forward slave: gates AWREADY on WVALID (proves the fix)
-make rwtest     # T18: read-behind-stalled-write independence (deadlock repro)
+make t19        # store-and-forward slave: gates AWREADY on WVALID (AXI4 write-dep corner)
+make rwtest     # T18: read-behind-stalled-write independence
 ```
 The suite drives millions of transactions with an in-testbench scoreboard that
 checks: no dropped/duplicated beats, correct burst lengths, id/data preserved,
@@ -283,8 +287,8 @@ where these lived as loose files under `hardware/host/`. Moved here under
 
 ## Status
 
-- Unit suite (T1–T19, 3M+ transactions, all AXI corners, the AWREADY-on-WVALID
-  deadlock repro): **passing**.
+- Unit suite (T1–T19, 3M+ transactions, all AXI corners, including the
+  AWREADY-on-WVALID write-dependency corner): **passing**.
 - In-system quad-core traffic (`slowdown_qc`): **runs to completion**, correct
   per-core traffic counts.
 - Linux boots on the slowdown bitstream.
