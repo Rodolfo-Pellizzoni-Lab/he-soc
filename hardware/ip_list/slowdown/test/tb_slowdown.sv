@@ -34,14 +34,18 @@ module tb_slowdown;
 // =========================================================================
 // Parameters
 // =========================================================================
-localparam int unsigned LATENCY    = 5;
+localparam int unsigned LATENCY    = 20;   // match platform host_domain Latency_param
 localparam int unsigned THROUGHPUT = 10;
 localparam int unsigned FIFO_DEPTH = 8;
 localparam int unsigned AXI_ID_WIDTH   = 9;
 localparam int unsigned AXI_DATA_WIDTH = 64;
 localparam int unsigned AXI_ADDR_WIDTH = 64;
 localparam int unsigned AXI_USER_WIDTH = 2;
-localparam int          TIMEOUT_CYCLES = 500_000;
+localparam int          TIMEOUT_CYCLES = 200_000_000; // absolute backstop (huge, for +RUN_QC_MIRROR)
+localparam int          STALL_CYCLES   = 500_000;     // no-response watchdog: hang detector during soaks
+localparam int unsigned SOAK_RD        = 2000;   // T16 random-soak read count
+localparam int unsigned SOAK_WR        = 2000;   // T16 random-soak write count
+logic                   quiet          = 1'b0;   // suppress per-transaction $display (set during T17)
 
 // =========================================================================
 // Clock / reset
@@ -145,7 +149,7 @@ always @(posedge clk) begin
         if (axi_slv_if.ar_valid && axi_slv_if.ar_ready) begin
             if (dn_ar_cnt > 0) begin
                 sp_ar = longint'(cyc) - longint'(last_dn_ar_cyc);
-                $display("[TPUT %0t] AR#%0d spacing=%0d cyc (expect>=%0d)",
+                if (!quiet) $display("[TPUT %0t] AR#%0d spacing=%0d cyc (expect>=%0d)",
                          $time, dn_ar_cnt, sp_ar, THROUGHPUT);
                 if (sp_ar < longint'(THROUGHPUT) - 1) begin
                     $warning("[TPUT] AR spacing %0d < %0d — VIOLATION", sp_ar, THROUGHPUT);
@@ -158,7 +162,7 @@ always @(posedge clk) begin
         if (axi_slv_if.aw_valid && axi_slv_if.aw_ready) begin
             if (dn_aw_cnt > 0) begin
                 sp_aw = longint'(cyc) - longint'(last_dn_aw_cyc);
-                $display("[TPUT %0t] AW#%0d spacing=%0d cyc (expect>=%0d)",
+                if (!quiet) $display("[TPUT %0t] AW#%0d spacing=%0d cyc (expect>=%0d)",
                          $time, dn_aw_cnt, sp_aw, THROUGHPUT);
                 if (sp_aw < longint'(THROUGHPUT) - 1) begin
                     $warning("[TPUT] AW spacing %0d < %0d — VIOLATION", sp_aw, THROUGHPUT);
@@ -177,7 +181,7 @@ end
 // Enqueue AR/AW fields on upstream handshake; dequeue and compare on
 // downstream handshake.  FIFO order is maintained within each channel.
 // =========================================================================
-localparam int PRESQ = 64;   // max outstanding per channel
+localparam int PRESQ = 256;  // max outstanding per channel
 
 typedef struct packed {
     logic [AXI_ID_WIDTH-1:0]   id;
@@ -297,7 +301,7 @@ typedef struct packed {
     logic                        last;
 } w_cap_t;
 
-localparam int W_EXP_SZ = 512;
+localparam int W_EXP_SZ = 4096;
 w_cap_t  w_exp_buf [0:W_EXP_SZ-1];
 int unsigned w_exp_wr      = 0;
 int unsigned w_exp_rd      = 0;
@@ -345,8 +349,8 @@ typedef struct packed {
     logic [1:0]              resp;
 } b_cap_t;
 
-localparam int R_BUF_SZ = 512;
-localparam int B_BUF_SZ = 128;
+localparam int R_BUF_SZ = 4096;
+localparam int B_BUF_SZ = 1024;
 
 r_cap_t r_buf [0:R_BUF_SZ-1];
 b_cap_t b_buf [0:B_BUF_SZ-1];
@@ -385,6 +389,25 @@ end
 // backpressure controls driven by T10
 logic slv_ar_slow = 1'b0;
 
+// Downstream (memory-side) backpressure injection — driven by T14.
+// When a bp_* enable is high, that slave READY follows slv_bp_ph, a free-running
+// 1-cycle toggle, so the memory accepts on alternate cycles. This is where the
+// regulator's REG_AR/REG_AW/REG_W must hold VALID + payload stable until
+// accepted — the realistic DDR condition the board actually sees.
+logic slv_bp_ar = 1'b0;
+logic slv_bp_aw = 1'b0;
+logic slv_bp_w  = 1'b0;
+logic slv_bp_ph = 1'b0;
+// T19: store-and-forward slave — when high, the memory withholds AWREADY until
+// it also sees WVALID (a spec-legal AXI slave dependency). Exposes any master
+// that waits for AWREADY before driving WVALID.
+logic slv_aw_needs_w = 1'b0;
+logic bp_random   = 1'b0;   // T16: downstream ready pattern becomes random, not alternating
+logic soak_active = 1'b0;   // T16: keeps the background upstream ready-togglers alive
+always_ff @(posedge clk or negedge rst_n)
+    if (!rst_n) slv_bp_ph <= 1'b0;
+    else        slv_bp_ph <= bp_random ? (($urandom % 2) == 1) : ~slv_bp_ph;
+
 // wire for next-beat address avoids bit-slicing an arithmetic expression
 logic [AXI_ADDR_WIDTH-1:0] r_next_addr;
 
@@ -414,7 +437,7 @@ always_ff @(posedge clk or negedge rst_n) begin
         case (rs)
             RS_IDLE: begin
                 axi_slv_if.r_valid  <= 1'b0;
-                axi_slv_if.ar_ready <= !slv_ar_slow;
+                axi_slv_if.ar_ready <= (slv_bp_ar ? slv_bp_ph : 1'b1);
                 if (axi_slv_if.ar_valid && axi_slv_if.ar_ready) begin
                     r_cap_id     <= axi_slv_if.ar_id;
                     r_cap_addr   <= axi_slv_if.ar_addr;
@@ -436,7 +459,7 @@ always_ff @(posedge clk or negedge rst_n) begin
                 if (axi_slv_if.r_valid && axi_slv_if.r_ready) begin
                     if (r_beats_left == 8'h00) begin
                         axi_slv_if.r_valid  <= 1'b0;
-                        axi_slv_if.ar_ready <= !slv_ar_slow;
+                        axi_slv_if.ar_ready <= (slv_bp_ar ? slv_bp_ph : 1'b1);
                         rs <= RS_IDLE;
                     end else begin
                         r_beats_left <= r_beats_left - 1;
@@ -470,19 +493,24 @@ always_ff @(posedge clk or negedge rst_n) begin
         case (ws)
             WS_IDLE: begin
                 axi_slv_if.b_valid  <= 1'b0;
-                axi_slv_if.aw_ready <= 1'b1;
                 axi_slv_if.w_ready  <= 1'b0;
+                // Store-and-forward (T19): accept AW only once WVALID is also
+                // present. Otherwise accept AW independent of W (normal DDR shim).
+                if (slv_aw_needs_w)
+                    axi_slv_if.aw_ready <= axi_slv_if.aw_valid && axi_slv_if.w_valid;
+                else
+                    axi_slv_if.aw_ready <= (slv_bp_aw ? slv_bp_ph : 1'b1);
                 if (axi_slv_if.aw_valid && axi_slv_if.aw_ready) begin
                     w_cap_id            <= axi_slv_if.aw_id;
                     ws                  <= WS_DATA;
                     axi_slv_if.aw_ready <= 1'b0;
-                    axi_slv_if.w_ready  <= 1'b1;
+                    axi_slv_if.w_ready  <= (slv_bp_w ? slv_bp_ph : 1'b1);
                 end
             end
 
             WS_DATA: begin
                 axi_slv_if.aw_ready <= 1'b0;
-                axi_slv_if.w_ready  <= 1'b1;
+                axi_slv_if.w_ready  <= (slv_bp_w ? slv_bp_ph : 1'b1);
                 if (axi_slv_if.w_valid && axi_slv_if.w_ready && axi_slv_if.w_last) begin
                     ws                 <= WS_RESP;
                     axi_slv_if.w_ready <= 1'b0;
@@ -495,7 +523,10 @@ always_ff @(posedge clk or negedge rst_n) begin
             WS_RESP: begin
                 if (axi_slv_if.b_valid && axi_slv_if.b_ready) begin
                     axi_slv_if.b_valid  <= 1'b0;
-                    axi_slv_if.aw_ready <= 1'b1;
+                    // In store-and-forward mode leave AWREADY low; WS_IDLE recomputes
+                    // it from WVALID next cycle. Otherwise re-arm as usual.
+                    axi_slv_if.aw_ready <= slv_aw_needs_w ? 1'b0
+                                                          : (slv_bp_aw ? slv_bp_ph : 1'b1);
                     ws <= WS_IDLE;
                 end
             end
@@ -509,6 +540,17 @@ end
 
 int unsigned r_rcv_count = 0;
 int unsigned b_rcv_count = 0;
+
+// Random burst length weighted toward realistic cache-line sizes, with a tail
+// beyond FIFO_DEPTH so the streaming path is exercised. (used by T16)
+function automatic logic [7:0] rand_len();
+    int unsigned r = $urandom % 100;
+    if      (r < 40) rand_len = 8'h00;   // 40%  1-beat
+    else if (r < 70) rand_len = 8'h03;   // 30%  4-beat
+    else if (r < 90) rand_len = 8'h07;   // 20%  8-beat (cache line)
+    else if (r < 97) rand_len = 8'h0F;   //  7% 16-beat (> FIFO depth)
+    else             rand_len = 8'h1F;   //  3% 32-beat (> FIFO depth)
+endfunction
 
 task automatic init_master();
     axi_mst_if.aw_valid  <= 1'b0; axi_mst_if.aw_id     <= '0;
@@ -560,8 +602,9 @@ task automatic send_ar(
     while (!axi_mst_if.ar_ready) @(posedge clk);
     @(negedge clk);
     axi_mst_if.ar_valid <= 1'b0;
-    $display("[MST %0t] AR sent: id=%0d addr=0x%h len=%0d cache=%0b prot=%0b qos=%0d lock=%0b",
-             $time, id, addr, len, cache, prot, qos, lock);
+    if (!quiet)
+        $display("[MST %0t] AR sent: id=%0d addr=0x%h len=%0d cache=%0b prot=%0b qos=%0d lock=%0b",
+                 $time, id, addr, len, cache, prot, qos, lock);
 endtask
 
 // Primitive: block until the next R beat is available in the capture buffer.
@@ -641,8 +684,9 @@ task automatic send_write(
     while (!axi_mst_if.aw_ready) @(posedge clk);
     @(negedge clk);
     axi_mst_if.aw_valid <= 1'b0;
-    $display("[MST %0t] AW sent: id=%0d addr=0x%h len=%0d cache=%0b prot=%0b qos=%0d",
-             $time, id, addr, len, cache, prot, qos);
+    if (!quiet)
+        $display("[MST %0t] AW sent: id=%0d addr=0x%h len=%0d cache=%0b prot=%0b qos=%0d",
+                 $time, id, addr, len, cache, prot, qos);
     for (int b = 0; b <= int'(len); b++) begin
         // Enqueue expected beat for Scoreboard E BEFORE driving upstream.
         // The data_write_fifo adds a registered-output delay, so the downstream
@@ -684,7 +728,7 @@ task automatic drain_r(int unsigned n);
             read_r_beat(beat);
             r_rcv_count = r_rcv_count + 1;
         end while (!beat.last);
-        $display("[MST %0t] R drained: id=%0d", $time, beat.id);
+        if (!quiet) $display("[MST %0t] R drained: id=%0d", $time, beat.id);
     end
 endtask
 
@@ -694,8 +738,56 @@ task automatic drain_b(int unsigned n);
     for (int i = 0; i < int'(n); i++) begin
         read_b_resp(resp);
         b_rcv_count = b_rcv_count + 1;
-        $display("[MST %0t] B drained: id=%0d", $time, resp.id);
+        if (!quiet) $display("[MST %0t] B drained: id=%0d", $time, resp.id);
     end
+endtask
+
+// Send a write with the W beats driven BEFORE the AW (AXI-legal: write data
+// may precede its address). Exercises the regulator's independent W buffering:
+// beats sit in the W FIFO with no AW present, then bind to the AW when it lands.
+// Keep len+1 <= FIFO_DEPTH so all beats can pre-buffer before the AW.
+task automatic send_write_wfirst(
+    input logic [AXI_ADDR_WIDTH-1:0] addr,
+    input logic [AXI_ID_WIDTH-1:0]   id,
+    input logic [7:0]                len = 8'h00
+);
+    // 1) drive all W beats first — DUT must buffer them with no AW yet
+    for (int b = 0; b <= int'(len); b++) begin
+        w_exp_buf[w_exp_wr % W_EXP_SZ].data = 64'hC0FFEE00_00000000 | {32'h0, addr[15:0], 8'(b)};
+        w_exp_buf[w_exp_wr % W_EXP_SZ].strb = 8'hFF;
+        w_exp_buf[w_exp_wr % W_EXP_SZ].last = (b == int'(len));
+        w_exp_wr = w_exp_wr + 1;
+        @(negedge clk);
+        axi_mst_if.w_valid <= 1'b1;
+        axi_mst_if.w_data  <= 64'hC0FFEE00_00000000 | {32'h0, addr[15:0], 8'(b)};
+        axi_mst_if.w_strb  <= 8'hFF;
+        axi_mst_if.w_last  <= (b == int'(len));
+        axi_mst_if.w_user  <= '0;
+        @(posedge clk);
+        while (!axi_mst_if.w_ready) @(posedge clk);
+        @(negedge clk);
+        axi_mst_if.w_valid <= 1'b0;
+    end
+    // 2) now drive the AW
+    @(negedge clk);
+    axi_mst_if.aw_valid  <= 1'b1;
+    axi_mst_if.aw_id     <= id;
+    axi_mst_if.aw_addr   <= addr;
+    axi_mst_if.aw_len    <= len;
+    axi_mst_if.aw_size   <= 3'b011;
+    axi_mst_if.aw_burst  <= 2'b01;
+    axi_mst_if.aw_lock   <= 1'b0;
+    axi_mst_if.aw_cache  <= 4'b0010;
+    axi_mst_if.aw_prot   <= 3'b000;
+    axi_mst_if.aw_qos    <= 4'b0000;
+    axi_mst_if.aw_region <= '0;
+    axi_mst_if.aw_atop   <= '0;
+    axi_mst_if.aw_user   <= '0;
+    @(posedge clk);
+    while (!axi_mst_if.aw_ready) @(posedge clk);
+    @(negedge clk);
+    axi_mst_if.aw_valid <= 1'b0;
+    $display("[MST %0t] (W-first) AW sent: id=%0d addr=0x%h len=%0d", $time, id, addr, len);
 endtask
 
 // =========================================================================
@@ -708,6 +800,32 @@ initial begin
         $fatal(1, "[TIMEOUT] exceeded %0d cycles", TIMEOUT_CYCLES);
 end
 
+// No-progress watchdog — during a soak, if no R/B response is drained for
+// STALL_CYCLES the memory path has wedged. Fire with the current counts; the
+// $fatal runs the in-DUT `final` balance summary, which names the stuck channel.
+initial begin : stall_watchdog
+    int unsigned last_prog;
+    int unsigned idle;
+    last_prog = 0;
+    idle      = 0;
+    @(posedge rst_n);
+    forever begin
+        @(posedge clk);
+        if (!soak_active) begin
+            idle      = 0;
+            last_prog = r_rcv_count + b_rcv_count;
+        end else if ((r_rcv_count + b_rcv_count) != last_prog) begin
+            last_prog = r_rcv_count + b_rcv_count;
+            idle      = 0;
+        end else begin
+            idle = idle + 1;
+            if (idle > STALL_CYCLES)
+                $fatal(1, "[STALL] no response progress for %0d cycles - MEMORY PATH WEDGED (r_rcv=%0d b_rcv=%0d dn_ar=%0d dn_aw=%0d) - see in-DUT balance below",
+                       STALL_CYCLES, r_rcv_count, b_rcv_count, dn_ar_cnt, dn_aw_cnt);
+        end
+    end
+end
+
 // =========================================================================
 // MAIN TEST SEQUENCE
 // =========================================================================
@@ -715,6 +833,110 @@ initial begin
     init_master();
     @(posedge rst_n);
     repeat (5) @(posedge clk);
+
+    // =================================================================
+    // T18 (opt-in: +RUN_T18): read/write channel INDEPENDENCE.
+    //   Reduction of the platform-hang hypothesis to its core. Drive AW0 and
+    //   WITHHOLD its W data, then issue a read AR1. Per AXI, reads and writes
+    //   are independent channels — AR1 MUST be able to complete while W0 is
+    //   still outstanding. If the regulator parks AW0 in REG_W (waiting for W)
+    //   in the SHARED AR/AW FIFO and thereby blocks AR1 behind it, the read
+    //   never completes -> deadlock (== the on-chip hang: slowdown drained,
+    //   LLC stalled). A correct/decoupled design lets AR1 through.
+    // =================================================================
+    if ($test$plusargs("RUN_T18")) begin : t18
+        automatic logic  got_r1 = 1'b0;
+        automatic r_cap_t bt;
+        $display("\n=== T18: read-behind-delayed-write independence (platform-hang repro) ===");
+        // AW0 — drive the write address; deliberately do NOT send its W beat.
+        @(negedge clk);
+        axi_mst_if.aw_valid <= 1'b1; axi_mst_if.aw_id    <= 9'h50;
+        axi_mst_if.aw_addr  <= 64'hD000_0000; axi_mst_if.aw_len <= 8'h00;
+        axi_mst_if.aw_size  <= 3'b011; axi_mst_if.aw_burst <= 2'b01;
+        axi_mst_if.aw_cache <= 4'b0010; axi_mst_if.aw_prot  <= 3'b000;
+        axi_mst_if.aw_qos   <= 4'h0;   axi_mst_if.aw_lock   <= 1'b0;
+        axi_mst_if.aw_region<= '0; axi_mst_if.aw_atop <= '0; axi_mst_if.aw_user <= '0;
+        @(posedge clk); while (!axi_mst_if.aw_ready) @(posedge clk);
+        @(negedge clk); axi_mst_if.aw_valid <= 1'b0;
+        $display("[T18] AW0 accepted by the slowdown; its W beat is withheld on purpose");
+        // AR1 — a read that must complete while W0 is outstanding (bounded wait).
+        fork
+            begin
+                send_ar(.addr(64'hE000_0000), .id(9'h51));
+                read_r_beat(bt);
+                got_r1 = 1'b1;
+            end
+            begin
+                repeat (3000) @(posedge clk);
+            end
+        join_any
+        disable fork;
+        axi_mst_if.ar_valid <= 1'b0;
+        $display("========================================================");
+        if (got_r1)
+            $display("  [T18] PASS - read completed with the write still outstanding (R/W independent)");
+        else
+            $display("  [T18] *** RW-DEADLOCK *** read AR1 never completed - blocked behind AW0 parked in REG_W (shared AR/AW FIFO couples reads to writes) == platform hang root cause");
+        $display("========================================================");
+        sim_passed = 1'b1;
+        $finish;
+    end
+
+    // =================================================================
+    // T19 (opt-in: +RUN_T19): store-and-forward slave — AWREADY gated on
+    //   WVALID. AXI4 A3.3.1 forbids a master waiting for AWREADY before
+    //   asserting WVALID, precisely because a legal slave may wait for WVALID
+    //   before AWREADY. The OLD regulator drove WVALID only in WR_SEND_W (after
+    //   its AW was accepted) -> against this slave both sides wait forever
+    //   (total deadlock; reads starve too). The concurrent-AW/W regulator
+    //   asserts WVALID from cycle one, so every write completes.
+    // =================================================================
+    if ($test$plusargs("RUN_T19")) begin : t19
+        automatic int    got_b = 0;
+        automatic int    n_wr  = 6;
+        automatic b_cap_t bb;
+        $display("\n=== T19: store-and-forward slave (AWREADY waits for WVALID) ===");
+        slv_aw_needs_w = 1'b1;                 // memory now needs W before it takes AW
+        fork
+            begin : drv    // single-beat + burst writes, W fully buffered per AW
+                send_write(.addr(64'hF000_0000), .id(9'h60), .len(8'h00));
+                $display("[T19 drv] wrote id=96 upstream");
+                send_write(.addr(64'hF000_0040), .id(9'h61), .len(8'h03));
+                $display("[T19 drv] wrote id=97 upstream");
+                send_write(.addr(64'hF000_0100), .id(9'h62), .len(8'h00));
+                $display("[T19 drv] wrote id=98 upstream");
+                send_write(.addr(64'hF000_0140), .id(9'h63), .len(8'h07));
+                $display("[T19 drv] wrote id=99 upstream");
+                send_write(.addr(64'hF000_0200), .id(9'h64), .len(8'h00));
+                $display("[T19 drv] wrote id=100 upstream");
+                send_write(.addr(64'hF000_0240), .id(9'h65), .len(8'h01));
+                $display("[T19 drv] wrote id=101 upstream (ALL sent)");
+                forever @(posedge clk);        // do NOT let drv end the join_any race
+            end
+            begin : rcv
+                for (int i = 0; i < n_wr; i++) begin
+                    read_b_resp(bb);
+                    got_b++;
+                    $display("[T19 rcv] B #%0d id=%0d @%0t", got_b, bb.id, $time);
+                end
+            end
+            begin : wd     // bounded: the OLD RTL never reaches here (deadlock)
+                repeat (200_000) @(posedge clk);
+                $display("[T19 wd] watchdog expired at 200k cycles");
+            end
+        join_any
+        disable fork;
+        slv_aw_needs_w = 1'b0;
+        repeat (2*LATENCY + 4) @(posedge clk);   // let the last B drain the latency pipe
+        $display("========================================================");
+        if (got_b == n_wr)
+            $display("  [T19] PASS - all %0d writes completed against a slave gating AWREADY on WVALID (WVALID never waits on AWREADY)", n_wr);
+        else
+            $display("  [T19] *** WVALID/AWREADY DEADLOCK *** only %0d/%0d B received - regulator withheld WVALID until AWREADY (AXI4 A3.3.1 violation)", got_b, n_wr);
+        $display("========================================================");
+        sim_passed = (got_b == n_wr);
+        $finish;
+    end
 
     // =================================================================
     // T1: Light single-beat reads — one at a time, wait for response.
@@ -966,6 +1188,211 @@ initial begin
         end
     end
     $display("[T12] PASS — concurrent flood complete, no drops\n");
+
+    // =================================================================
+    // T13: Bursts LONGER than the FIFO depth — must STREAM, not buffer.
+    //      A 16- and 32-beat write cannot be fully held (depth is %0d): the
+    //      FSM drains from the head while the master refills as space frees.
+    //      Proves the len-counter tracks the burst boundary regardless of how
+    //      few beats are buffered at once, with no deadlock (watchdog guards).
+    // =================================================================
+    $display("=== T13: Bursts longer than FIFO depth (%0d) — streaming ===", FIFO_DEPTH);
+    send_write(.addr(64'h9_0000_0000), .id(9'd220), .len(8'h0F));   // 16-beat write
+    recv_b(.exp_id(9'd220));
+    send_write(.addr(64'h9_0002_0000), .id(9'd221), .len(8'h1F));   // 32-beat write
+    recv_b(.exp_id(9'd221));
+    send_ar(.addr(64'h9_0004_0000), .id(9'd222), .len(8'h0F));      // 16-beat read
+    recv_r_burst(.exp_id(9'd222), .exp_len(8'h0F), .exp_addr(64'h9_0004_0000));
+    $display("[T13] PASS — long bursts streamed through depth-%0d FIFO, no deadlock\n", FIFO_DEPTH);
+
+    // =================================================================
+    // T14: Downstream (memory) backpressure — the slave accepts AR/AW/W on
+    //      alternate cycles. This is the realistic DDR condition: REG_AR/
+    //      REG_AW/REG_W must hold VALID + payload stable until accepted.
+    //      Scoreboards C/E catch any field/W-beat corruption; the in-DUT
+    //      checker catches any drop or duplication.
+    // =================================================================
+    $display("=== T14: Downstream backpressure (memory ready toggles on AR/AW/W) ===");
+    slv_bp_ar = 1'b1; slv_bp_aw = 1'b1; slv_bp_w = 1'b1;
+    fork
+        begin
+            for (int i = 0; i < 8; i++)
+                send_write(.addr(64'hA_0000_0000 + 64'(i)*64), .id(9'(224 + i)),
+                           .len((i % 2 == 0) ? 8'h03 : 8'h00));
+        end
+        begin
+            for (int i = 0; i < 8; i++)
+                send_ar(.addr(64'hB_0000_0000 + 64'(i)*64), .id(9'(1 + i)),
+                        .len((i % 2 == 0) ? 8'h07 : 8'h00));
+        end
+        begin
+            drain_b(8);
+            drain_r(8);
+        end
+    join
+    slv_bp_ar = 1'b0; slv_bp_aw = 1'b0; slv_bp_w = 1'b0;
+    $display("[T14] PASS — traffic intact under downstream backpressure\n");
+
+    // =================================================================
+    // T15: W-before-AW ordering — the write DATA is driven before its
+    //      address (AXI-legal). The regulator buffers W independently and
+    //      must still bind the burst to the AW when it arrives.
+    // =================================================================
+    $display("=== T15: W-before-AW ordering ===");
+    send_write_wfirst(.addr(64'hC_0000_0000), .id(9'd240), .len(8'h01));
+    recv_b(.exp_id(9'd240));
+    send_write_wfirst(.addr(64'hC_0001_0000), .id(9'd241), .len(8'h03));
+    recv_b(.exp_id(9'd241));
+    $display("[T15] PASS — W-before-AW handled\n");
+
+    // =================================================================
+    // T16: CONSTRAINED-RANDOM SOAK — the catch-all.
+    //      Random R/W mix, random burst lengths (incl. > FIFO depth),
+    //      random sideband, random inter-request gaps, and random ready
+    //      backpressure on ALL FIVE channels at once (upstream r/b_ready
+    //      toggled here; downstream ar/aw/w randomized in the slave).
+    //      Latency checker is off (stalls expected). Correctness is proven
+    //      by the in-DUT balance checker (0 drop/dup, 0 in-flight at end),
+    //      the field/ID/data/W-integrity scoreboards, and deadlock-freedom
+    //      (the watchdog $fatals if anything wedges). Reproducible via the
+    //      Makefile SEED (vsim -sv_seed).
+    // =================================================================
+    $display("=== T16: Constrained-random soak (%0d reads + %0d writes, all-channel random BP) ===",
+             SOAK_RD, SOAK_WR);
+    begin : t16
+        automatic int unsigned r_before  = r_rcv_count;
+        automatic int unsigned b_before  = b_rcv_count;
+        automatic int unsigned ar_before = dn_ar_cnt;
+        automatic int unsigned aw_before = dn_aw_cnt;
+
+        lat_check_en = 0;                       // response stalls expected under BP
+        bp_random    = 1'b1;                    // downstream backpressure = random
+        slv_bp_ar = 1'b1; slv_bp_aw = 1'b1; slv_bp_w = 1'b1;
+        soak_active  = 1'b1;
+
+        // Background upstream ready togglers — persist until soak_active drops,
+        // then raise ready so the pipeline can fully flush.
+        fork
+            begin : r_tog
+                while (soak_active) begin
+                    @(posedge clk);
+                    if (($urandom % 3) == 0) axi_mst_if.r_ready <= ($urandom % 2);
+                end
+                @(negedge clk); axi_mst_if.r_ready <= 1'b1;
+            end
+            begin : b_tog
+                while (soak_active) begin
+                    @(posedge clk);
+                    if (($urandom % 3) == 0) axi_mst_if.b_ready <= ($urandom % 2);
+                end
+                @(negedge clk); axi_mst_if.b_ready <= 1'b1;
+            end
+        join_none
+
+        // Generators + independent drainers (independent so neither blocks).
+        fork
+            begin : rd_gen
+                for (int i = 0; i < int'(SOAK_RD); i++) begin
+                    send_ar(.addr (64'h1_0000_0000 + ((64'($urandom) % 64'h10000) << 6)),
+                            .id   (9'($urandom)), .len(rand_len()),
+                            .size (3'b011), .burst(2'b01),
+                            .cache(4'($urandom)), .prot(3'($urandom)),
+                            .qos  (4'($urandom)), .lock(1'($urandom)));
+                    repeat ($urandom % 4) @(posedge clk);
+                end
+            end
+            begin : wr_gen
+                for (int i = 0; i < int'(SOAK_WR); i++) begin
+                    send_write(.addr (64'h2_0000_0000 + ((64'($urandom) % 64'h10000) << 6)),
+                               .id   (9'($urandom)), .len(rand_len()),
+                               .size (3'b011), .burst(2'b01),
+                               .cache(4'($urandom)), .prot(3'($urandom)),
+                               .qos  (4'($urandom)), .lock(1'($urandom)));
+                    repeat ($urandom % 4) @(posedge clk);
+                end
+            end
+            begin : rd_drain drain_r(SOAK_RD); end
+            begin : wr_drain drain_b(SOAK_WR); end
+        join
+
+        soak_active = 1'b0;                     // stop togglers -> they raise ready & exit
+        repeat (60) @(posedge clk);             // flush pipeline
+        bp_random = 1'b0;
+        slv_bp_ar = 1'b0; slv_bp_aw = 1'b0; slv_bp_w = 1'b0;
+        lat_check_en = 1;
+
+        // Every issued request must have reached downstream — no drops.
+        if ((dn_ar_cnt - ar_before) !== int'(SOAK_RD)) begin
+            $error("[T16] AR DROP: issued %0d, downstream %0d", SOAK_RD, dn_ar_cnt - ar_before);
+            tput_ar_viols = tput_ar_viols + 1;
+        end
+        if ((dn_aw_cnt - aw_before) !== int'(SOAK_WR)) begin
+            $error("[T16] AW DROP: issued %0d, downstream %0d", SOAK_WR, dn_aw_cnt - aw_before);
+            tput_aw_viols = tput_aw_viols + 1;
+        end
+        $display("[T16] drained %0d R beats + %0d B resp (see balance summary for 0 in-flight)",
+                 r_rcv_count - r_before, b_rcv_count - b_before);
+    end
+    $display("[T16] PASS — random soak complete\n");
+
+    // =================================================================
+    // T17: QUAD-CORE LLC-MIRROR SOAK  (opt-in: +RUN_QC_MIRROR, size +QC_LINES)
+    //      Mirrors the slowdown_qc SW workload as the LLC presents it to the
+    //      slowdown's memory port: ONE merged AR stream (cache-line refills for
+    //      the 2 reader regions + allocate-reads for the 2 writer regions) and
+    //      ONE merged AW+W stream (writebacks for the 2 writer regions). All are
+    //      full cache-line bursts (len=7 = 8 beats) at sequential addresses over
+    //      4 disjoint 16 MB-apart regions, under random all-channel backpressure.
+    //      Huge volume to surface an accumulation / rare-pattern wedge that the
+    //      short random soak missed. If the memory path wedges, the stall
+    //      watchdog fires and the in-DUT balance summary names the stuck channel.
+    // =================================================================
+    if ($test$plusargs("RUN_QC_MIRROR")) begin : t17
+        int unsigned qc_lines;
+        qc_lines = 200000;
+        void'($value$plusargs("QC_LINES=%d", qc_lines));
+        $display("=== T17: quad-core LLC-mirror soak (%0d lines/stream, len=7 bursts) ===", qc_lines);
+        quiet        = 1'b1;                       // silence per-transaction logging
+        lat_check_en = 0;
+        bp_random    = 1'b1; slv_bp_ar = 1'b1; slv_bp_aw = 1'b1; slv_bp_w = 1'b1;
+        soak_active  = 1'b1;
+        fork
+            begin : qc_rtog
+                while (soak_active) begin @(posedge clk); if (($urandom%3)==0) axi_mst_if.r_ready <= ($urandom%2); end
+                @(negedge clk); axi_mst_if.r_ready <= 1'b1;
+            end
+            begin : qc_btog
+                while (soak_active) begin @(posedge clk); if (($urandom%3)==0) axi_mst_if.b_ready <= ($urandom%2); end
+                @(negedge clk); axi_mst_if.b_ready <= 1'b1;
+            end
+        join_none
+        fork
+            // Merged AR stream: refills (regions 0,1 reads) + allocate-reads (regions 2,3 writes)
+            begin : qc_ar
+                for (int i = 0; i < int'(qc_lines); i++) begin
+                    send_ar(.addr(64'h8200_0000 + 64'(i)*64), .id(9'(i)),          .len(8'h07));
+                    send_ar(.addr(64'h8300_0000 + 64'(i)*64), .id(9'(64  + i%64)), .len(8'h07));
+                    send_ar(.addr(64'h8400_0000 + 64'(i)*64), .id(9'(128 + i%64)), .len(8'h07));
+                    send_ar(.addr(64'h8500_0000 + 64'(i)*64), .id(9'(200 + i%56)), .len(8'h07));
+                end
+            end
+            // Merged AW+W stream: writebacks (regions 2,3)
+            begin : qc_aw
+                for (int i = 0; i < int'(qc_lines); i++) begin
+                    send_write(.addr(64'h8400_0000 + 64'(i)*64), .id(9'(128 + i%64)), .len(8'h07));
+                    send_write(.addr(64'h8500_0000 + 64'(i)*64), .id(9'(200 + i%56)), .len(8'h07));
+                end
+            end
+            begin : qc_dr drain_r(qc_lines * 4); end   // 4 AR/line
+            begin : qc_db drain_b(qc_lines * 2); end   // 2 AW/line
+        join
+        soak_active = 1'b0;
+        repeat (200) @(posedge clk);
+        bp_random = 1'b0; slv_bp_ar = 1'b0; slv_bp_aw = 1'b0; slv_bp_w = 1'b0;
+        quiet = 1'b0;
+        $display("[T17] PASS — quad-core mirror soak complete (%0d reads + %0d writes)",
+                 qc_lines*4, qc_lines*2);
+    end
 
     // =================================================================
     // Final report

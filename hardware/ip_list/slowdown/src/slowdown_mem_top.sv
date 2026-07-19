@@ -251,6 +251,121 @@ module slowdown_mem_top #(
   ck_mst_b_vs:  assert property (ck_vstable(slowdown_mem_mst.b_valid,  slowdown_mem_mst.b_ready))  else $error("[slowdown] master B valid dropped before ready");
   ck_slv_b_vs:  assert property (ck_vstable(slowdown_mem_slv.b_valid,  slowdown_mem_slv.b_ready))  else $error("[slowdown] slave B valid dropped before ready (latency path)");
 
+  // --- payload stability: while VALID held (not yet READY), payload must not change ---
+  property ck_pstable(v, r, p); @(posedge clk_i) disable iff(!rst_ni) (v && !r) |=> $stable(p); endproperty
+  ck_mst_ar_ad: assert property (ck_pstable(slowdown_mem_mst.ar_valid, slowdown_mem_mst.ar_ready, slowdown_mem_mst.ar_addr))
+    else $error("[slowdown] mst AR addr changed while VALID held (payload instability)");
+  ck_mst_aw_ad: assert property (ck_pstable(slowdown_mem_mst.aw_valid, slowdown_mem_mst.aw_ready, slowdown_mem_mst.aw_addr))
+    else $error("[slowdown] mst AW addr changed while VALID held (payload instability)");
+  ck_mst_w_dt: assert property (ck_pstable(slowdown_mem_mst.w_valid,  slowdown_mem_mst.w_ready,  slowdown_mem_mst.w_data))
+    else $error("[slowdown] mst W data changed while VALID held (payload instability)");
+
+  // ==========================================================================
+  // LIVE TRACER + HEARTBEAT + STALL WATCHDOG   (SIMULATION ONLY)
+  //   Makes the regulator observable in the full-platform sim like a core trace.
+  //   * trace_slowdown.log : every downstream release + a periodic FULL-state
+  //                          heartbeat (so progress/rate is visible while the
+  //                          UART is silent during the traffic phase).
+  //   * transcript         : a rare liveness beat + a LOUD, self-diagnosing
+  //                          STALL report naming exactly which side is stuck ->
+  //                          tells SW-vs-HW at a glance.
+  // ==========================================================================
+  localparam int unsigned SD_HB_FILE   = 2000;    // file state-dump cadence (cyc)
+  localparam int unsigned SD_HB_LOUD   = 200000;  // transcript liveness cadence
+  localparam int unsigned SD_STALL_LIM = 20000;   // busy + no-handshake => shout
+
+  integer          sd_fd;
+  longint unsigned sd_cycle;
+  longint unsigned sd_last_hs;        // cycle of last ANY boundary handshake
+  longint unsigned sd_last_addr_hs;   // cycle of last downstream AR/AW handshake
+
+  wire sd_any_hs = ck_ar_in|ck_ar_out|ck_aw_in|ck_aw_out|ck_w_in|ck_w_out
+                 | ck_r_in|ck_r_out|ck_b_in|ck_b_out;
+  wire [31:0] sd_infl_addr = (ck_ar_i-ck_ar_o)+(ck_aw_i-ck_aw_o);
+  // "busy" = the IP still owes work OR is being offered work at either boundary
+  wire sd_busy = (sd_infl_addr!=0) | (ck_w_i!=ck_w_o) | (ck_r_i!=ck_r_o) | (ck_b_i!=ck_b_o)
+               | slowdown_mem_slv.ar_valid | slowdown_mem_slv.aw_valid | slowdown_mem_slv.w_valid
+               | slowdown_mem_mst.r_valid  | slowdown_mem_mst.b_valid;
+
+  initial begin
+    sd_fd = $fopen("trace_slowdown.log","w");
+    $fwrite(sd_fd,"# slowdown tracer  Latency=%0d Throughput=%0d FIFO=%0d\n",
+            Latency_param, Throughput_timer_param, Throughput_FIFO_depth);
+    $fwrite(sd_fd,"# <time> <event> <detail>   (HB = periodic full-state heartbeat)\n");
+  end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin sd_cycle<=0; sd_last_hs<=0; sd_last_addr_hs<=0; end
+    else begin
+      sd_cycle <= sd_cycle + 1;
+      if (sd_any_hs)             sd_last_hs      <= sd_cycle;
+      if (ck_ar_out | ck_aw_out) sd_last_addr_hs <= sd_cycle;
+    end
+  end
+
+  // per-transaction trace: downstream releases + upstream completions
+  always_ff @(posedge clk_i) if (rst_ni) begin
+    if (ck_ar_out) $fwrite(sd_fd,"%0t AR->mem id=%0d addr=%h len=%0d\n",$time,slowdown_mem_mst.ar_id,slowdown_mem_mst.ar_addr,slowdown_mem_mst.ar_len);
+    if (ck_aw_out) $fwrite(sd_fd,"%0t AW->mem id=%0d addr=%h len=%0d\n",$time,slowdown_mem_mst.aw_id,slowdown_mem_mst.aw_addr,slowdown_mem_mst.aw_len);
+    if (ck_w_out && slowdown_mem_mst.w_last) $fwrite(sd_fd,"%0t W ->mem (burst last)\n",$time);
+    if (ck_r_out && slowdown_mem_slv.r_last) $fwrite(sd_fd,"%0t R ->llc id=%0d (burst last)\n",$time,slowdown_mem_slv.r_id);
+    if (ck_b_out) $fwrite(sd_fd,"%0t B ->llc id=%0d\n",$time,slowdown_mem_slv.b_id);
+  end
+
+  // periodic FULL-state heartbeat to the file (progress + internal state visible)
+  always_ff @(posedge clk_i) if (rst_ni && (sd_cycle % SD_HB_FILE == 0)) begin
+    $fwrite(sd_fd,
+      "%0t HB cyc=%0d ARio=%0d/%0d AWio=%0d/%0d Wio=%0d/%0d Rio=%0d/%0d Bio=%0d/%0d inflA=%0d | rd=%0d wr=%0d awsent=%0b wdone=%0b wbeats=%0d thr=%0d arFull=%0b awFull=%0b dwEmpty=%0b | slvV(ar%0b aw%0b w%0b) mstRdy(ar%0b aw%0b w%0b) rspV(r%0b b%0b)\n",
+      $time, sd_cycle,
+      ck_ar_i,ck_ar_o, ck_aw_i,ck_aw_o, ck_w_i,ck_w_o, ck_r_i,ck_r_o, ck_b_i,ck_b_o, sd_infl_addr,
+      i_throughput_regulator.rd_q, i_throughput_regulator.wr_q,
+      i_throughput_regulator.aw_sent_q, i_throughput_regulator.w_done_q,
+      i_throughput_regulator.w_beats_left_q, i_throughput_regulator.period_cnt,
+      i_throughput_regulator.ar_fifo_full, i_throughput_regulator.aw_fifo_full, i_throughput_regulator.dw_fifo_empty,
+      slowdown_mem_slv.ar_valid, slowdown_mem_slv.aw_valid, slowdown_mem_slv.w_valid,
+      slowdown_mem_mst.ar_ready, slowdown_mem_mst.aw_ready, slowdown_mem_mst.w_ready,
+      slowdown_mem_mst.r_valid, slowdown_mem_mst.b_valid);
+    $fflush(sd_fd);
+  end
+
+  // rare liveness beat to the transcript (main log shows the IP is progressing)
+  always_ff @(posedge clk_i) if (rst_ni && sd_cycle!=0 && (sd_cycle % SD_HB_LOUD == 0))
+    $display("[slowdown][%0t] alive: releases ARo=%0d AWo=%0d Wo=%0d | responses Ro=%0d Bo=%0d | inflight(addr=%0d W=%0d R=%0d B=%0d)",
+      $time, ck_ar_o, ck_aw_o, ck_w_o, ck_r_o, ck_b_o,
+      sd_infl_addr, ck_w_i-ck_w_o, ck_r_i-ck_r_o, ck_b_i-ck_b_o);
+
+  // STALL WATCHDOG: busy but NO boundary handshake for SD_STALL_LIM cycles =>
+  // shout (re-shouting every SD_STALL_LIM) with the exact state so the culprit
+  // side (SW upstream idle / memory downstream stalled / regulator wedged) is named.
+  always_ff @(posedge clk_i) if (rst_ni && sd_busy
+        && (sd_cycle - sd_last_hs >= SD_STALL_LIM)
+        && ((sd_cycle - sd_last_hs) % SD_STALL_LIM == 0)) begin
+    $display("[slowdown][%0t] *** STALL *** no boundary handshake for %0d cyc while BUSY", $time, sd_cycle - sd_last_hs);
+    $display("   inflight: addr=%0d W=%0d R=%0d B=%0d | rd_q=%0d wr_q=%0d aw_sent=%0b w_done=%0b wbeats=%0d thr_cnt=%0d",
+      sd_infl_addr, ck_w_i-ck_w_o, ck_r_i-ck_r_o, ck_b_i-ck_b_o,
+      i_throughput_regulator.rd_q, i_throughput_regulator.wr_q,
+      i_throughput_regulator.aw_sent_q, i_throughput_regulator.w_done_q,
+      i_throughput_regulator.w_beats_left_q, i_throughput_regulator.period_cnt);
+    $display("   UPSTREAM(slv) ar(v%0b r%0b) aw(v%0b r%0b) w(v%0b r%0b last%0b) r(v%0b r%0b) b(v%0b r%0b)",
+      slowdown_mem_slv.ar_valid,slowdown_mem_slv.ar_ready, slowdown_mem_slv.aw_valid,slowdown_mem_slv.aw_ready,
+      slowdown_mem_slv.w_valid,slowdown_mem_slv.w_ready,slowdown_mem_slv.w_last,
+      slowdown_mem_slv.r_valid,slowdown_mem_slv.r_ready, slowdown_mem_slv.b_valid,slowdown_mem_slv.b_ready);
+    $display("   DOWNSTR(mst)  ar(v%0b r%0b) aw(v%0b r%0b) w(v%0b r%0b last%0b) r(v%0b r%0b) b(v%0b r%0b)",
+      slowdown_mem_mst.ar_valid,slowdown_mem_mst.ar_ready, slowdown_mem_mst.aw_valid,slowdown_mem_mst.aw_ready,
+      slowdown_mem_mst.w_valid,slowdown_mem_mst.w_ready,slowdown_mem_mst.w_last,
+      slowdown_mem_mst.r_valid,slowdown_mem_mst.r_ready, slowdown_mem_mst.b_valid,slowdown_mem_mst.b_ready);
+    $fwrite(sd_fd,"%0t STALL: no hs for %0d cyc while busy (rd=%0d wr=%0d thr=%0d infA=%0d)\n",
+      $time, sd_cycle - sd_last_hs, i_throughput_regulator.rd_q, i_throughput_regulator.wr_q,
+      i_throughput_regulator.period_cnt, sd_infl_addr);
+    $fflush(sd_fd);
+  end
+
+  // throttle-spacing sanity: downstream address handshakes must stay apart
+  always_ff @(posedge clk_i) if (rst_ni && (ck_ar_out|ck_aw_out) && sd_last_addr_hs!=0
+        && (sd_cycle - sd_last_addr_hs) < (Throughput_timer_param-1))
+    $display("[slowdown][%0t] THROTTLE VIOLATION: address handshakes only %0d cyc apart (< %0d)",
+      $time, sd_cycle - sd_last_addr_hs, Throughput_timer_param);
+
   // --- end-of-sim transaction summary ---
   final begin
     $display("================ slowdown IP transaction summary ================");
@@ -264,7 +379,9 @@ module slowdown_mem_top #(
     if (ck_w_i !=ck_w_o ) $display("  *** W  imbalance: %0d write beat(s) never left the IP",  ck_w_i-ck_w_o);
     if (ck_r_i !=ck_r_o ) $display("  *** R  imbalance: %0d read-data beat(s) never delivered", ck_r_i-ck_r_o);
     if (ck_b_i !=ck_b_o ) $display("  *** B  imbalance: %0d write response(s) never delivered", ck_b_i-ck_b_o);
+    $display("  (per-transaction + heartbeat trace in trace_slowdown.log)");
     $display("=================================================================");
+    if (sd_fd) $fclose(sd_fd);
   end
 // pragma translate_on
 

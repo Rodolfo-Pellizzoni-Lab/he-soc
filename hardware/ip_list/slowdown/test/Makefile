@@ -18,6 +18,8 @@ VLOG ?= vlog
 VSIM ?= vsim
 LIB  := work
 TOP  := tb_slowdown
+SEED ?= 12345          # random-soak (T16) seed; override e.g. `make SEED=7`
+QC_LINES ?= 200000     # T17 quad-core-mirror lines/stream; `make long QC_LINES=1000000`
 
 # Compile order matters: axi_pkg -> axi_intf -> ariane_soc_stub -> ariane_axi_soc
 SIM_DEPS := \
@@ -40,7 +42,7 @@ TB := tb_slowdown.sv
 
 VLOG_FLAGS := -sv -work $(LIB) -suppress 2583 -suppress 13314 -suppress 2275
 
-.PHONY: all compile sim gui clean
+.PHONY: all compile sim gui long rwtest t19 clean
 
 all: sim
 
@@ -50,10 +52,24 @@ compile:
 	$(VLOG) $(VLOG_FLAGS) $(SIM_DEPS) $(DUT_SRC) $(TB)
 
 sim: compile
-	$(VSIM) -c -work $(LIB) $(TOP) -do "run -all; quit -f" | tee sim.log
+	$(VSIM) -c -work $(LIB) -sv_seed $(SEED) $(TOP) -do "run -all; quit -f" | tee sim.log
+
+# Long quad-core LLC-mirror soak (T17). Runs T1-T16 then the humongous mirror.
+# Override size: make long QC_LINES=1000000
+long: compile
+	$(VSIM) -c -work $(LIB) -sv_seed $(SEED) +RUN_QC_MIRROR +QC_LINES=$(QC_LINES) $(TOP) -do "run -all; quit -f" | tee qc_mirror.log
+
+# Focused read/write-independence repro (T18) — the platform-hang hypothesis
+rwtest: compile
+	$(VSIM) -c -work $(LIB) -sv_seed $(SEED) +RUN_T18 $(TOP) -do "run -all; quit -f" | tee rwtest.log
+
+# Store-and-forward slave (T19): AWREADY gated on WVALID — proves the concurrent
+# AW/W fix (this DEADLOCKS the old WVALID-after-AWREADY regulator).
+t19: compile
+	$(VSIM) -c -work $(LIB) -sv_seed $(SEED) +RUN_T19 $(TOP) -do "run -all; quit -f" | tee t19.log
 
 gui: compile
-	$(VSIM) -work $(LIB) $(TOP) -do "add wave -r /*; run -all" &
+	$(VSIM) -work $(LIB) -sv_seed $(SEED) $(TOP) -do "add wave -r /*; run -all" &
 
 clean:
 	rm -rf $(LIB) transcript vsim.wlf sim.log modelsim.ini *.vstf

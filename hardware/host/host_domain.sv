@@ -611,6 +611,11 @@ module host_domain
          end_addr:   ariane_soc::HYAXIBase + ariane_soc::HYAXILength
    };
 
+   // ---- Slowdown regulator enable switch ----
+   //   `define USE_SLOWDOWN  => SPU -> slowdown -> memory (normal operation)
+   //     (left commented)    => SPU -> memory directly   (BYPASS, diagnostic)
+`define USE_SLOWDOWN
+
 axi_spu_top #(
      // Static configuration parameters of the cache.
      .SetAssociativity   ( ariane_soc::LLC_SET_ASSOC   ),
@@ -634,11 +639,16 @@ axi_spu_top #(
      .rst_ni             ( s_synch_soc_rst             ),
      .addr_map_i         ( spu_mem_addr_map            ),
      .spu_slv            ( mem_axi_bus_spu_o_bus       ),
-     .spu_mst            ( mem_axi_bus_spu_mst         ),
+`ifdef USE_SLOWDOWN
+     .spu_mst            ( mem_axi_bus_spu_mst         ),  // SPU -> slowdown -> memory
+`else
+     .spu_mst            ( mem_axi_bus                 ),  // SPU -> memory (slowdown bypassed)
+`endif
      .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
    );
 
    // Slowdown regulator inserted between the SPU (post-LLC) and main memory.
+`ifdef USE_SLOWDOWN
    slowdown_mem_top #(
     .Latency_param            ( 20 ),  // must be >= 2
     .Throughput_timer_param   ( 10 ),
@@ -650,6 +660,7 @@ axi_spu_top #(
     .slowdown_mem_slv ( mem_axi_bus_spu_mst ),
     .slowdown_mem_mst ( mem_axi_bus         )
    );
+`endif
 
    // AXI Cut for IOPMP Configuration Port
    axi_cut_intf #(
