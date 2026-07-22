@@ -130,6 +130,27 @@ Key design choices, and *why* each one matters:
       SEND --> WAIT: handshake pops the FIFO and reloads the counter
   ```
 
+- **A 1-bit round-robin arbiter decides *who* takes each throttle slot.** The
+  throttle opens the gate once per period; the arbiter picks read-or-write for
+  that one slot. `rr_q` (0 favours read, 1 favours write) flips on every grant:
+
+  ```
+  grant_read  = gate_open & read_waiting  & (no_write_waiting | rr_q==0)
+  grant_write = gate_open & write_waiting & (no_read_waiting  | rr_q==1)
+  ```
+
+  - If **only one** side is waiting, it takes every slot (the `rr_q` term is
+    bypassed by `no_*_waiting`) — the arbiter never idles a slot or starves the
+    busy side.
+  - If **both** are waiting, `rr_q` alone breaks the tie (0 → read, 1 → write),
+    then flips — so they strictly alternate read, write, read, write, each spaced
+    by one throttle period. The two grants are mutually exclusive, so at most one
+    release ever happens per period.
+
+  AR and AW never *compete at intake* — they land in separate FIFOs with
+  independent `READY`, so a simultaneous AR+AW is not a conflict. They only meet
+  here, at the release-side arbiter.
+
 - **A write offers its AW and its W *concurrently* (single `WR_SEND` state).**
   This is the subtle one. AXI4 requires the master to assert `WVALID` *without*
   waiting for `AWREADY`, because a legal slave may wait for `WVALID` before it
