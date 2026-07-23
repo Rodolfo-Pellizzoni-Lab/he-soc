@@ -1,3 +1,15 @@
+//-----------------------------------------------------------------------------
+// Copyright (C) 2026 University of Waterloo
+// Copyright and related rights are licensed under the Solderpad Hardware
+// License, Version 0.51 (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
+// or agreed to in writing, software, hardware and materials distributed under
+// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+// CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//-----------------------------------------------------------------------------
+
 /// This module converts Request-Grant protocol into AXI4-Lite.
 /// Note: The LSU of the PMU core needs the grant signal to be 1'b1 at least one clock before `r_valid`.
 ///       A data request cannot be accepted and responded to in the same clock cycle. I am not sure if that is how all request-grant 

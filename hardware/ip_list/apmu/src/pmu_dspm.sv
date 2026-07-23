@@ -1,3 +1,15 @@
+//-----------------------------------------------------------------------------
+// Copyright (C) 2026 University of Waterloo
+// Copyright and related rights are licensed under the Solderpad Hardware
+// License, Version 0.51 (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+// http://solderpad.org/licenses/SHL-0.51. Unless required by applicable law
+// or agreed to in writing, software, hardware and materials distributed under
+// this License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+// CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//-----------------------------------------------------------------------------
+
 // The following must be kept in mind when designing the DSPM FSM to respond to the LSU of the PMU core (Ibex):
 //      1. The `core_gnt_o` signal must be set one clock cycle before the `core_rvalid_i` is set. This is different from what the fetch stage of the core expects.
 //         The `if_stage` can send accept a valid `core_rdata_i` in the same cycle as when the `core_gnt_o` is set unlike the LSU. 
