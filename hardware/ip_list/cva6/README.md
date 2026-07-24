@@ -1,3 +1,50 @@
+# CVA6-EVU — Event Monitoring Unit for the CVA6 core
+
+> **This CVA6 fork adds the CVA6-EVU** ([`core/perf_counters_evu.sv`](./core/perf_counters_evu.sv)):
+> a lightweight, runtime-configurable **Event Monitoring Unit** that connects the CVA6's
+> native performance-counter and commit-PC pipeline signals to our **Advanced Performance
+> Monitoring Unit (APMU)**, packaging them as EVU→APMU event packets. It is the configurable,
+> core-level EVU of our EMSOFT 2026 paper's monitoring architecture (the counterpart to the
+> fixed-function AXI4-SPU), and it demonstrates how an *existing* hardware-monitoring unit can
+> be attached to the APMU. lowRISC/OpenHW's upstream CVA6 README is preserved unchanged below.
+
+## What it does
+
+The CVA6 core exposes its native PMU event signals and its commit-PC pipeline signals;
+`perf_counters_evu.sv` wraps them into two runtime-configurable blocks:
+
+- **Event ID Matching and Routing.** A multi-channel MUX/`case` selector maps each incoming
+  CVA6 event signal — L1 I/D-cache misses, I/D-TLB misses, loads/stores, exceptions, branches,
+  branch mispredicts, pipeline stalls, calls/returns, and more — to a programmable 5-bit
+  **Event ID** (`perfc_req`) and drives a per-event status output (`perfc_resp`). Software
+  chooses which events to track at run time.
+- **PC Markers.** For each committed instruction it compares the commit PC
+  (`commit_pc` / `commit_ack`) against a programmable set of reference addresses
+  (`pcmiles_req` — e.g. function entry/exit or basic-block boundaries) and asserts a hit
+  (`pcmiles_resp`) on a match. This enables function-scoped counter attribution and
+  application-progress tracking without instrumenting the binary.
+
+Detected events and PC-marker hits are transmitted as **event packets** with three fields —
+**Event ID**, **Event Info**, and **Source ID** — using a multi-hot encoding so several events
+and markers travel in a single packet per cycle. The configuration used in the paper tracks
+**four events** (encoded in the Event ID field) and **four PC milestones** (in the low bits of
+Event Info).
+
+## RTL
+
+| File | Role |
+|------|------|
+| [`core/perf_counters_evu.sv`](./core/perf_counters_evu.sv) | **New (ours).** The CVA6-EVU (module `perf_counters_evu`). Inputs: the CVA6 native event enables, `perfc_req` (event selection), `pcmiles_req` (milestone addresses), and `commit_pc`/`commit_ack`. Outputs: `perfc_resp`, `pcmiles_resp`. |
+
+## License
+
+`core/perf_counters_evu.sv` (our addition) is released under the **Solderpad Hardware License
+v0.51**; the base CVA6 core retains its original OpenHW Group license.
+
+---
+
+<!-- ================= Upstream CVA6 README (PULP fork) below ================= -->
+
 ![Build Status](https://github.com/openhwgroup/cva6/actions/workflows/ci.yml/badge.svg?branch=master)
 
 # CVA6 RISC-V CPU
