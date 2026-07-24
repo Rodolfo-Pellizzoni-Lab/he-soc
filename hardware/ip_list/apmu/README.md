@@ -1,103 +1,79 @@
-# Advanced Performance Monitoring Unit
-This is the RISC-V implementation of the APMU design specification.
+# Advanced Performance Monitoring Unit (APMU)
 
-# Important:
-1. The RTL for the APMU might seem a little confusing, because it relies heavily on C-like constructs: struct, union, etc. That is because the AXI4-lite-based read and writes to the APMU are handled by the axi_lite_regs IP (which was developed independently by Al Saqr). Therefore, to understand the `pmu_top.sv`, please also study the RTL for this IP and the `axi_llc_config.sv` module in `axi_llc` because the APMU is designed in a very similar fashion.
+The **APMU** is a centralized, AXI4-based performance-monitoring unit. It aggregates the
+microarchitectural events forwarded by the per-core **Event Monitoring Units (EVUs)** and
+the **SPU** interconnect snoopers, counts and correlates them in a bank of programmable
+counters, and runs event-driven monitoring policies on an embedded processing element (a
+lowRISC **Ibex** core) — entirely off the application cores. It is the central IP of the
+performance-monitoring architecture in our EMSOFT 2026 paper.
 
-2. The APMU currently has the following memory map (given below). Here, each counter and its associated registers are placed in a separate page, spaced at 4kB boundary (0x1000).
-   | Register Name 	| Address    	| Page   	|
-   |---------------	|------------	|--------	|
-   | Timer         	| 0x10405000 	|    -   	|
-   | Period Reg    	| 0x10405008 	|    -   	|
-   | Status Reg    	| 0x10406000 	|    -   	|
-   | Boot Addr Reg 	| 0x10406004 	|    -   	|
-   | Counter 0     	| 0x10407000 	| Page 0 	|
-   | Event Sel 0   	| 0x10407004 	| Page 0 	|
-   | Event Info 0  	| 0x10407008 	| Page 0 	|
-   | Info Budget 0 	| 0x1040700C 	| Page 0 	|
-   | Counter 1     	| 0x10408000 	| Page 1 	|
-   | Event Sel 1   	| 0x10408004 	| Page 1 	|
-   | Event Info 1  	| 0x10408008 	| Page 1 	|
-   | Info Budget 1 	| 0x1040800C 	| Page 1 	|
-   |     ...        	|     ...    	|   ...    	|
+<p align="center"><img src="./apmu_block_diagram.png" alt="APMU block diagram" width="760"></p>
 
-3. 
+## How it works
 
-# To Do:
-1. Update the APMU memory map such that all counters are spaced at 4kB boundaries, but all their configuration registers are placed together.
-2. Fix the address remapping such that is completely generalizable based on a APMU_BASE_ADDR parameter.
-   **Context**
-   All APMU counters and co. (counters, timers, status, boot addr registers, etc.) are spaced at 4kB (0x1000) address boundaries. So, if we are looking at one counter, we effectively have: one counter, its two configuration registers, and an info-budget register. So, four 32-bit registers, amounting to 64B. The remaining 3936B (0xFC0) of space is not needed / does not exist.
-   
-   But the axi_lite_regs IP only expects a contiguous array of bytes, something like:
-   ```
-   Byte 3 : 0    - Timer
-   Byte 7 : 4    - Period Reg
-   Byte 11: 8    - Status Reg
-   Byte 15:12    - Boot Addr Reg
-   Byte 19:16    - Counter 0
-   Byte 23:20    - Event Sel 0
-   Byte 27:24    - Event Info 0
-   ....
-   ```
+- **Event ports** (`pmu_port`, `pmu_port_wrap`). Each EVU connects to a dedicated APMU port
+  (`Port_1 … Port_M`) that receives its microarchitectural-event stream.
+- **Event Filter + Counter Block** (`pmu_counter`), replicated `NUM_COUNTERS` times. Each
+  counter selects the event(s) it tracks (its *Event-Select* register), optionally captures
+  an info field (e.g. per-access latency), and raises an **overflow interrupt** to the
+  system interrupt controller when it crosses its budget/threshold.
+- **APMU processing element (APMU-PE) and scratchpads** (`pmu_core`, `pmu_ispm`,
+  `pmu_dspm`). A lowRISC Ibex core with instruction (`I$`) and data (`D$`) scratchpad
+  memories runs the monitoring firmware that programs the counters, reads results, and
+  reacts to events (e.g. memory-bandwidth regulation) without involving the application
+  cores.
+- **APMU interconnect** ties the core, counters, and register interface together.
+- **Register ports.** The **Read-Write Manager port** lets the APMU core reach out to the
+  rest of the system; the **Read-Write Subordinate port** exposes the APMU's registers and
+  scratchpads to the application cores over **AXI4-Lite**.
 
-   So, we need to have some logic that maps the APMU address to a contiguous byte mapping. Remember that both timers are 64-bit or 8B wide.
-   | Bytes 	| Register Name 	| Address    	| Page   	|
-   |-------	|---------------	|------------	|--------	|
-   | 7:0   	| Timer         	| 0x10405000 	|    -   	|
-   | 15:8  	| Period Reg    	| 0x10405008 	|    -   	|
-   | 19:16	| Status Reg    	| 0x10406000 	|    -   	|
-   | 23:20 	| Boot Addr Reg 	| 0x10406004 	|    -   	|
-   | 27:24 	| Counter 0     	| 0x10407000 	| Page 0 	|
-   | 31:28 	| Event Sel 0   	| 0x10407004 	| Page 0 	|
-   | 35:32 	| Event Info 0  	| 0x10407008 	| Page 0 	|
-   | 39:36 	| Info Budget 0 	| 0x1040700C 	| Page 0 	|
-   | 43:40 	| Counter 1     	| 0x10408000 	| Page 1 	|
-   | 47:44 	| Event Sel 1   	| 0x10408004 	| Page 1 	|
-   | 51:48 	| Event Info 1  	| 0x10408008 	| Page 1 	|
-   | 55:52 	| Info Budget 1 	| 0x1040800C 	| Page 1 	|
-   |  ...  	|   ...           |     ...    	|   ...    	|
+## Source layout (`src/`)
 
-   To make the logic for remapping simpler, we added some unused padding bytes as follows:
-   | Bytes 	   | Register Name 	| Address    	| Page   	|
-   |---------	|---------------	|------------	|--------	|
-   | 79:0      | Unused (Padding)| 0x10400000   |    -      |
-   | 87:80     | Timer         	| 0x10405000 	|    -   	|
-   | 95:88     | Period Reg    	| 0x10405008 	|    -   	|
-   | 103:96 	| Status Reg    	| 0x10406000 	|    -   	|
-   | 107:104   | Boot Addr Reg 	| 0x10406004 	|    -   	|
-   | 111:108   | Unused (Padding)| 0x10406008   |    -      |
-   | 115:112   | Counter 0     	| 0x10407000 	| Page 0 	|
-   | 119:116 	| Event Sel 0   	| 0x10407004 	| Page 0 	|
-   | 123:120 	| Event Info 0  	| 0x10407008 	| Page 0 	|
-   | 127:124 	| Info Budget 0 	| 0x1040700C 	| Page 0 	|
-   | 131:128 	| Counter 1     	| 0x10408000 	| Page 1 	|
-   | 135:132 	| Event Sel 1   	| 0x10408004 	| Page 1 	|
-   | 139:136 	| Event Info 1  	| 0x10408008 	| Page 1 	|
-   | 143:140 	| Info Budget 1 	| 0x1040800C 	| Page 1 	|
-   |  ...  	   |   ...           |     ...    	|   ...    	|
-   | 387:384   |  Counter 17   	| 0x10418000  	| Page 31  	|
-   |  ...  	   |   ...           |     ...    	|   ...    	|
-   | 611:608   |  Counter 31   	| 0x10426000  	| Page 31  	|
+| File | Role |
+|------|------|
+| `pmu_top.sv` | Top-level integration (register interface, counters, core, ports). |
+| `pmu_core.sv` | Ibex-based processing element wrapper. |
+| `pmu_counter.sv` | Event filter + programmable counter (instantiated `NUM_COUNTERS`×). |
+| `pmu_port.sv`, `pmu_port_wrap.sv` | EVU event-ingress ports. |
+| `pmu_ispm.sv`, `pmu_dspm.sv` | Instruction / data scratchpad memories for the PE. |
+| `pmu_gnt_to_axi_lite.sv` | Request-grant → AXI4-Lite adapter. |
+| `pmu_pkg.sv` | Package: types and parameters. |
 
-   So, what's the trick?
-   Convert the starting byte number for each register into Hexadecimal and voila!
-   ```
-   d'80  = 0x50
-   d'88  = 0x58
-   d'108 = 0x6C
-   d'116 = 0x74
-   d'384 = 0x180
-   d'608 = 0x260
-   ...
-   ```
-   Do you see it yet?
-   
-   Basically, if the address of a APMU register is 0x104**X**_**Y**00**Z**. It maps to a set of bytes starting with byte number XYZ. This is very easy to implement in SystemVerilog as all we are doing is shifting bits.
+Depends on the `ibex_pmu` core and the PULP `axi` / `common_cells` libraries (see
+[`Bender.yml`](./Bender.yml)). The AXI4-Lite register interface is implemented in the style
+of AlSaqr's `axi_lite_regs` / `axi_llc_config`.
 
-   **What needs to be done?**
-   Right now, the size of the padding bytes is calculated manually depending on what the APMU base address is. In an earlier project version, the base address was 0x1040_4000, so the padding size was 64B. As `d'64 = 0x40`. Now, the address is 0x1040_5000, so we have a padding of 80B. Make this calculation dynamic.
+## Register map
 
-   Update the `PadB_NumBytes` localparam in `pmu_top.sv`.
-      
-4. Remove the period register and the info budget registers as they are not needed anymore. 
+Each counter and its configuration registers occupy a separate 4 KiB page:
+
+| Register | Address | Page |
+|----------|---------|------|
+| Timer | `0x10405000` | – |
+| Period Reg | `0x10405008` | – |
+| Status Reg | `0x10406000` | – |
+| Boot Addr Reg | `0x10406004` | – |
+| Counter 0 | `0x10407000` | Page 0 |
+| Event Sel 0 | `0x10407004` | Page 0 |
+| Event Info 0 | `0x10407008` | Page 0 |
+| Info Budget 0 | `0x1040700C` | Page 0 |
+| Counter 1 | `0x10408000` | Page 1 |
+| … | … | … |
+
+> **Implementation note.** The AXI4-Lite reads/writes are serviced by AlSaqr's
+> `axi_lite_regs` IP, which expects a *contiguous* byte array, whereas the counters are
+> paged at 4 KiB boundaries. `pmu_top.sv` bridges the two: a register at address
+> `0x104X_Y00Z` maps onto the contiguous space at byte `XYZ` (a simple bit-shift), using a
+> `PadB_NumBytes` padding that depends on the APMU base address.
+
+## Simulation
+
+Unit testbenches are under [`test/`](./test) (`tb_pmu.sv`, `tb_pmu_spm.sv`, `tb_pmu_pkg.sv`,
+`tb_axi_lite_regs.sv`); compile/run scripts are in [`scripts/`](./scripts)
+(`compile_vsim.sh`, `run_vsim.sh`). In the full SoC the APMU is instantiated in
+`hardware/host/host_domain.sv`.
+
+## License
+
+Released under the **Solderpad Hardware License v0.51** (treatable, at the licensee's
+option, as Apache-2.0). See [`LICENSE`](./LICENSE).
