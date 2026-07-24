@@ -1,8 +1,51 @@
-# AlSaqr SoC
+# he-soc — Centralized Performance Monitoring on a PULP-based SoC
 
-This repository contains the hardware files needed to build the AlSaqr-SoC. The architecture of the SoC is briefly described in the block diagram below.
+This repository is the **integration showcase** for the performance-monitoring architecture in our EMSOFT 2026 paper. It drops our monitoring IPs — the per-core **Event Monitoring Units (EVUs)**, the **SPU** event snoopers, and the central **Advanced Performance Monitoring Unit (APMU / PMU)** — into a real RISC-V / PULP SoC (AlSaqr: quad-core CVA6 with CULSANS coherency), so the whole infrastructure can be seen working end-to-end rather than as standalone IP.
 
-![alt text](./hardware/docs/AlSaqr.png)
+> **Paper:** M. S. Jafri, A. Rahman, E. Sarkar, M. Hassen, G. Thayyil, A. K. Mani, and R. Pellizzoni, *"A Centralized Performance Monitoring Architecture for Heterogeneous Multicore SoCs,"* **EMSOFT 2026**, University of Waterloo.
+>
+> _Artifact DOI: **TBD** — a Zenodo snapshot of this repository will carry the DOI for the ACM "Artifacts Available" badge._
+
+![PULP-based platform: EVUs and SPUs forward event packets to the central PMU, which raises interrupts to the cores via the PLIC](./hardware/docs/pulp_platform.png)
+
+*Each **CVA6** core carries an **EVU**; **SPUs** sit on the coherent interconnect and at the LLC↔DRAM port. They forward microarchitectural **event packets** (green) to the central **PMU**, which counts and correlates them and can raise **interrupt signals** (red) back to the cores through the PLIC — for example, to drive real-time memory-bandwidth regulation.*
+
+## What's in here
+
+### Hardware — the monitoring IPs
+
+All under `hardware/ip_list/`, wired into the SoC in `hardware/host/host_domain.sv`:
+
+| IP | Path | Role |
+|----|------|------|
+| **CVA6 + EVU** | `ip_list/cva6/` | RISC-V application core, extended with the Event Monitoring Unit (`core/perf_counters_evu.sv`) that exports microarchitectural events. |
+| **APMU (PMU)** | `ip_list/apmu/` | The centralized monitor — programmable event counters plus an Ibex processing element for event-driven software mechanisms. |
+| **SPU** | `ip_list/spu/` | AXI/ACE snooper that captures interconnect- and memory-side events and forwards them to the PMU. |
+| **ibex_pmu** | `ip_list/ibex_pmu/` | The Ibex core used as the APMU's processing element (lowRISC Ibex + our PMU-counter interface). |
+
+Note that the **CVA6 used here has been augmented to include the EVUs** — it is not the stock CVA6 core. This EVU-augmented core is open-sourced as a standalone `cva6` repository.
+
+### Software — bare-metal tests
+
+Under `software/` (each builds a `.riscv` plus the memory image; see *Building & running* below):
+
+- **`pmu_test/`** — APMU bring-up: programs the PMU counter bundles and runs a bubble-sort program on the APMU's **Ibex processing element** (loaded into its ISPM/DSPM scratchpads), checking the core and the counter-register interface work.
+- **`pmu_cntr_test/`** — quad-core memory-traffic benchmark: each core streams its own disjoint 320 KB L3 region (load + store per cache line) while the PMU counts **per-core LLC and main-memory read/write requests**; cores 2/3 are woken by counter-overflow → PLIC IRQ.
+- **`pmu_evu_bench/`** — CVA6-EVU profiling: the APMU's Ibex uses **PC-milestone windows** (function entry/exit) to profile two CVA6 functions — a pure-ALU chain vs a cold-load-heavy one — via the EVU events (L1D misses, stalls, branches), showing they produce distinct profiles.
+- **`hello_culsans/`** — minimal dual-boot (CVA6 + OpenTitan) bring-up + UART sanity test.
+- **`quad_boot/`** — brings up all four CVA6 cores (each prints a hello): core 0 boots and arms PMU counters 0/1 to overflow → PLIC IRQs that wake cores 2/3, while core 1 comes up on its own — a quad-core boot + PMU-interrupt-wakeup demo.
+
+> **RTL simulation requires Siemens QuestaSim.** The flow generates a Questa compile script (`make scripts_vip`) and runs `vsim` — there is no open-source-simulator path today.
+
+> **Paper software.** The tests under `software/` here exercise the monitoring infrastructure **in simulation**. The programs used to run the paper's **experiments and case studies on the VCU118 FPGA board** live in a separate repository: [`apmu-software`](https://github.com/Rodolfo-Pellizzoni-Lab/apmu-software).
+
+## Built on AlSaqr
+
+This platform **augments the existing [AlSaqr](https://github.com/AlSaqr-platform/he-soc) PULP-based he-soc** — a quad-core CVA6 SoC with CULSANS coherency, a last-level cache, HyperRAM/DDR memory, and an OpenTitan secure domain — by adding our EVU / SPU / APMU monitoring infrastructure on top. Full credit for the base SoC goes to the AlSaqr project; our contribution is the centralized performance-monitoring layer. The underlying AlSaqr SoC:
+
+![AlSaqr SoC block diagram](./hardware/docs/AlSaqr.png)
+
+For the full AlSaqr-specific build details (upstream `make init`, L2/JTAG preload, OpenTitan secure boot, regressions), see the [upstream AlSaqr README](https://github.com/AlSaqr-platform/he-soc).
 
 
  * The `hardware` folder is organized as follows:
@@ -25,13 +68,12 @@ For the PULP CLuster make sure the PULP RV32 toolchain is in your PATH. Please r
 
 ### Pellizzoni Lab repo (no `make init` needed)
 
-This lab's fork (`git@github.com:Rodolfo-Pellizzoni-Lab/he-soc.git`) has all IP dependencies, VIPs, and the bender binary vendored directly into the `esarkar/quad-core/cva6-evu-standalone` branch. No network downloads or `make init` required.
+This lab's fork (`git@github.com:Rodolfo-Pellizzoni-Lab/he-soc.git`) has all IP dependencies, VIPs, and the bender binary vendored directly into the default **`main`** branch. No network downloads or `make init` required.
 
-**Step 1 — Clone and checkout the standalone branch first, then source:**
+**Step 1 — Clone (a fresh clone lands on `main`) and source:**
 ```
 git clone git@github.com:Rodolfo-Pellizzoni-Lab/he-soc.git
 cd he-soc
-git checkout esarkar/quad-core/cva6-evu-standalone
 source uw_setup.sh
 ```
 
@@ -47,50 +89,12 @@ make -C ../software/hello_culsans clean all
 make clean sim
 ```
 
-> **NB: Checkout the branch BEFORE sourcing `uw_setup.sh`.** The bender binary only exists on the standalone branch. Sourcing on master will fail at `make scripts_vip`.
+> **NB:** The bender binary is vendored on `main` (and its mirror `esarkar/quad-core/cva6-evu-standalone`), so a fresh clone already has it. Sourcing on the old default `former_master` will fail at `make scripts_vip`.
 
 > **`source software/pulp-runtime/configs/pulp_cluster.sh`** — Only needed when running PULP cluster tests (tests under `software/pulp/`, `software/fpu_pulp/`, etc.). Skip it for all CVA6 tests including hello_culsans, PMU tests, and EVU tests.
 
 ---
 
-### AlSaqr upstream repo (requires `make init`)
-
-Please change the setup file to point to your toolchains and Questasim installations in he-soc/setup.sh:
-
-** NB: this fetches the current master branch, under constant development. **
-
-```
-git clone git@github.com:AlSaqr-platform/he-soc.git
-cd he-soc/
-source setup.sh
-source software/pulp-runtime/configs/pulp_cluster.sh
-```
-** NB: To target a specific release you should git checkout it as first step after cloning the repo. **
-```
-git clone git@github.com:AlSaqr-platform/he-soc.git
-cd he-soc
-git checkout tags/<tag-name> 
-source setup.sh
-cd he-soc/hardware/
-make init
-```
-** NB: Before proceeding with simulations, you must copy a VIP folder from old clones under "he-soc/hardware/tb/vips"**.
-
-make init step may fail on slower networks as connection breaks before getting all repositories.
-Repeat 'make init' step until all repositories downloaded and bender lock generated.
-
-To compile the hello world, in he-soc/hardware run:
-
-```
-make -C ../software/hello_culsans clean all
-```
-To compile the hello world for FPGA board, in he-soc/hardware run:
-
-```
-make -C ../software/hello_culsans fpga=1 clean all
-```
-This will generate the binaries and the hyperram*.slm that will be in the rams at t=0 (in case of preloading). 
- 
 ### Generate TCL for simulation
 
 Then, generate the tcl for simulation and synthesis. In he-soc/hardware run one of two following options accordingly to your target:
@@ -129,191 +133,30 @@ In case of localjtag preload, you need to provide the path to the binary you wan
 make clean all sim
 ```
 
-### Run the test in L2
+## Running on the VCU118 board
 
-To run tests in L2, you compile for L2 and then disconnect the L3 with following commands and flags:
-```
-make -C ../software/hello_culsans clean all_l2
-make scripts_vip exclude-l3-tb=1 localjtag=1 elf-bin=<path-to-test.riscv> clean sim
-```
-The code must be preloaded into L2 via JTAG.
+The paper's results were produced on a Xilinx **VCU118** FPGA. The bitstream-generation flow is under [`hardware/fpga/`](./hardware/fpga/) (AMD Vivado, VCU118 target); see that directory to build the bitstream, program the board, and load a program, then run the case-study software from [`apmu-software`](https://github.com/Rodolfo-Pellizzoni-Lab/apmu-software). This flow requires Vivado and the board — it is not push-button.
 
+## License
 
-### Run test with OpenTitan:
+The IPs authored by us — the **APMU** and **SPU** — are released under the **Solderpad Hardware License v0.51**; the license text is in [`hardware/ip_list/apmu/LICENSE`](./hardware/ip_list/apmu/LICENSE) and [`hardware/ip_list/spu/LICENSE`](./hardware/ip_list/spu/LICENSE). (SHL-0.51 permits the work to be treated as Apache-2.0.) The CVA6 EVU carries the same Solderpad header and is licensed via its standalone `cva6` repository. The he-soc base SoC and all other upstream components (CVA6, lowRISC Ibex, AlSaqr) keep their original licenses.
 
-To run mbox test between cva6 and ibex, in he-soc/hardware run:
-```
-make -C ../software/mbox_test clean all
-make clean sim ibex-elf-bin=./opentitan/sw/tests/alsaqr/mbox_test/mbox_test.elf 
-```
+Artifact-evaluation documents — `STATUS`, `REQUIREMENTS`, `INSTALL` — are under [`docs/`](./docs/).
 
-To run the full secure boot, use the following commands (for instance, opentitan boots CVA6 which runs an hello world):
+## Publication
+
+If you use this performance-monitoring infrastructure in your work, please cite our EMSOFT 2026 paper:
 
 ```
-make scripts_vip sec_boot=1
-make -C ../software/hello_culsans/ clean all
-make clean sim BOOTMODE=1 sec_boot=1
-
-```
-The sec_boot=1 flag can be used to prevent CVA6 from booting (to run tests on OpenTitan as a standalone environment)
-
-### Run regressions
-
-Before merging any modification into the master it is important to run the regression tests to check we did not break anything. To do so, execute the following commands:
-
-To run the regressions including the CVA6 boot, FLL, secure boot/mbox test and periphs, run:
-```
-cd hardware/
-make run_regression
+@inproceedings{jafri2026centralized,
+  author    = {Jafri, Mohammed Sajjad and Rahman, Abdur and Sarkar, Emon and Hassen, Mahdi and Thayyil, Gopishankar and Mani, Ashwin Krishna and Pellizzoni, Rodolfo},
+  title     = {A Centralized Performance Monitoring Architecture for Heterogeneous Multicore SoCs},
+  booktitle = {Proc. ACM SIGBED International Conference on Embedded Software (EMSOFT)},
+  year      = {2026}
+}
 ```
 
-### Adding RTL IP or Source Files
-
-When adding a new RTL module or IP block to the design, four things must be updated. No `make init` or Bender dependency update is required for local files that are already in the repo tree.
-
-**1. Place the RTL files**
-
-Put source files under `hardware/` somewhere sensible. Convention is:
-- `hardware/host/` for single-file host-domain shims
-- `hardware/ip_list/<ip-name>/` for multi-file IPs
-
-**2. Register with Bender**
-
-Open `hardware/Bender.yml` and add entries to the top-level `sources:` list. Order matters — a module must appear after all packages it uses and before any module that instantiates it. The `host/host_domain.sv` anchor is a useful reference point:
-
-```yaml
-sources:
-  # ... existing files ...
-  - ip_list/<ip-name>/file_a.sv
-  - ip_list/<ip-name>/file_b.sv
-  - host/host_domain.sv          # <-- new files must come before this if host_domain instantiates them
-  # ...
-```
-
-**3. Add any missing package types**
-
-If the new IP uses types defined in a custom package that do not exist in `hardware/include/ariane_axi_soc_pkg.sv`, add the `typedef` definitions there before `endpackage`. Questa will report `Failed to find the name '<type>' in scope 'ariane_axi_soc'` if any are missing.
-
-**4. Instantiate in the design**
-
-Edit the appropriate top-level file (typically `hardware/host/host_domain.sv`). If the module sits on an existing AXI path, declare an intermediate `AXI_BUS` signal to break the connection:
-
-```systemverilog
-AXI_BUS #(
-  .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH ),
-  .AXI_DATA_WIDTH ( AXI_DATA_WIDTH    ),
-  .AXI_ID_WIDTH   ( ... ),
-  .AXI_USER_WIDTH ( AXI_USER_WIDTH    )
-) my_new_bus ();
-
-my_new_module #(...) i_my_new_module (
-  .clk_i   ( s_soc_clk       ),
-  .rst_ni  ( s_synch_soc_rst ),
-  .slv     ( upstream_bus    ),
-  .mst     ( my_new_bus      )
-);
-// downstream consumer now receives my_new_bus instead of upstream_bus
-```
-
-**5. Regenerate compile scripts**
-
-After editing `Bender.yml`, regenerate the compile scripts before simulating or building a bitstream. This is not `make init` — it only reads the existing `Bender.lock` and re-emits TCL/script files:
-
-```bash
-# QuestaSim (do this before make clean sim):
-cd hardware/
-make scripts_vip
-
-# Vivado bitstream (gen_alsaqr.sh calls this internally):
-make scripts-bender-fpga-ddr
-```
-
-The updated `compile.tcl` and Questa compile script will automatically include the new files in the correct compilation order.
-
----
-
-### FPGA Emulation
-
-We now support emulation on Xilinx VCU118. Please have a look to the README in the `hardware/fpga` folder.
-
-
-### Synthesize he-soc into your target technology
-
-This requires the gf22 repository to be cloned and initialized into he-soc/hardware folder.
-In he-soc/hardware run:
-
-```
-make clean scripts-bender-synopsys
-```
-The command will generate the analyze_alsaqr.tcl within your technology folder
-
-### Post Synthesis Simulations
-
-NB: Due to the padframe modifications this option is under development
-
-The design synthesis of AlSaqr adopts a hierarchical approach. Individual components, such as CVA6, OpenTitan, HyperRAM, PULP Cluster, and FLL, are synthesized independently. However, at the top tier of the design, these submodules are integrated as hard macros, utilizing LEF geometric files alongside lib/db timing views for precision.
-
-To validate the synthesis of AlSaqr we provide the following simulation targets, allowing flexibility and testability:
-
- * gf22_fll_behav
-  
-  RTL + FLL BEHAVIOURAL (YOU NEED ACCESS TO THE PRIVATE FLL REPO FOR THIS)
-
- * post_synth_all
-
-  ONLY NETLSISTS: TOP - FLL - CVA6 -OPENTITAN - CLUSTER - HYPER
-
- * post_synth_top
-
-  RTL: OPENTITAN - CLUSTER - CVA6  / NETLIST: TOP - FLL - HYPER
-
- * post_synth_cva6_hyper
-
-  RTL: TOP - CLUSTER - OPENTITAN - FLL BEHAV (YOU NEED ACCESS TO THE FLL REPO FOR THIS)  / NETLIST: CVA6 - HYPER
-
- * post_synth_cva6_hyper_fll
-
-  RTL: TOP - CLUSTER - OPENTITAN / NETLIST: CVA6 - HYPER - FLL
-
- * post_synth_fll
-
-  RTL + FLL NETLIST
-
- * post_synth_top_fll_behav
-
-  RTL + FLL NETLIST
-
- * post_synth_cva6
-
-  RTL: (USES FLL DUMMY) + CVA6 NETLIST
-
- * post_synth_opentitan
-
-  RTL (USES FLL DUMMY) + OPENTITAN NETLIST
-
- * post_synth_cluster
-
-  RTL (USES FLL DUMMY) + CLUSTER NETLIST
-
- * post_synth_hyper
-
-  RTL (USES FLL DUMMY) + HYPER NETLIST
-
- 
-To perform the post sythesis simulation of one of the previous target run the following command within `he-soc/hardware` (NB: the acc flag ensures that the simulation is fast, about 10 mins for an hello world):
-
-```
-make clean post_synth=1 <target_name> synth_sim acc=+acc=p+ariane_tb.
-```
-There is a framwork to run the regressions with the netlist of the chip as well. The netlist regression list is defined in hardware/regressions/regressions_netlist.csv while the transcript of each simulation will be stored in hardware/regressions/regressions_netlist_reports/ . To run the regression using the netlist do the following:
-
-```
-cd hardware/
-make run_regression_netlist
-```
-## Pubblication
-
-If you use AlSaqr in your work, please cite us:
+This platform builds on the AlSaqr SoC; if you use the underlying platform, please also cite:
 
 ```
 @ARTICLE{10423921,
