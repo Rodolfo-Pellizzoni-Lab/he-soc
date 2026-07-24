@@ -1,3 +1,50 @@
+# APMU-PE — Ibex modified for the Advanced Performance Monitoring Unit
+
+> **This is a modified fork of the lowRISC Ibex core.** It is used as the **processing
+> element (APMU-PE)** inside our [APMU](../apmu) — the green `APMU-PE` block in the APMU
+> block diagram — where it runs the monitoring firmware that programs counters, reads
+> results, and reacts to events, entirely off the application cores. lowRISC's original Ibex
+> README is preserved unchanged below this section.
+
+**Configuration.** A 32-bit **RV32IMC** Ibex with a two-stage pipeline (IF, ID/EX), no
+instruction cache and no branch predictor, executing from dedicated **instruction / data
+scratchpad memories (ISPM / DSPM)** — ISPM fetches complete in 1 cycle, DSPM loads/stores in
+2 cycles.
+
+**Custom control instructions.** To reach the APMU counters and react to events *without*
+going through the memory interface, the core extends the base ISA with four custom
+instructions on the previously-unused opcode **`0x07`** (`OPCODE_COUNTER`, `7'b000_0111`),
+decoded only when the `PMUCore` parameter is set:
+
+| Instruction | opcode | funct3 | funct7 | Operation |
+|---|---|---|---|---|
+| **Counter Read** | `0x07` | `0x0` | — | `rd = counter[rs1]` — direct read over a dedicated datapath, 2 cycles, no memory access |
+| **Counter Write** | `0x07` | `0x1` | — | `counter[rs2] = rs1` |
+| **Wait-for-Pending** | `0x07` | `0x2` | `0x00` | block until any counter selected by the `rs1` 32-bit bitmap asserts its *pending* flag, then resume with the bitmap of triggering counters |
+| **Wait-for-Overflow** | `0x07` | `0x2` | `0x01` | block until any counter selected by the `rs1` bitmap asserts its *overflow* flag |
+
+Because the wait bitmap is 32 bits wide, the APMU supports at most **32 counters**. The
+instructions are exposed to firmware as inline-assembly macros (`counter_read`,
+`counter_write`, … using `.insn r 0x07, …`) — see `pmu_hw_desc.h` in the
+[`apmu-software`](https://github.com/Rodolfo-Pellizzoni-Lab/apmu-software) repository.
+
+**Where the changes are** (the namespaced `apmu_ibex_*` fork):
+
+| File | Change |
+|------|--------|
+| `rtl/ibex_pmu_counter.sv` | **New (ours).** The PMU Counter Unit — the dedicated counter-access datapath. |
+| `rtl/ibex_decoder.sv` (`apmu_ibex_decoder`) | Decodes `OPCODE_COUNTER` and drives the counter op / wait states, gated by the `PMUCore` parameter. |
+| `rtl/ibex_core.sv` | Instantiates the counter unit and integrates the Wait-for-Pending / Wait-for-Overflow stalls. |
+| `rtl/ibex_pkg.sv` (`apmu_ibex_pkg`) | Adds the counter-operation types (`pmc_op_e`: `PMC_REQ`, `PMC_WFP`, `PMC_WFO`). |
+
+**License.** Our additions (`ibex_pmu_counter.sv` and the `PMUCore`-gated changes) are under
+the **Solderpad Hardware License v0.51**; the underlying Ibex core remains under lowRISC's
+original **Apache-2.0** license. See the upstream `LICENSE` in this directory.
+
+---
+
+<!-- ================= Upstream lowRISC Ibex README (unmodified) below ================= -->
+
 [![Build Status](https://dev.azure.com/lowrisc/ibex/_apis/build/status/lowRISC.ibex?branchName=master)](https://dev.azure.com/lowrisc/ibex/_build/latest?definitionId=3&branchName=master)
 
 # Ibex RISC-V Core
