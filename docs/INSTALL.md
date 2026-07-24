@@ -30,15 +30,24 @@ make clean sim
 
 ## Expected output
 
-The simulation boots the cores and prints UART output that ends with a clean
-end-of-computation. You should see something like:
+The simulation wakes the cores over JTAG, runs the program, and stops at a clean
+`$finish`. For `hello_culsans`, the tail of the log looks like:
 
 ```
-<!-- paste the actual last ~10 lines of the UART / sim log here, e.g.: -->
-<!-- # Mock uart 0: [hello_culsans] ... -->
-<!-- # [JTAG] SUCCESS -->
-<!-- # ** Note: $finish : .../ariane_tb.sv(...) -->
+# ** Info: ======== Wait for Completion ========
+# Wait EOC...
+# Mock uart           0: Hello Culsans! I'm Core 0!
+# Mock uart           0: Hello Culsans! I'm Core 1!
+# [JTAG] SUCCESS
+# ** Note: $finish    : .../hardware/tb/ariane_tb.sv(3739)
+#    Time: 6416500 ns  Iteration: 1  Instance: /ariane_tb
 ```
+
+The **`[JTAG] SUCCESS`** line followed by **`$finish`** confirms the SoC booted, ran, and
+completed cleanly. (For the PMU/EVU tests, the UART section instead shows that test's
+PMU/EVU read-out before `[JTAG] SUCCESS`.)
+
+Tested with **QuestaSim 2022.4**.
 
 To see the monitoring infrastructure in action, run a PMU/EVU test instead of
 `hello_culsans` — for example:

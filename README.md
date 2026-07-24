@@ -3,10 +3,8 @@
 This repository is the **integration showcase** for the performance-monitoring architecture in our EMSOFT 2026 paper. It drops our monitoring IPs — the per-core **Event Monitoring Units (EVUs)**, the **SPU** event snoopers, and the central **Advanced Performance Monitoring Unit (APMU / PMU)** — into a real RISC-V / PULP SoC (AlSaqr: quad-core CVA6 with CULSANS coherency), so the whole infrastructure can be seen working end-to-end rather than as standalone IP.
 
 > **Paper:** M. S. Jafri, A. Rahman, E. Sarkar, M. Hassen, G. Thayyil, A. K. Mani, and R. Pellizzoni, *"A Centralized Performance Monitoring Architecture for Heterogeneous Multicore SoCs,"* **EMSOFT 2026**, University of Waterloo.
->
-> _Artifact DOI: **TBD** — a Zenodo snapshot of this repository will carry the DOI for the ACM "Artifacts Available" badge._
 
-![PULP-based platform: EVUs and SPUs forward event packets to the central PMU, which raises interrupts to the cores via the PLIC](./hardware/docs/pulp_platform.png)
+<p align="center"><img src="./hardware/docs/pulp_platform.png" alt="PULP-based platform: EVUs and SPUs forward event packets to the central PMU, which raises interrupts to the cores via the PLIC" width="720"></p>
 
 *Each **CVA6** core carries an **EVU**; **SPUs** sit on the coherent interconnect and at the LLC↔DRAM port. They forward microarchitectural **event packets** (green) to the central **PMU**, which counts and correlates them and can raise **interrupt signals** (red) back to the cores through the PLIC — for example, to drive real-time memory-bandwidth regulation.*
 

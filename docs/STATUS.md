@@ -18,10 +18,6 @@ bare-metal bring-up tests that exercise it in simulation. It is:
   the licensee's option, as **Apache License 2.0** — an OSI-approved open-source license —
   so the availability requirement is met. Upstream components (CVA6, lowRISC Ibex, the
   AlSaqr base SoC) retain their original open licenses.
-- **Persistently archived.** A version-specific snapshot is deposited on Zenodo with an
-  assigned DOI: **<!-- DOI: 10.5281/zenodo.XXXXXXX -->**. Ongoing development continues at
-  the public GitHub repositories linked in the README, but the DOI-indexed snapshot is the
-  citable, immutable copy.
 
 ## Why not "Functional" / "Reusable"
 
