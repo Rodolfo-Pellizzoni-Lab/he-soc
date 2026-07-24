@@ -31,7 +31,7 @@
 #define STRIDE          (STRIDE_BYTES / sizeof(uint64_t)) //Same stride but expressed in array-element units
 #define AR_COUNT         64U
 
-#define THROTTLE_THRESHOLD  (((AR_COUNT - TOKEN_LIMIT) * REFILL_INTERVAL) * 4U / 5U)
+#define THROTTLE_THRESHOLD  20000U
 
 #define AW_COUNT         384U
 #define AW_INTERVAL     200U
@@ -210,12 +210,11 @@ int main(int argc, char const *argv[]){
     if (mhartid == HART1) { run_hart1(); }
     if (mhartid != 0)     { while (1) asm volatile("wfi"); }
 
-#ifdef FPGA_EMULATION
-    uint32_t baud_rate = 9600, test_freq = 100000000;
-#else
+    //uint32_t baud_rate = 9600, test_freq = 100000000;
+#ifndef FPGA_EMULATION
     uint32_t baud_rate = 115200, test_freq = 50000000;
-#endif
     uart_set_cfg(0, (test_freq / baud_rate) >> 4);
+#endif
 
     printf("=== Token Bucket Throttle Test ===\r\n");
     printf("AR_COUNT=%u limit=%u refill=%u/%u ar_cost=%u  threshold=%u\r\n",
