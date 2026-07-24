@@ -135,11 +135,22 @@ make clean all sim
 
 The paper's results were produced on a Xilinx **VCU118** FPGA. The bitstream-generation flow is under [`hardware/fpga/`](./hardware/fpga/) (AMD Vivado, VCU118 target); see that directory to build the bitstream, program the board, and load a program, then run the case-study software from [`apmu-software`](https://github.com/Rodolfo-Pellizzoni-Lab/apmu-software). This flow requires Vivado and the board — it is not push-button.
 
+## Artifact evaluation
+
+This repository is submitted for the **EMSOFT 2026 artifact evaluation** (we apply for the **Artifacts Available** badge). The standard artifact-evaluation documents live under [`docs/`](./docs/):
+
+- [`docs/STATUS.md`](./docs/STATUS.md) — the badge we apply for and the reasons why.
+- [`docs/REQUIREMENTS.md`](./docs/REQUIREMENTS.md) — the hardware and software needed to build and run the artifact (QuestaSim, Vivado, a VCU118 board, RISC-V GCC).
+- [`docs/INSTALL.md`](./docs/INSTALL.md) — clone → build → run a bring-up test in simulation, with the expected output.
+
 ## License
 
-The IPs authored by us — the **APMU** and **SPU** — are released under the **Solderpad Hardware License v0.51**; the license text is in [`hardware/ip_list/apmu/LICENSE`](./hardware/ip_list/apmu/LICENSE) and [`hardware/ip_list/spu/LICENSE`](./hardware/ip_list/spu/LICENSE). (SHL-0.51 permits the work to be treated as Apache-2.0.) The CVA6 EVU carries the same Solderpad header and is licensed via its standalone `cva6` repository. The he-soc base SoC and all other upstream components (CVA6, lowRISC Ibex, AlSaqr) keep their original licenses.
+Each IP we author ships its own **`LICENSE`** file inside its folder under `hardware/ip_list/`:
 
-Artifact-evaluation documents — `STATUS`, `REQUIREMENTS`, `INSTALL` — are under [`docs/`](./docs/).
+- **APMU** — [`hardware/ip_list/apmu/LICENSE`](./hardware/ip_list/apmu/LICENSE)
+- **SPU** — [`hardware/ip_list/spu/LICENSE`](./hardware/ip_list/spu/LICENSE)
+
+Both are released under the **Solderpad Hardware License v0.51**, which permits the work to be treated, at the licensee's option, as the **Apache License 2.0** — an OSI-approved open-source license. The CVA6 **EVU** carries the same Solderpad header and is licensed via its standalone `cva6` repository. The he-soc base SoC and all other upstream components (CVA6, lowRISC Ibex, AlSaqr) retain their original open licenses.
 
 ## Publication
 
