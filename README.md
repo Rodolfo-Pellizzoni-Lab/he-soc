@@ -4,6 +4,8 @@ This repository is the **integration showcase** for the performance-monitoring a
 
 > **Paper:** M. S. Jafri, A. Rahman, E. Sarkar, M. Hassen, G. Thayyil, A. K. Mani, and R. Pellizzoni, *"A Centralized Performance Monitoring Architecture for Heterogeneous Multicore SoCs,"* **EMSOFT 2026**, University of Waterloo.
 
+> **Artifact evaluation (EMSOFT 2026).** Active development of this artifact continues in this GitHub repository: https://github.com/Rodolfo-Pellizzoni-Lab/he-soc.
+
 <p align="center"><img src="./hardware/docs/pulp_platform.png" alt="PULP-based platform: EVUs and SPUs forward event packets to the central PMU, which raises interrupts to the cores via the PLIC" width="720"></p>
 
 *Each **CVA6** core carries an **EVU**; **SPUs** sit on the coherent interconnect and at the LLC↔DRAM port. They forward microarchitectural **event packets** (green) to the central **PMU**, which counts and correlates them and can raise **interrupt signals** (red) back to the cores through the PLIC — for example, to drive real-time memory-bandwidth regulation.*
