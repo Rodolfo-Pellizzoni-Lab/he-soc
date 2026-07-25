@@ -1,3 +1,39 @@
+# AXI-LLC — Waterloo modifications (PLRU replacement + cache partitioning)
+
+> **This is the PULP AXI-LLC with two additions from the University of Waterloo**, used as
+> the last-level cache in the he-soc SoC of our EMSOFT 2026 paper. The upstream PULP AXI-LLC
+> README is preserved unchanged below this section.
+
+**1. Pseudo-LRU (PLRU) replacement.** A new replacement module —
+[`src/hit_miss_detect/axi_llc_plru.sv`](./src/hit_miss_detect/axi_llc_plru.sv), by
+**G. Thayyil** — implements tree-based pseudo-LRU way selection for 2-, 4-, 8-, 16-, 32-, and
+64-way set-associative configurations, keeping the PLRU state bits in SRAM (tree encoding:
+`0 → left, 1 → right`). It provides the eviction victim in the hit/miss path.
+
+**2. AXI-ID-based cache partitioning.** The LLC can partition its ways across masters: a set
+of AXI4-Lite configuration registers assigns each source/master AXI ID a **way bitmask**, so
+a given requester may only allocate into (and be evicted from) its assigned subset of ways.
+Partitioning is active when more than one partition config register is present
+(`NumCfgRegcp > 1`); with a single register the cache behaves as the unpartitioned upstream
+LLC. This is what lets the paper allocate a fixed slice of LLC capacity per core in the
+regulation and contention experiments.
+
+**Where the changes are:**
+
+| File | Change |
+|------|--------|
+| `src/hit_miss_detect/axi_llc_plru.sv` | **New (Waterloo).** Pseudo-LRU replacement module (2–64 way). |
+| `src/axi_llc_config.sv` | AXI4-Lite config registers holding the per-AXI-ID partition way-bitmasks. |
+| `src/axi_llc_hit_miss.sv` | Applies the partition bitmask to restrict the allocatable ways, and drives the PLRU victim selection. |
+| `src/axi_llc_top.sv` | Threads the source-ID / partition-bitmask signals through the LLC. |
+
+**License.** The base AXI-LLC is © ETH Zurich / University of Bologna under the **Solderpad
+Hardware License v0.51**; the Waterloo additions above are released under the same license.
+
+---
+
+<!-- ================= Upstream PULP AXI-LLC README below ================= -->
+
 # AXI LLC
 [![CI status](https://akurth.net/usrv/ig/shields/pipeline/github-mirror/axi_llc/master.svg)](https://iis-git.ee.ethz.ch/github-mirror/axi_llc/commits/master)
 [![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/pulp-platform/axi_llc?color=blue&label=current&sort=semver)](CHANGELOG.md)
