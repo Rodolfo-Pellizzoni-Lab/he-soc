@@ -148,6 +148,7 @@ This repository is submitted for the **EMSOFT 2026 artifact evaluation** (we app
 - [`docs/STATUS.md`](./docs/STATUS.md) — the badge we apply for and the reasons why.
 - [`docs/REQUIREMENTS.md`](./docs/REQUIREMENTS.md) — the hardware and software needed to build and run the artifact (QuestaSim, Vivado, a VCU118 board, RISC-V GCC).
 - [`docs/INSTALL.md`](./docs/INSTALL.md) — clone → build → run a bring-up test in simulation, with the expected output.
+- [`docs/Supplementary_Material_EMSOFT.pdf`](./docs/Supplementary_Material_EMSOFT.pdf) — supplementary material: the design specification for our monitoring IPs (APMU / SPU / CVA6-EVU).
 
 ## License
 
