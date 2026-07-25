@@ -1,0 +1,16 @@
+{
+  "title": "he-soc — Centralized Performance Monitoring on a PULP-based SoC (EMSOFT 2026 artifact)",
+  "upload_type": "software",
+  "creators": [
+    {"name": "Jafri, Mohammed Sajjad", "affiliation": "University of Waterloo"},
+    {"name": "Rahman, Abdur", "affiliation": "University of Waterloo"},
+    {"name": "Sarkar, Emon", "affiliation": "University of Waterloo"},
+    {"name": "Hassen, Mahdi", "affiliation": "University of Waterloo"},
+    {"name": "Thayyil, Gopishankar", "affiliation": "University of Waterloo"},
+    {"name": "Mani, Ashwin Krishna", "affiliation": "University of Waterloo"},
+    {"name": "Pellizzoni, Rodolfo", "affiliation": "University of Waterloo"}
+  ],
+  "license": "SHL-0.51",
+  "version": "1.0",
+  "description": "Artifact for the EMSOFT 2026 paper 'A Centralized Performance Monitoring Architecture for Heterogeneous Multicore SoCs.' A PULP-based quad-core CVA6 SoC extended with the Advanced Performance Monitoring Unit (APMU), per-core Event Monitoring Units (EVUs), and AXI-SPUs. The IPs we author are released under the Solderpad Hardware License v0.51 (treatable, at the licensee's option, as Apache-2.0); upstream components (CVA6, lowRISC Ibex, AlSaqr, PULP) retain their original open-source licenses. Active development continues at https://github.com/Rodolfo-Pellizzoni-Lab/he-soc"
+}
