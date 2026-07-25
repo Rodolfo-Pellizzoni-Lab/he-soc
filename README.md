@@ -23,6 +23,10 @@ All under `hardware/ip_list/`, wired into the SoC in `hardware/host/host_domain.
 
 Note that the **CVA6 used here has been augmented to include the EVUs** — it is not the stock CVA6 core. This EVU-augmented core is open-sourced as a standalone `cva6` repository.
 
+### Hardware — modified last-level cache
+
+The **AXI-LLC** (`ip_list/axi_llc/`, the upstream PULP last-level cache) carries two Waterloo modifications that the paper's regulation and contention experiments rely on: a **pseudo-LRU (PLRU) replacement policy** (`src/hit_miss_detect/axi_llc_plru.sv`) and **AXI-ID-based cache partitioning** — AXI4-Lite config registers assign each master a way bitmask, so LLC capacity can be allocated per core. See its [README](./hardware/ip_list/axi_llc/README.md).
+
 ### Software — bare-metal tests
 
 Under `software/` (each builds a `.riscv` plus the memory image; see *Building & running* below):
