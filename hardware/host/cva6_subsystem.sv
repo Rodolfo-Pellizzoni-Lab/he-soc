@@ -838,8 +838,8 @@ module cva6_subsystem
 `else
     .InclEthernet ( 1'b1                     ),
 `endif
-    .InclSDMA     ( 1'b1                     ),
-    .InclIOMMU    ( 1'b1                     ),
+    .InclSDMA     ( 1'b0                     ),
+    .InclIOMMU    ( 1'b0                     ),
     .InclMDMA     ( 1'b0                     ),
     .InclIOPMP    ( 1'b0                     )
   ) i_ariane_peripherals (
