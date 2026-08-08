@@ -422,7 +422,12 @@ begin
                 iDLL <= X"31";
             end if;
             if (iDLMWrite = '1') then
-                iDLM <= PWDATA(7 downto 0);
+                -- Hardcoded DLM = 0x00 to match DLL = 0x31 (divisor 0x0031 = 49 @ 30 MHz).
+                -- The full divisor is {iDLM, iDLL}; forcing only DLL is not enough because
+                -- software (bootrom/Linux) may compute a divisor > 255 for a wrong/high
+                -- assumed clock and write a nonzero high byte here, corrupting the baud.
+                -- iDLM <= PWDATA(7 downto 0); -- original SW-programmable path
+                iDLM <= X"00";
             end if;
         end if;
     end process;
