@@ -48,8 +48,8 @@ root-dir := $(dir $(mkfile_path))
 # acc options
 # guide: define acc=<+"instance name".> , the dot includes all the child instances.
 # Example: <make clean sim acc=+u_RoT.>,  this will plot all the OpenTitan and subinstances signals (all the OT design)
-acc            := +acc=p+ariane_tb.
-noacc          := +noacc=p+dut.
+acc            := +acc
+noacc          :=
 test_name      ?= hello_culsans
 test_path      ?= ../software/hello_culsans/hello_culsans.riscv
 
