@@ -1,3 +1,4 @@
+`timescale 1ps/1ps // xsim: match the tb unit so integer-scaled `time` parameter overrides (TA/TT) are not re-scaled
 // Copyright 2020 ETH Zurich and University of Bologna.
 // Solderpad Hardware License, Version 0.51, see LICENSE for details.
 // SPDX-License-Identifier: SHL-0.51
@@ -241,6 +242,9 @@ package jtag_test;
           reset_dmi();
         end
         read_dmi(address, data, wait_cycles, op);
+`ifdef XSIM_DMI_DEBUG
+        $display("[DMIDBG] t=%0t addr=%0d trial=%0d wait=%0d op=%0d data=%h", $time, address, trial_idx, wait_cycles, op, data);
+`endif
         wait_cycles *= 2;
         trial_idx++;
       end while (op == dm::DTM_BUSY);

@@ -33,6 +33,7 @@ module fifo_v3 #(
     output dtype  data_o,           // output data
     input  logic  pop_i             // pop head from queue
 );
+  dtype data_o_xc; // xsim: shadow of data_o
     // local parameter
     // FIFO depth - handle the case of pass-through, synthesizer will do constant propagation
     localparam int unsigned FifoDepth = (DEPTH > 0) ? DEPTH : 1;
@@ -63,7 +64,7 @@ module fifo_v3 #(
         read_pointer_n  = read_pointer_q;
         write_pointer_n = write_pointer_q;
         status_cnt_n    = status_cnt_q;
-        data_o          = (DEPTH == 0) ? data_i : mem_q[read_pointer_q];
+        data_o_xc          = (DEPTH == 0) ? data_i : mem_q[read_pointer_q];
         mem_n           = mem_q;
         gate_clock      = 1'b1;
 
@@ -101,13 +102,14 @@ module fifo_v3 #(
 
         // FIFO is in pass through mode -> do not change the pointers
         if (FALL_THROUGH && (status_cnt_q == 0) && push_i) begin
-            data_o = data_i;
+            data_o_xc = data_i;
             if (pop_i) begin
                 status_cnt_n = status_cnt_q;
                 read_pointer_n = read_pointer_q;
                 write_pointer_n = write_pointer_q;
             end
         end
+          data_o = data_o_xc; // xsim: outputs assigned once
     end
 
     // sequential process

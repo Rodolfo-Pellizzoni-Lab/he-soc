@@ -1067,7 +1067,7 @@ module cva6 import ariane_pkg::*; #(
   );
 `endif // PITON_ARIANE
 
-`ifndef VERILATOR
+`ifndef XSIM_NO_TRACER // was: ifndef VERILATOR (xsim experiment)
   instr_tracer_if tracer_if (clk_i);
   // assign instruction tracer interface
   // control signals
@@ -1111,7 +1111,7 @@ module cva6 import ariane_pkg::*; #(
   );
 
 // mock tracer for Verilator, to be used with spike-dasm
-`else
+`elsif XSIM_KEEP_MOCK_TRACER // xsim: mock tracer branch disabled too (per-cycle string/file activity)
 
   int f;
   logic [63:0] cycles;
@@ -1222,7 +1222,7 @@ module cva6 import ariane_pkg::*; #(
      end
   end
 
-  assign ctr_commit_port_1 = {
+  assign ctr_commit_port_1 = '{
      ctr_source: ctr_source[0],
      ctr_type  : ctr_type[0],
      ctr_instr : ctr_instr[0],
@@ -1230,7 +1230,7 @@ module cva6 import ariane_pkg::*; #(
      valid     : ctr_valid[0]
   };
 
-  assign ctr_commit_port_2 = {
+  assign ctr_commit_port_2 = '{
      ctr_source: ctr_source[1],
      ctr_type  : ctr_type[1],
      ctr_instr : ctr_instr[1],

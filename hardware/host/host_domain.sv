@@ -372,6 +372,67 @@ module host_domain
    XBAR_TCDM_BUS udma_2_tcdm_channels[NB_UDMA_TCDM_CHANNEL]();
 
 
+  `ifdef XSIM_SIM_DRAM
+   // xsim: with NO_L3_CONNECTION no HyperRAM model sits on the pads, so an LLC refill never returns and the
+   // CCU FSM blocks every core. Terminate mem_axi_bus (LLC -> SPU -> HyperBus path) in a simulation memory
+   // and give the HyperBus subsystem an idle bus instead.
+   AXI_BUS #(
+     .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH           ),
+     .AXI_DATA_WIDTH ( AXI_DATA_WIDTH              ),
+     .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave +1 ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH              )
+   ) xsim_hyper_dummy_bus();
+   assign xsim_hyper_dummy_bus.aw_valid = 1'b0;
+   assign xsim_hyper_dummy_bus.ar_valid = 1'b0;
+   assign xsim_hyper_dummy_bus.w_valid  = 1'b0;
+   assign xsim_hyper_dummy_bus.b_ready  = 1'b1;
+   assign xsim_hyper_dummy_bus.r_ready  = 1'b1;
+   typedef logic [AXI_ADDRESS_WIDTH-1:0]      xsim_dram_addr_t;
+   typedef logic [ariane_soc::IdWidthSlave:0] xsim_dram_id_t;
+   typedef logic [AXI_DATA_WIDTH-1:0]         xsim_dram_data_t;
+   typedef logic [AXI_DATA_WIDTH/8-1:0]       xsim_dram_strb_t;
+   typedef logic [AXI_USER_WIDTH-1:0]         xsim_dram_user_t;
+   `AXI_TYPEDEF_ALL(xsim_dram, xsim_dram_addr_t, xsim_dram_id_t, xsim_dram_data_t, xsim_dram_strb_t, xsim_dram_user_t)
+   xsim_dram_req_t  [0:0] xsim_dram_req;
+   xsim_dram_resp_t [0:0] xsim_dram_rsp;
+   `AXI_ASSIGN_TO_REQ(xsim_dram_req[0], mem_axi_bus)
+   `AXI_ASSIGN_FROM_RESP(mem_axi_bus, xsim_dram_rsp[0])
+   axi_sim_mem #(
+     .AddrWidth         ( AXI_ADDRESS_WIDTH          ),
+     .DataWidth         ( AXI_DATA_WIDTH             ),
+     .IdWidth           ( ariane_soc::IdWidthSlave+1 ),
+     .UserWidth         ( AXI_USER_WIDTH             ),
+     .NumPorts          ( 1                          ),
+     .axi_req_t         ( xsim_dram_req_t            ),
+     .axi_rsp_t         ( xsim_dram_resp_t           ),
+     .WarnUninitialized ( 1'b0                       ),
+     .UninitializedData ( "zeros"                    ),
+     .ApplDelay         ( 1ns                        ),
+     .AcqDelay          ( 3ns                        )
+   ) i_xsim_sim_dram (
+     .clk_i     ( s_soc_clk       ),
+     .rst_ni    ( s_synch_soc_rst ),
+     .axi_req_i ( xsim_dram_req   ),
+     .axi_rsp_o ( xsim_dram_rsp   ),
+     .mon_w_valid_o (), .mon_w_addr_o (), .mon_w_data_o (), .mon_w_id_o (), .mon_w_user_o (), .mon_w_beat_count_o (), .mon_w_last_o (),
+     .mon_r_valid_o (), .mon_r_addr_o (), .mon_r_data_o (), .mon_r_id_o (), .mon_r_user_o (), .mon_r_beat_count_o (), .mon_r_last_o ()
+   );
+   // The common startup code (software/common/syscalls.c) wakes the second core through the SCMI mailbox
+   // with the hard-coded L3 entry 0x8000_0000. In the L2 flow nothing lives there, and an all-zero opcode is an
+   // illegal instruction that CVA6 offloads to the absent CV-X-IF coprocessor and never commits, so the later
+   // JTAG halt of that core can never be taken. Park it in a WFI loop there instead.
+   initial begin
+     i_xsim_sim_dram.mem[64'h8000_0000] = 8'h73; // wfi          = 0x10500073
+     i_xsim_sim_dram.mem[64'h8000_0001] = 8'h00;
+     i_xsim_sim_dram.mem[64'h8000_0002] = 8'h50;
+     i_xsim_sim_dram.mem[64'h8000_0003] = 8'h10;
+     i_xsim_sim_dram.mem[64'h8000_0004] = 8'h6f; // jal x0, -4   = 0xffdff06f
+     i_xsim_sim_dram.mem[64'h8000_0005] = 8'hf0;
+     i_xsim_sim_dram.mem[64'h8000_0006] = 8'hdf;
+     i_xsim_sim_dram.mem[64'h8000_0007] = 8'hff;
+   end
+  `endif
+
   `ifdef XILINX_DDR
    AXI_BUS #(
      .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH           ),
@@ -599,6 +660,7 @@ module host_domain
          end_addr:   ariane_soc::HYAXIBase + ariane_soc::HYAXILength
    };
 
+`ifndef XSIM_CUT_i_spu_llc_mem // xsim bisect
 axi_spu_top #(
      // Static configuration parameters of the cache.
      .SetAssociativity   ( ariane_soc::LLC_SET_ASSOC   ),
@@ -625,6 +687,7 @@ axi_spu_top #(
      .spu_mst            ( mem_axi_bus                 ),
      .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
    );
+`endif // XSIM_CUT_i_spu_llc_mem
 
    // AXI Cut for IOPMP Configuration Port
    axi_cut_intf #(
@@ -652,6 +715,7 @@ axi_spu_top #(
      .out    ( iopmp_mst_cut   )
    );
 
+`ifndef XSIM_CUT_i_riscv_iopmp // xsim bisect
    riscv_iopmp #(
      // AXI specific parameters
      .ADDR_WIDTH			   ( AXI_ADDRESS_WIDTH        ),
@@ -700,6 +764,7 @@ axi_spu_top #(
      .wsi_wire_o         ( iopmp_irq             ),
      .iopmp_lock_xor_key_i ( iopmp_lock_xor_key )
    );
+`endif // XSIM_CUT_i_riscv_iopmp
 
    axi_lite_dw_converter_intf #(
      .AXI_ADDR_WIDTH          ( AXI_ADDRESS_WIDTH        ),
@@ -726,6 +791,7 @@ axi_spu_top #(
    );
 
    // The PMU only works with 32-bit AXI4-Lite port.
+`ifndef XSIM_CUT_i_pmu_top // xsim bisect
    pmu_top #(
      .NUM_PORT         ( (ariane_soc::NumCVA6)* 2 + 1   ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
@@ -754,6 +820,7 @@ axi_spu_top #(
      .master_resp_i    ( pmu_master_res                 ),
      .intr_o           ( pmu_intr_o                     )
    );
+`endif // XSIM_CUT_i_pmu_top
 
   `AXI_LITE_ASSIGN_TO_REQ( axi_lite_pmu_cfg_req, apmu_cfg_lite_bus    )
   `AXI_LITE_ASSIGN_FROM_RESP( apmu_cfg_lite_bus, axi_lite_pmu_cfg_res )
@@ -762,7 +829,11 @@ axi_spu_top #(
   `AXI_LITE_ASSIGN_FROM_RESP( perfc_cfg_lite_bus, axi_lite_perfc_cfg_resp)
   `endif
 
-   cva6_subsystem # (
+`ifndef XSIM_CUT_i_cva6_subsystem // xsim bisect
+ `ifdef XSIM_V_CLK
+  logic xsim_plain_clk = 1'b0; always #2000 xsim_plain_clk = ~xsim_plain_clk;
+`endif
+  cva6_subsystem # (
         .NUM_WORDS         ( NUM_WORDS      ),
         .AXI_USER_WIDTH    ( AXI_USER_WIDTH ),
         .APMU_NUM_COUNTER  ( APMU_NUM_COUNTER ),
@@ -773,10 +844,22 @@ axi_spu_top #(
         .axi_req_t         ( axi_req_t      ),
         .axi_rsp_t         ( axi_rsp_t      )
    ) i_cva6_subsystem (
+`ifdef XSIM_V_CLK
+    .clk_i(xsim_plain_clk),
+`else
         .clk_i(s_soc_clk),
+`endif
+`ifdef XSIM_V_RST
+    .rst_ni(1'b0),
+`else
         .rst_ni(s_synch_global_rst),
+`endif
         .cva6_clk_i(s_clk_cva6),
+`ifdef XSIM_V_RST
+    .cva6_rst_ni(1'b0),
+`else
         .cva6_rst_ni(s_rstn_cva6_sync),
+`endif
         .rtc_i,
         .jtag_TCK,
         .jtag_TMS,
@@ -786,17 +869,49 @@ axi_spu_top #(
         .jtag_TDO_driven,
         .ot_axi_req,
         .ot_axi_rsp,
+`ifdef XSIM_V_IN
+    .irq_mbox_i('0),
+`else
         .irq_mbox_i            ( completion_irq_o      ),
+`endif
         .snoop_trigger_irq_o   ( cfi_req_irq_o         ),
         .snoop_watermark_irq_o ( snoop_watermark_irq_o ),
+`ifdef XSIM_V_RST
+    .sync_rst_ni(1'b0),
+`else
         .sync_rst_ni           ( s_synch_soc_rst       ),
+`endif
+`ifdef XSIM_V_IN
+    .udma_events_i('0),
+`else
         .udma_events_i         ( s_udma_events         ),
+`endif
         .cluster_eoc_i         ( cluster_eoc_i         ),
+`ifdef XSIM_V_IN
+    .c2h_irq_i('0),
+`else
         .c2h_irq_i             ( s_c2h_irq             ),
+`endif
+`ifdef XSIM_V_IN
+    .can_irq_i('0),
+`else
         .can_irq_i             ( s_can_irq             ),
+`endif
+`ifdef XSIM_V_IN
+    .pwm_irq_i('0),
+`else
         .pwm_irq_i             ( s_pwm_irq             ),
+`endif
+`ifdef XSIM_V_IN
+    .gpio_irq_i('0),
+`else
         .gpio_irq_i            ( s_gpio_irq            ),
+`endif
+`ifdef XSIM_V_IN
+    .cl_dma_pe_evt_i('0),
+`else
         .cl_dma_pe_evt_i       ( s_dma_pe_evt          ),
+`endif
         .dm_rst_o              ( s_dm_rst              ),
         .l2_axi_master         ( l2_axi_bus            ),
         .apb_axi_master        ( apb_axi_bus           ),
@@ -820,22 +935,40 @@ axi_spu_top #(
         // EVU 
         .spu_core_o           ( spu_o[ariane_soc::NumCVA6 +: ariane_soc::NumCVA6]),
         // APMU
+`ifdef XSIM_V_IN
+    .pmu_intr_i('0),
+`else
         .pmu_intr_i           ( pmu_intr_o           ),
+`endif
+`ifdef XSIM_V_IN
+    .iopmp_irq_i('0),
+`else
         .iopmp_irq_i          ( iopmp_irq            ),
 
+`endif
         .cva6_uart_rx_i       ( cva6_uart_rx_i       ),
         .cva6_uart_tx_o       ( cva6_uart_tx_o       ),
         .axi_lite_master      ( host_lite_bus        ),
         .axi_lite_snoop_req_i ( axi_lite_snooper_req ),
         .axi_lite_snoop_rsp_o ( axi_lite_snooper_rsp ),
+`ifdef XSIM_V_IN
+    .iommu_lock_xor_key_i('0),
+`else
 
         .iommu_lock_xor_key_i ( iommu_lock_xor_key   ),
+`endif
+`ifdef XSIM_V_IN
+    .aia_lock_xor_key_i('0),
+`else
         .aia_lock_xor_key_i   ( aia_lock_xor_key     ),
+`endif
         .perfc_cfg_req_i       ( axi_lite_perfc_cfg_req  ),
         .perfc_cfg_resp_o       ( axi_lite_perfc_cfg_resp ),
         .perfc_evu_status_resp_o( spu_o[0 +: ariane_soc::NumCVA6]) 
     );
+`endif // XSIM_CUT_i_cva6_subsystem
 
+`ifndef XSIM_CUT_i_axi2mem_l2 // xsim bisect
    axi2tcdm_wrap #(
       .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
       .AXI_USER_WIDTH ( AXI_USER_WIDTH           ),
@@ -848,8 +981,10 @@ axi_spu_top #(
       .tcdm_master ( axi_bridge_2_interconnect ),
       .busy_o      (                           )
    );
+`endif // XSIM_CUT_i_axi2mem_l2
 
 
+`ifndef XSIM_CUT_i_l2_subsystem // xsim bisect
    l2_subsystem #(
       .NB_L2_BANKS        ( NB_L2_BANKS              ),
       .L2_BANK_SIZE       ( L2_BANK_SIZE             ),
@@ -861,6 +996,7 @@ axi_spu_top #(
       .axi_bridge_2_interconnect ( axi_bridge_2_interconnect ),
       .udma_tcdm_channels        ( udma_2_tcdm_channels      )
      );
+`endif // XSIM_CUT_i_l2_subsystem
 
     edge_propagator_rx ep_dma_pe_evt_i (
         .clk_i   ( s_soc_clk               ),
@@ -907,6 +1043,8 @@ axi_spu_top #(
 
       `ifdef XILINX_DDR
       .hyper_axi_bus_slave    ( dummyaxibus                    ),
+      `elsif XSIM_SIM_DRAM
+      .hyper_axi_bus_slave    ( xsim_hyper_dummy_bus           ),
       `else
       .hyper_axi_bus_slave    ( mem_axi_bus                    ),
       `endif
@@ -959,6 +1097,7 @@ axi_spu_top #(
       );
 
 
+`ifndef XSIM_CUT_i_axi_lite_subsystem // xsim bisect
    axi_lite_subsystem #(
        .AXI_USER_WIDTH      ( AXI_USER_WIDTH    ),
        .AXI_ADDR_WIDTH      ( AXI_ADDRESS_WIDTH ),
@@ -982,5 +1121,6 @@ axi_spu_top #(
        .completion_irq_o,
        .perfc_cfg_master      ( perfc_cfg_lite_bus     )
    );
+`endif // XSIM_CUT_i_axi_lite_subsystem
 
 endmodule

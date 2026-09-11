@@ -66,9 +66,11 @@ module alsaqr_clk_rst_gen (
   // currently, FLLs are not supported for FPGA emulation
   `ifndef TARGET_FPGA
     //synopsys translate_off
+`ifndef XSIM_NO_FREQMETER
     freq_meter #(.FLL_NAME("SOC_FLL"    ), .MAX_SAMPLE(4096)) SOC_METER     (.clk(s_clk_fll_soc));
     freq_meter #(.FLL_NAME("PER_FLL"    ), .MAX_SAMPLE(4096)) PER_METER     (.clk(s_clk_fll_per));
     freq_meter #(.FLL_NAME("CLUSTER_FLL"), .MAX_SAMPLE(4096)) CLUSTER_METER (.clk(s_clk_fll_cluster));
+`endif
     //synopsys translate_on
     `ifdef GF22_FLL
       gf22_FLL i_gf22_fll (         // Clock & reset

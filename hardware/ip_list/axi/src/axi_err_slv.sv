@@ -249,7 +249,7 @@ module axi_err_slv #(
     assert (Resp == axi_pkg::RESP_DECERR || Resp == axi_pkg::RESP_SLVERR) else
       $fatal(1, "This module may only generate RESP_DECERR or RESP_SLVERR responses!");
   end
-  default disable iff (!rst_ni);
+  // xsim: unsupported -- default disable iff (!rst_ni);
   if (!ATOPs) begin : gen_assert_atops_unsupported
     assume property( @(posedge clk_i) (slv_req_i.aw_valid |-> slv_req_i.aw.atop == '0)) else
      $fatal(1, "Got ATOP but not configured to support ATOPs!");

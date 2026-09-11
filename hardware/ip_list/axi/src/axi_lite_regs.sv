@@ -419,7 +419,7 @@ module axi_lite_regs #(
       assert (RegNumBytes == $bits(AxiReadOnly)) else
           $fatal(1, "Each register needs a `ReadOnly` flag!");
     end
-    default disable iff (~rst_ni);
+    // xsim: unsupported -- default disable iff (~rst_ni);
     for (genvar i = 0; i < RegNumBytes; i++) begin
       assert property (@(posedge clk_i) (!reg_load_i[i] && AxiReadOnly[i] |=> $stable(reg_q_o[i])))
           else $fatal(1, "Read-only register at `byte_index: %0d` was changed by AXI!", i);

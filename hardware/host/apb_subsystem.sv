@@ -288,7 +288,7 @@ module apb_subsystem
          .AXI_USER_WIDTH ( AXI_USER_WIDTH           ),
          .APB_ADDR_WIDTH ( 32                       ),
          .APB_DATA_WIDTH ( 32                       )
-         )(
+         ) i_axi2apb_periph_bus (
            .clk_i      ( clk_soc_o                  ),
            .rst_ni     ( s_rstn_soc_sync            ),
            .test_en_i  ( 1'b0                       ),

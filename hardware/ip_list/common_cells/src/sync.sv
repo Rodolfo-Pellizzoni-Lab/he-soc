@@ -26,8 +26,14 @@ module sync #(
 
     always_ff @(posedge clk_i, negedge rst_ni) begin
         if (!rst_ni) begin
+`ifdef XSIM_RST_NO_REWRITE
+            if (reg_q !== {STAGES{ResetValue}}) // xsim: avoid unchanged re-writes (each write is an event that wakes every dependent process)
+`endif
             reg_q <= {STAGES{ResetValue}};
         end else begin
+`ifdef XSIM_RST_NO_REWRITE
+            if (reg_q !== {reg_q[STAGES-2:0], serial_i})
+`endif
             reg_q <= {reg_q[STAGES-2:0], serial_i};
         end
     end

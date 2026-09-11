@@ -229,4 +229,7 @@ module axi_llc_tag_pattern_gen #(
   `FFLARN(busy_q,     busy_d,     switch_busy,      '0, clk_i, rst_ni)
   `FFLARN(bist_q,     bist_d,     update_bist, WZEROUP, clk_i, rst_ni)
   `FFLARN(bist_res_q, bist_res_d, error_bist,       '0, clk_i, rst_ni)
+`ifdef XSIM_INIT_REGS
+  initial begin busy_q = '0; bist_q = WZEROUP; bist_res_q = '0; end // xsim: kill time-0 X in the BIST handshake ring
+`endif
 endmodule

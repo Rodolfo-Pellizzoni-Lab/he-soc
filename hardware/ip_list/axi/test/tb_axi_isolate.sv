@@ -202,7 +202,7 @@ module tb_axi_isolate #(
   end
 
 
-  default disable iff (!rst_n);
+  // xsim: unsupported -- default disable iff (!rst_n);
   aw_unstable: assert property (@(posedge clk)
       (slave.aw_valid && !slave.aw_ready) |=> $stable(slave.aw_addr)) else
       $fatal(1, "AW is unstable.");

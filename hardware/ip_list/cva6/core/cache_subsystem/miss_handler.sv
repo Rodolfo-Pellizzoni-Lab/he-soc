@@ -688,30 +688,32 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
     // ----------------------
     always_comb begin
         logic [$clog2(NR_BYPASS_PORTS)-1:0] id;
+        bypass_req_t [NR_BYPASS_PORTS-1:0] bpr; // xsim: build locally, assign port array once (no transient port events)
+        bpr = '0;
 
         // Pack MHSR ports first
         for (id = 0; id < NR_PORTS; id++) begin
-            bypass_ports_req[id].req     = miss_req_valid[id] & miss_req_bypass[id];
-            bypass_ports_req[id].reqtype = ariane_axi::SINGLE_REQ;
-            bypass_ports_req[id].amo     = AMO_NONE;
-            bypass_ports_req[id].id      = 4'b1000 + id;
-            bypass_ports_req[id].addr    = miss_req_addr[id];
-            bypass_ports_req[id].wdata   = miss_req_wdata[id];
-            bypass_ports_req[id].we      = miss_req_we[id];
-            bypass_ports_req[id].be      = miss_req_be[id];
-            bypass_ports_req[id].size    = miss_req_size[id];
+            bpr[id].req     = miss_req_valid[id] & miss_req_bypass[id];
+            bpr[id].reqtype = ariane_axi::SINGLE_REQ;
+            bpr[id].amo     = AMO_NONE;
+            bpr[id].id      = 4'b1000 + id;
+            bpr[id].addr    = miss_req_addr[id];
+            bpr[id].wdata   = miss_req_wdata[id];
+            bpr[id].we      = miss_req_we[id];
+            bpr[id].be      = miss_req_be[id];
+            bpr[id].size    = miss_req_size[id];
 
             if (miss_req_we[id]) begin
               if (is_inside_shareable_regions(ArianeCfg, miss_req_addr[id])) begin
-                bypass_ports_req[id].acetype = ace_pkg::WRITE_UNIQUE;
+                bpr[id].acetype = ace_pkg::WRITE_UNIQUE;
               end else begin
-                bypass_ports_req[id].acetype = ace_pkg::WRITE_NO_SNOOP;
+                bpr[id].acetype = ace_pkg::WRITE_NO_SNOOP;
               end
             end else begin
               if (is_inside_shareable_regions(ArianeCfg, miss_req_addr[id])) begin
-                bypass_ports_req[id].acetype = ace_pkg::READ_ONCE;
+                bpr[id].acetype = ace_pkg::READ_ONCE;
               end else begin
-                bypass_ports_req[id].acetype = ace_pkg::READ_NO_SNOOP;
+                bpr[id].acetype = ace_pkg::READ_NO_SNOOP;
               end
             end
 
@@ -721,20 +723,21 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
         end
 
         // AMO port has lowest priority
-        bypass_ports_req[id]    = amo_bypass_req;
-        bypass_ports_req[id].id = 4'b1000 + id;
+        bpr[id]    = amo_bypass_req;
+        bpr[id].id = 4'b1000 + id;
         if (amo_bypass_req.we) begin
           if (is_inside_shareable_regions(ArianeCfg, amo_bypass_req.addr)) begin
-            bypass_ports_req[id].acetype = ace_pkg::WRITE_UNIQUE;
+            bpr[id].acetype = ace_pkg::WRITE_UNIQUE;
           end else begin
-            bypass_ports_req[id].acetype = ace_pkg::WRITE_NO_SNOOP;
+            bpr[id].acetype = ace_pkg::WRITE_NO_SNOOP;
           end
         end else begin
           if (is_inside_shareable_regions(ArianeCfg, amo_bypass_req.addr)) begin
-            bypass_ports_req[id].acetype = ace_pkg::READ_ONCE;
+            bpr[id].acetype = ace_pkg::READ_ONCE;
           end else begin
-            bypass_ports_req[id].acetype = ace_pkg::READ_NO_SNOOP;
-          end
+            bpr[id].acetype = ace_pkg::READ_NO_SNOOP;
+        bypass_ports_req = bpr;
+    end
         end
 
         amo_bypass_rsp = bypass_ports_rsp[id];
@@ -900,15 +903,16 @@ module axi_adapter_arbiter #(
     logic [NR_PORTS-1:0] sel_d, sel_q;
 
     always_comb begin
+        req_t req_n; rsp_t [NR_PORTS-1:0] rsp_n; // xsim: locals, outputs assigned once
         sel_d = sel_q;
 
         state_d = state_q;
         req_d   = req_q;
 
-        req_o = req_q;
+        req_n = req_q;
 
-        rsp_o = '0;
-        rsp_o[sel_q].rdata = rsp_i.rdata;
+        rsp_n = '0;
+        rsp_n[sel_q].rdata = rsp_i.rdata;
 
         case (state_q)
 
@@ -923,19 +927,21 @@ module axi_adapter_arbiter #(
                 end
 
                 req_d = req_i[sel_d];
-                req_o = req_i[sel_d];
-                rsp_o[sel_d].gnt = req_i[sel_d].req;
+                req_n = req_i[sel_d];
+                rsp_n[sel_d].gnt = req_i[sel_d].req;
             end
 
             SERVING: begin
                 if (rsp_i.valid) begin
-                    rsp_o[sel_q].valid = 1'b1;
+                    rsp_n[sel_q].valid = 1'b1;
                     state_d = IDLE;
                 end
             end
 
             default : /* default */;
         endcase
+        req_o = req_n;
+        rsp_o = rsp_n;
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin

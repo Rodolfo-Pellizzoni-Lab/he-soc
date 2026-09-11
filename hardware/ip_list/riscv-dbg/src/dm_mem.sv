@@ -58,6 +58,10 @@ module dm_mem #(
   input  logic [BusWidth/8-1:0]            be_i,
   output logic [BusWidth-1:0]              rdata_o
 );
+  logic cmdbusy_o_xc; // xsim: shadow of cmdbusy_o
+  logic cmderror_valid_o_xc; // xsim: shadow of cmderror_valid_o
+  dm::cmderr_e cmderror_o_xc; // xsim: shadow of cmderror_o
+  logic data_valid_o_xc; // xsim: shadow of data_valid_o
   localparam int unsigned DbgAddressBits = 12;
   localparam int unsigned HartSelLen     = (NrHarts == 1) ? 1 : $clog2(NrHarts);
   localparam int unsigned NrHartsAligned = 2**HartSelLen;
@@ -87,8 +91,12 @@ module dm_mem #(
   logic [NrHarts-1:0] halted_d, halted_q;
   logic [NrHarts-1:0] resuming_d, resuming_q;
   logic               resume, go, going;
+  logic go_xc; // xsim: shadow of go
+  logic resume_xc; // xsim: shadow of resume
+  logic going_xc; // xsim: shadow of going
 
   logic exception;
+  logic exception_xc; // xsim: shadow of exception
   logic unsupported_command;
 
   logic [63:0] rom_rdata;
@@ -106,6 +114,7 @@ module dm_mem #(
                              halted_d_aligned, halted_q_aligned,
                              halted_aligned, resumereq_wdata_aligned,
                              resuming_d_aligned, resuming_q_aligned;
+  logic [NrHartsAligned-1:0] halted_aligned_xc; // xsim: shadow of halted_aligned
 
   assign resumereq_aligned       = NrHartsAligned'(resumereq_i);
   assign haltreq_aligned         = NrHartsAligned'(haltreq_i);
@@ -135,25 +144,25 @@ module dm_mem #(
 
   // hart ctrl queue
   always_comb begin : p_hart_ctrl_queue
-    cmderror_valid_o = 1'b0;
-    cmderror_o       = dm::CmdErrNone;
+    cmderror_valid_o_xc = 1'b0;
+    cmderror_o_xc       = dm::CmdErrNone;
     state_d          = state_q;
-    go               = 1'b0;
-    resume           = 1'b0;
-    cmdbusy_o        = 1'b1;
+    go_xc               = 1'b0;
+    resume_xc           = 1'b0;
+    cmdbusy_o_xc        = 1'b1;
 
     unique case (state_q)
       Idle: begin
-        cmdbusy_o = 1'b0;
+        cmdbusy_o_xc = 1'b0;
         if (cmd_valid_i && halted_q_aligned[hartsel] && !unsupported_command) begin
-          // give the go signal
+          // give the go_xc signal
           state_d = Go;
         end else if (cmd_valid_i) begin
           // hart must be halted for all requests
-          cmderror_valid_o = 1'b1;
-          cmderror_o = dm::CmdErrorHaltResume;
+          cmderror_valid_o_xc = 1'b1;
+          cmderror_o_xc = dm::CmdErrorHaltResume;
         end
-        // CSRs want to resume, the request is ignored when the hart is
+        // CSRs want to resume_xc, the request is ignored when the hart is
         // requested to halt or it didn't clear the resuming_q bit before
         if (resumereq_aligned[hartsel] && !resuming_q_aligned[hartsel] &&
             !haltreq_aligned[hartsel] && halted_q_aligned[hartsel]) begin
@@ -163,8 +172,8 @@ module dm_mem #(
 
       Go: begin
         // we are already busy here since we scheduled the execution of a program
-        cmdbusy_o = 1'b1;
-        go        = 1'b1;
+        cmdbusy_o_xc = 1'b1;
+        go_xc        = 1'b1;
         // the thread is now executing the command, track its state
         if (going) begin
             state_d = CmdExecuting;
@@ -172,16 +181,16 @@ module dm_mem #(
       end
 
       Resume: begin
-        cmdbusy_o = 1'b1;
-        resume = 1'b1;
+        cmdbusy_o_xc = 1'b1;
+        resume_xc = 1'b1;
         if (resuming_q_aligned[hartsel]) begin
           state_d = Idle;
         end
       end
 
       CmdExecuting: begin
-        cmdbusy_o = 1'b1;
-        go        = 1'b0;
+        cmdbusy_o_xc = 1'b1;
+        go_xc        = 1'b0;
         // wait until the hart has halted again
         if (halted_aligned[hartsel]) begin
           state_d = Idle;
@@ -194,22 +203,27 @@ module dm_mem #(
     // only signal once that cmd is unsupported so that we can clear cmderr
     // in subsequent writes to abstractcs
     if (unsupported_command && cmd_valid_i) begin
-      cmderror_valid_o = 1'b1;
-      cmderror_o = dm::CmdErrNotSupported;
+      cmderror_valid_o_xc = 1'b1;
+      cmderror_o_xc = dm::CmdErrNotSupported;
     end
 
     if (exception) begin
-      cmderror_valid_o = 1'b1;
-      cmderror_o = dm::CmdErrorException;
+      cmderror_valid_o_xc = 1'b1;
+      cmderror_o_xc = dm::CmdErrorException;
     end
 
     if (ndmreset_i) begin
       // Clear state of hart and its control signals when it is being reset.
       state_d = Idle;
-      go      = 1'b0;
-      resume  = 1'b0;
+      go_xc      = 1'b0;
+      resume_xc  = 1'b0;
     end
-  end
+        cmdbusy_o = cmdbusy_o_xc; // xsim: outputs assigned once
+          go = go_xc; // xsim: outputs assigned once
+          resume = resume_xc; // xsim: outputs assigned once
+          cmderror_valid_o = cmderror_valid_o_xc; // xsim: outputs assigned once
+          cmderror_o = cmderror_o_xc; // xsim: outputs assigned once
+    end
 
   // word mux for 32bit and 64bit buses
   logic [63:0] word_mux;
@@ -233,10 +247,10 @@ module dm_mem #(
     rdata          = '0;
 
     // write data in csr register
-    data_valid_o   = 1'b0;
-    exception      = 1'b0;
-    halted_aligned     = '0;
-    going          = 1'b0;
+    data_valid_o_xc   = 1'b0;
+    exception_xc      = 1'b0;
+    halted_aligned_xc     = '0;
+    going_xc          = 1'b0;
 
     // The resume ack signal is lowered when the resume request is deasserted
     if (clear_resumeack_i) begin
@@ -248,11 +262,11 @@ module dm_mem #(
       if (we_i) begin
         unique case (addr_i[DbgAddressBits-1:0]) inside
           HaltedAddr: begin
-            halted_aligned[wdata_hartsel] = 1'b1;
+            halted_aligned_xc[wdata_hartsel] = 1'b1;
             halted_d_aligned[wdata_hartsel] = 1'b1;
           end
           GoingAddr: begin
-            going = 1'b1;
+            going_xc = 1'b1;
           end
           ResumingAddr: begin
             // clear the halted flag as the hart resumed execution
@@ -260,11 +274,11 @@ module dm_mem #(
             // set the resuming flag which needs to be cleared by the debugger
             resuming_d_aligned[wdata_hartsel] = 1'b1;
           end
-          // an exception occurred during execution
-          ExceptionAddr: exception = 1'b1;
+          // an exception_xc occurred during execution
+          ExceptionAddr: exception_xc = 1'b1;
           // core can write data registers
           [DataBaseAddr:DataEndAddr]: begin
-            data_valid_o = 1'b1;
+            data_valid_o_xc = 1'b1;
             for (int dc = 0; dc < dm::DataCount; dc++) begin
               if ((addr_i[DbgAddressBits-1:2] - DataBaseAddr[DbgAddressBits-1:2]) == dc) begin
                 for (int i = 0; i < $bits(be_i); i++) begin
@@ -347,7 +361,11 @@ module dm_mem #(
     end
 
     data_o = data_bits;
-  end
+        halted_aligned = halted_aligned_xc; // xsim: outputs assigned once
+          going = going_xc; // xsim: outputs assigned once
+          exception = exception_xc; // xsim: outputs assigned once
+          data_valid_o = data_valid_o_xc; // xsim: outputs assigned once
+    end
 
   always_comb begin : p_abstract_cmd_rom
     // this abstract command is currently unsupported

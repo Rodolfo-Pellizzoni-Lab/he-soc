@@ -591,7 +591,7 @@ module axi_to_detailed_mem #(
   // Assertions
   // pragma translate_off
   `ifndef VERILATOR
-  default disable iff (!rst_ni);
+  // xsim: unsupported -- default disable iff (!rst_ni);
   assume property (@(posedge clk_i)
       axi_req_i.ar_valid && !axi_resp_o.ar_ready |=> $stable(axi_req_i.ar))
     else $error("AR must remain stable until handshake has happened!");

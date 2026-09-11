@@ -305,7 +305,7 @@ begin
     -- Combinationally incremented valued of counter with number of destuffed
     -- bits.
     ---------------------------------------------------------------------------
-    dst_ctr_add <= (dst_ctr_q + 1) mod 8;
+    dst_ctr_add <= resize((dst_ctr_q + 1) mod 8, dst_ctr_add'length); -- xsim: mod widens
 
 
     ----------------------------------------------------------------------------
@@ -354,7 +354,7 @@ begin
     -- Combinationally incremented value of counter of equal consecutive
     -- bits by 1.
     ---------------------------------------------------------------------------    
-    same_bits_add   <= (same_bits_q + 1) mod 8;
+    same_bits_add   <= resize((same_bits_q + 1) mod 8, same_bits_add'length); -- xsim: mod widens to 4 bits
 
 
     ----------------------------------------------------------------------------

@@ -14,8 +14,8 @@
  */
 
 `ifndef SYNTHESIS
-timeunit 1ps;
-timeprecision 1ps;
+// timeunit 1ps; (xsim: not allowed at compilation-unit scope)
+// timeprecision 1ps;
 `endif
 
 interface hwpe_ctrl_intf_periph (

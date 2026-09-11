@@ -267,7 +267,7 @@ module stream_omega_net #(
     `ifndef SYNTHESIS
     `ifndef COMMON_CELLS_ASSERTS_OFF
     `ifndef VERILATOR
-    default disable iff (~rst_ni);
+    // xsim: unsupported -- default disable iff (~rst_ni);
     `endif
     for (genvar i = 0; unsigned'(i) < NumInp; i++) begin : gen_sel_assertions
       assert property (@(posedge clk_i) disable iff (~rst_ni)

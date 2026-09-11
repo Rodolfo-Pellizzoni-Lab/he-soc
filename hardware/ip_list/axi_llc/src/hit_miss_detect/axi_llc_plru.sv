@@ -681,4 +681,7 @@ endtask
   `endif
   // pragma translate_on
    
+`ifdef XSIM_INIT_REGS
+  initial begin ram_rvalid_q = 1'b0; end // xsim: kill time-0 X in the BIST handshake ring
+`endif
 endmodule

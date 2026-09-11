@@ -68,9 +68,9 @@ module ariane_tb;
   logic clk_i;
   logic rst_ni;
   logic rtc_i;
-  logic s_rst_ni;
-  logic s_rtc_i;
-  logic s_bypass;
+  wire  s_rst_ni; // xsim: inout port needs a net
+  wire  s_rtc_i; // xsim: inout port needs a net
+  wire  s_bypass; // xsim: inout port needs a net
   logic s_eth_clk125_0;
   logic s_eth_clk125_90;
   logic s_eth_clk200;
@@ -96,12 +96,14 @@ module ariane_tb;
   parameter UW       = ariane_axi_soc::UserWidth;
   parameter IW       = ariane_soc::IdWidth;
 
+`ifndef XSIM_NO_AXI_DRV // xsim: the unused AXI_BUS_DV clocking block samples every SoC clock edge
   AXI_BUS_DV#(
     .AXI_ADDR_WIDTH(AW),
     .AXI_DATA_WIDTH(DW),
     .AXI_ID_WIDTH(IW),
     .AXI_USER_WIDTH(UW)
   )axi_master_dv(clk_i);
+`endif
 
   AXI_BUS#(
     .AXI_ADDR_WIDTH(AW),
@@ -110,10 +112,14 @@ module ariane_tb;
     .AXI_USER_WIDTH(UW)
   )axi_master();
 
+`ifndef XSIM_NO_AXI_DRV
   `AXI_ASSIGN(axi_master, axi_master_dv)
+`endif
 
   typedef axi_test::axi_driver #(.AW(AW), .DW(DW), .IW(IW), .UW(UW), .TA(200ps), .TT(700ps)) axi_drv_t;
+`ifndef XSIM_NO_AXI_DRV
   axi_drv_t axi_master_drv =  new(axi_master_dv);
+`endif
 
   typedef logic [AW-1:0]   axi_addr_t;
   typedef logic [DW-1:0]   axi_data_t;
@@ -166,8 +172,14 @@ module ariane_tb;
   //                            //
   ////////////////////////////////
  `ifdef NO_L3_CONNECTION
+  `ifdef XSIM_L3_FLOW
+  // xsim: L3 flow without a HyperRAM model - the program is preloaded into the simulation DRAM behind the LLC
+  parameter  LINKER_ENTRY        = 32'h80000000;
+  parameter  TOHOST              = 32'h1C000000; // test.ld places .tohost at the start of L2
+  `else
   parameter  LINKER_ENTRY        = 32'h1C000000;
-  parameter  TOHOST              = 32'h1C000100;
+  parameter  TOHOST              = 32'h1C000140; // xsim: test_l2.ld places .tohost at 0x1C000140 (was 0x1C000100)
+  `endif
  `else
   // when preload is enabled LINKER_ENTRY specifies the linker address which must be L3 -> 32'h80000000
   parameter  LINKER_ENTRY        = 32'h80000000;
@@ -176,7 +188,7 @@ module ariane_tb;
   `ifndef CODE_IN_L2
   parameter  TOHOST              = 32'h1c000000;
   `else
-   parameter TOHOST              = 32'h1c000100;
+   parameter TOHOST              = 32'h1c000140; // xsim: matches test_l2.ld .tohost
   `endif
 
  `endif
@@ -297,6 +309,7 @@ module ariane_tb;
     wire                  s_jtag2ot_tdo    ;
 
     logic                 bootmode;
+    wire                  bootmode_w; assign bootmode_w = bootmode; // xsim: inout port needs a net
     logic                 boot_mode;
 
     logic                  trace_mode_instruction;
@@ -1326,7 +1339,7 @@ module ariane_tb;
         .pad_hyper_reset      ( hyper_reset_n_wire     ),
         .pad_hyper_dq         ( hyper_dq_wire          ),
         `endif
-        .pad_bootmode         ( bootmode               )
+        .pad_bootmode         ( bootmode_w             )
       );
 
   //**************************************************
@@ -1940,30 +1953,30 @@ module ariane_tb;
         //**************************************************
         // ALTERNAME 2 - COMM CPGA VIPs BEGINNING
         //**************************************************
-        tran alt_2_pad_periphs_b_00_47_gpio_loopback (alt_2_pad_periphs_b_00_pad_IO_GPIO00, alt_2_pad_periphs_b_47_pad_IO_GPIO47);
-        tran alt_2_pad_periphs_b_01_46_gpio_loopback (alt_2_pad_periphs_b_01_pad_IO_GPIO01, alt_2_pad_periphs_b_46_pad_IO_GPIO46);
-        tran alt_2_pad_periphs_b_02_45_gpio_loopback (alt_2_pad_periphs_b_02_pad_IO_GPIO02, alt_2_pad_periphs_b_45_pad_IO_GPIO45);
-        tran alt_2_pad_periphs_b_03_44_gpio_loopback (alt_2_pad_periphs_b_03_pad_IO_GPIO03, alt_2_pad_periphs_b_44_pad_IO_GPIO44);
-        tran alt_2_pad_periphs_b_04_43_gpio_loopback (alt_2_pad_periphs_b_04_pad_IO_GPIO04, alt_2_pad_periphs_b_43_pad_IO_GPIO43);
-        tran alt_2_pad_periphs_b_05_42_gpio_loopback (alt_2_pad_periphs_b_05_pad_IO_GPIO05, alt_2_pad_periphs_b_42_pad_IO_GPIO42);
-        tran alt_2_pad_periphs_b_06_41_gpio_loopback (alt_2_pad_periphs_b_06_pad_IO_GPIO06, alt_2_pad_periphs_b_41_pad_IO_GPIO41);
-        tran alt_2_pad_periphs_b_07_40_gpio_loopback (alt_2_pad_periphs_b_07_pad_IO_GPIO07, alt_2_pad_periphs_b_40_pad_IO_GPIO40);
-        tran alt_2_pad_periphs_b_08_39_gpio_loopback (alt_2_pad_periphs_b_08_pad_IO_GPIO08, alt_2_pad_periphs_b_39_pad_IO_GPIO39);
-        tran alt_2_pad_periphs_b_09_38_gpio_loopback (alt_2_pad_periphs_b_09_pad_IO_GPIO09, alt_2_pad_periphs_b_38_pad_IO_GPIO38);
-        tran alt_2_pad_periphs_b_10_37_gpio_loopback (alt_2_pad_periphs_b_10_pad_IO_GPIO10, alt_2_pad_periphs_b_37_pad_IO_GPIO37);
-        tran alt_2_pad_periphs_b_11_36_gpio_loopback (alt_2_pad_periphs_b_11_pad_IO_GPIO11, alt_2_pad_periphs_b_36_pad_IO_GPIO36);
-        tran alt_2_pad_periphs_b_12_35_gpio_loopback (alt_2_pad_periphs_b_12_pad_IO_GPIO12, alt_2_pad_periphs_b_35_pad_IO_GPIO35);
-        tran alt_2_pad_periphs_b_13_34_gpio_loopback (alt_2_pad_periphs_b_13_pad_IO_GPIO13, alt_2_pad_periphs_b_34_pad_IO_GPIO34);
-        tran alt_2_pad_periphs_b_14_33_gpio_loopback (alt_2_pad_periphs_b_14_pad_IO_GPIO14, alt_2_pad_periphs_b_33_pad_IO_GPIO33);
-        tran alt_2_pad_periphs_b_15_32_gpio_loopback (alt_2_pad_periphs_b_15_pad_IO_GPIO15, alt_2_pad_periphs_b_32_pad_IO_GPIO32);
-        tran alt_2_pad_periphs_b_16_31_gpio_loopback (alt_2_pad_periphs_b_16_pad_IO_GPIO16, alt_2_pad_periphs_b_31_pad_IO_GPIO31);
-        tran alt_2_pad_periphs_b_17_30_gpio_loopback (alt_2_pad_periphs_b_17_pad_IO_GPIO17, alt_2_pad_periphs_b_30_pad_IO_GPIO30);
-        tran alt_2_pad_periphs_b_18_29_gpio_loopback (alt_2_pad_periphs_b_18_pad_IO_GPIO18, alt_2_pad_periphs_b_29_pad_IO_GPIO29);
-        tran alt_2_pad_periphs_b_19_28_gpio_loopback (alt_2_pad_periphs_b_19_pad_IO_GPIO19, alt_2_pad_periphs_b_28_pad_IO_GPIO28);
-        tran alt_2_pad_periphs_b_20_27_gpio_loopback (alt_2_pad_periphs_b_20_pad_IO_GPIO20, alt_2_pad_periphs_b_27_pad_IO_GPIO27);
-        tran alt_2_pad_periphs_b_21_26_gpio_loopback (alt_2_pad_periphs_b_21_pad_IO_GPIO21, alt_2_pad_periphs_b_26_pad_IO_GPIO26);
-        tran alt_2_pad_periphs_b_22_25_gpio_loopback (alt_2_pad_periphs_b_22_pad_IO_GPIO22, alt_2_pad_periphs_b_25_pad_IO_GPIO25);
-        tran alt_2_pad_periphs_b_23_24_gpio_loopback (alt_2_pad_periphs_b_23_pad_IO_GPIO23, alt_2_pad_periphs_b_24_pad_IO_GPIO24);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_00_47_gpio_loopback (alt_2_pad_periphs_b_00_pad_IO_GPIO00, alt_2_pad_periphs_b_47_pad_IO_GPIO47);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_01_46_gpio_loopback (alt_2_pad_periphs_b_01_pad_IO_GPIO01, alt_2_pad_periphs_b_46_pad_IO_GPIO46);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_02_45_gpio_loopback (alt_2_pad_periphs_b_02_pad_IO_GPIO02, alt_2_pad_periphs_b_45_pad_IO_GPIO45);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_03_44_gpio_loopback (alt_2_pad_periphs_b_03_pad_IO_GPIO03, alt_2_pad_periphs_b_44_pad_IO_GPIO44);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_04_43_gpio_loopback (alt_2_pad_periphs_b_04_pad_IO_GPIO04, alt_2_pad_periphs_b_43_pad_IO_GPIO43);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_05_42_gpio_loopback (alt_2_pad_periphs_b_05_pad_IO_GPIO05, alt_2_pad_periphs_b_42_pad_IO_GPIO42);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_06_41_gpio_loopback (alt_2_pad_periphs_b_06_pad_IO_GPIO06, alt_2_pad_periphs_b_41_pad_IO_GPIO41);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_07_40_gpio_loopback (alt_2_pad_periphs_b_07_pad_IO_GPIO07, alt_2_pad_periphs_b_40_pad_IO_GPIO40);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_08_39_gpio_loopback (alt_2_pad_periphs_b_08_pad_IO_GPIO08, alt_2_pad_periphs_b_39_pad_IO_GPIO39);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_09_38_gpio_loopback (alt_2_pad_periphs_b_09_pad_IO_GPIO09, alt_2_pad_periphs_b_38_pad_IO_GPIO38);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_10_37_gpio_loopback (alt_2_pad_periphs_b_10_pad_IO_GPIO10, alt_2_pad_periphs_b_37_pad_IO_GPIO37);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_11_36_gpio_loopback (alt_2_pad_periphs_b_11_pad_IO_GPIO11, alt_2_pad_periphs_b_36_pad_IO_GPIO36);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_12_35_gpio_loopback (alt_2_pad_periphs_b_12_pad_IO_GPIO12, alt_2_pad_periphs_b_35_pad_IO_GPIO35);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_13_34_gpio_loopback (alt_2_pad_periphs_b_13_pad_IO_GPIO13, alt_2_pad_periphs_b_34_pad_IO_GPIO34);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_14_33_gpio_loopback (alt_2_pad_periphs_b_14_pad_IO_GPIO14, alt_2_pad_periphs_b_33_pad_IO_GPIO33);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_15_32_gpio_loopback (alt_2_pad_periphs_b_15_pad_IO_GPIO15, alt_2_pad_periphs_b_32_pad_IO_GPIO32);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_16_31_gpio_loopback (alt_2_pad_periphs_b_16_pad_IO_GPIO16, alt_2_pad_periphs_b_31_pad_IO_GPIO31);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_17_30_gpio_loopback (alt_2_pad_periphs_b_17_pad_IO_GPIO17, alt_2_pad_periphs_b_30_pad_IO_GPIO30);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_18_29_gpio_loopback (alt_2_pad_periphs_b_18_pad_IO_GPIO18, alt_2_pad_periphs_b_29_pad_IO_GPIO29);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_19_28_gpio_loopback (alt_2_pad_periphs_b_19_pad_IO_GPIO19, alt_2_pad_periphs_b_28_pad_IO_GPIO28);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_20_27_gpio_loopback (alt_2_pad_periphs_b_20_pad_IO_GPIO20, alt_2_pad_periphs_b_27_pad_IO_GPIO27);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_21_26_gpio_loopback (alt_2_pad_periphs_b_21_pad_IO_GPIO21, alt_2_pad_periphs_b_26_pad_IO_GPIO26);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_22_25_gpio_loopback (alt_2_pad_periphs_b_22_pad_IO_GPIO22, alt_2_pad_periphs_b_25_pad_IO_GPIO25);
+        // xsim: tran primitive unsupported -- tran alt_2_pad_periphs_b_23_24_gpio_loopback (alt_2_pad_periphs_b_23_pad_IO_GPIO23, alt_2_pad_periphs_b_24_pad_IO_GPIO24);
         //**************************************************
         // ALTERNAME 2 - COMM CPGA VIPs END
         //**************************************************
@@ -1971,21 +1984,21 @@ module ariane_tb;
         //**************************************************
         // ALTERNAME 3 - GPIOs QFN VIPs BEGINNING
         //**************************************************
-        tran alt_3_pad_periphs_a_00_29_gpio_loopback (alt_3_pad_periphs_a_00_pad_IO_GPIO00, alt_3_pad_periphs_a_29_pad_IO_GPIO29);
-        tran alt_3_pad_periphs_a_01_28_gpio_loopback (alt_3_pad_periphs_a_01_pad_IO_GPIO01, alt_3_pad_periphs_a_28_pad_IO_GPIO28);
-        tran alt_3_pad_periphs_a_02_27_gpio_loopback (alt_3_pad_periphs_a_02_pad_IO_GPIO02, alt_3_pad_periphs_a_27_pad_IO_GPIO27);
-        tran alt_3_pad_periphs_a_03_26_gpio_loopback (alt_3_pad_periphs_a_03_pad_IO_GPIO03, alt_3_pad_periphs_a_26_pad_IO_GPIO26);
-        tran alt_3_pad_periphs_a_04_25_gpio_loopback (alt_3_pad_periphs_a_04_pad_IO_GPIO04, alt_3_pad_periphs_a_25_pad_IO_GPIO25);
-        tran alt_3_pad_periphs_a_05_24_gpio_loopback (alt_3_pad_periphs_a_05_pad_IO_GPIO05, alt_3_pad_periphs_a_24_pad_IO_GPIO24);
-        tran alt_3_pad_periphs_a_06_23_gpio_loopback (alt_3_pad_periphs_a_06_pad_IO_GPIO06, alt_3_pad_periphs_a_23_pad_IO_GPIO23);
-        tran alt_3_pad_periphs_a_07_22_gpio_loopback (alt_3_pad_periphs_a_07_pad_IO_GPIO07, alt_3_pad_periphs_a_22_pad_IO_GPIO22);
-        tran alt_3_pad_periphs_a_08_21_gpio_loopback (alt_3_pad_periphs_a_08_pad_IO_GPIO08, alt_3_pad_periphs_a_21_pad_IO_GPIO21);
-        tran alt_3_pad_periphs_a_09_20_gpio_loopback (alt_3_pad_periphs_a_09_pad_IO_GPIO09, alt_3_pad_periphs_a_20_pad_IO_GPIO20);
-        tran alt_3_pad_periphs_a_10_19_gpio_loopback (alt_3_pad_periphs_a_10_pad_IO_GPIO10, alt_3_pad_periphs_a_19_pad_IO_GPIO19);
-        tran alt_3_pad_periphs_a_11_18_gpio_loopback (alt_3_pad_periphs_a_11_pad_IO_GPIO11, alt_3_pad_periphs_a_18_pad_IO_GPIO18);
-        tran alt_3_pad_periphs_a_12_17_gpio_loopback (alt_3_pad_periphs_a_12_pad_IO_GPIO12, alt_3_pad_periphs_a_17_pad_IO_GPIO17);
-        tran alt_3_pad_periphs_a_13_16_gpio_loopback (alt_3_pad_periphs_a_13_pad_IO_GPIO13, alt_3_pad_periphs_a_16_pad_IO_GPIO16);
-        tran alt_3_pad_periphs_a_14_15_gpio_loopback (alt_3_pad_periphs_a_14_pad_IO_GPIO14, alt_3_pad_periphs_a_15_pad_IO_GPIO15);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_00_29_gpio_loopback (alt_3_pad_periphs_a_00_pad_IO_GPIO00, alt_3_pad_periphs_a_29_pad_IO_GPIO29);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_01_28_gpio_loopback (alt_3_pad_periphs_a_01_pad_IO_GPIO01, alt_3_pad_periphs_a_28_pad_IO_GPIO28);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_02_27_gpio_loopback (alt_3_pad_periphs_a_02_pad_IO_GPIO02, alt_3_pad_periphs_a_27_pad_IO_GPIO27);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_03_26_gpio_loopback (alt_3_pad_periphs_a_03_pad_IO_GPIO03, alt_3_pad_periphs_a_26_pad_IO_GPIO26);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_04_25_gpio_loopback (alt_3_pad_periphs_a_04_pad_IO_GPIO04, alt_3_pad_periphs_a_25_pad_IO_GPIO25);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_05_24_gpio_loopback (alt_3_pad_periphs_a_05_pad_IO_GPIO05, alt_3_pad_periphs_a_24_pad_IO_GPIO24);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_06_23_gpio_loopback (alt_3_pad_periphs_a_06_pad_IO_GPIO06, alt_3_pad_periphs_a_23_pad_IO_GPIO23);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_07_22_gpio_loopback (alt_3_pad_periphs_a_07_pad_IO_GPIO07, alt_3_pad_periphs_a_22_pad_IO_GPIO22);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_08_21_gpio_loopback (alt_3_pad_periphs_a_08_pad_IO_GPIO08, alt_3_pad_periphs_a_21_pad_IO_GPIO21);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_09_20_gpio_loopback (alt_3_pad_periphs_a_09_pad_IO_GPIO09, alt_3_pad_periphs_a_20_pad_IO_GPIO20);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_10_19_gpio_loopback (alt_3_pad_periphs_a_10_pad_IO_GPIO10, alt_3_pad_periphs_a_19_pad_IO_GPIO19);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_11_18_gpio_loopback (alt_3_pad_periphs_a_11_pad_IO_GPIO11, alt_3_pad_periphs_a_18_pad_IO_GPIO18);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_12_17_gpio_loopback (alt_3_pad_periphs_a_12_pad_IO_GPIO12, alt_3_pad_periphs_a_17_pad_IO_GPIO17);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_13_16_gpio_loopback (alt_3_pad_periphs_a_13_pad_IO_GPIO13, alt_3_pad_periphs_a_16_pad_IO_GPIO16);
+        // xsim: tran primitive unsupported -- tran alt_3_pad_periphs_a_14_15_gpio_loopback (alt_3_pad_periphs_a_14_pad_IO_GPIO14, alt_3_pad_periphs_a_15_pad_IO_GPIO15);
         //**************************************************
         // ALTERNAME 3 - GPIOs QFN VIPs END
         //**************************************************
@@ -2350,13 +2363,13 @@ module ariane_tb;
         //**************************************************
         // ALTERNATE 1 - GPIOs VIPs BEGINNING
         //**************************************************
-        tran simple_pad_periphs_00_13_gpio_loopback (alt_1_simple_pad_periphs_00_gpio00, alt_1_simple_pad_periphs_13_gpio13);
-        tran simple_pad_periphs_01_12_gpio_loopback (alt_1_simple_pad_periphs_01_gpio01, alt_1_simple_pad_periphs_12_gpio12);
-        tran simple_pad_periphs_02_11_gpio_loopback (alt_1_simple_pad_periphs_02_gpio02, alt_1_simple_pad_periphs_11_gpio11);
-        tran simple_pad_periphs_03_10_gpio_loopback (alt_1_simple_pad_periphs_03_gpio03, alt_1_simple_pad_periphs_10_gpio10);
-        tran simple_pad_periphs_04_09_gpio_loopback (alt_1_simple_pad_periphs_04_gpio04, alt_1_simple_pad_periphs_09_gpio09);
-        tran simple_pad_periphs_05_08_gpio_loopback (alt_1_simple_pad_periphs_05_gpio05, alt_1_simple_pad_periphs_08_gpio08);
-        tran simple_pad_periphs_06_07_gpio_loopback (alt_1_simple_pad_periphs_06_gpio06, alt_1_simple_pad_periphs_07_gpio07);
+        // xsim: tran primitive unsupported -- tran simple_pad_periphs_00_13_gpio_loopback (alt_1_simple_pad_periphs_00_gpio00, alt_1_simple_pad_periphs_13_gpio13);
+        // xsim: tran primitive unsupported -- tran simple_pad_periphs_01_12_gpio_loopback (alt_1_simple_pad_periphs_01_gpio01, alt_1_simple_pad_periphs_12_gpio12);
+        // xsim: tran primitive unsupported -- tran simple_pad_periphs_02_11_gpio_loopback (alt_1_simple_pad_periphs_02_gpio02, alt_1_simple_pad_periphs_11_gpio11);
+        // xsim: tran primitive unsupported -- tran simple_pad_periphs_03_10_gpio_loopback (alt_1_simple_pad_periphs_03_gpio03, alt_1_simple_pad_periphs_10_gpio10);
+        // xsim: tran primitive unsupported -- tran simple_pad_periphs_04_09_gpio_loopback (alt_1_simple_pad_periphs_04_gpio04, alt_1_simple_pad_periphs_09_gpio09);
+        // xsim: tran primitive unsupported -- tran simple_pad_periphs_05_08_gpio_loopback (alt_1_simple_pad_periphs_05_gpio05, alt_1_simple_pad_periphs_08_gpio08);
+        // xsim: tran primitive unsupported -- tran simple_pad_periphs_06_07_gpio_loopback (alt_1_simple_pad_periphs_06_gpio06, alt_1_simple_pad_periphs_07_gpio07);
         //**************************************************
         // ALTERNATE 1 - GPIOs VIPs END
         //**************************************************
@@ -2742,362 +2755,362 @@ module ariane_tb;
   `ifndef TARGET_POST_SYNTH_SIM_TOP
     `ifndef FPGA_EMUL
       `ifndef SIMPLE_PADFRAME
-        tranif1 alt_0_a_00_pad_CORE_UART_TX    (pad_periphs_a_00_pad, alt_0_pad_periphs_a_00_pad_CORE_UART_TX   , alt_0_pad_periphs_a_00_pad_mux_sel_CORE_UART_TX   );
-        tranif1 alt_0_a_01_pad_CORE_UART_RX    (pad_periphs_a_01_pad, alt_0_pad_periphs_a_01_pad_CORE_UART_RX   , alt_0_pad_periphs_a_01_pad_mux_sel_CORE_UART_RX   );
-        tranif1 alt_0_a_02_pad_SDIO0_D1        (pad_periphs_a_02_pad, alt_0_pad_periphs_a_02_pad_SDIO0_D1       , alt_0_pad_periphs_a_02_pad_mux_sel_SDIO0_D1       );
-        tranif1 alt_0_a_03_pad_SDIO0_D2        (pad_periphs_a_03_pad, alt_0_pad_periphs_a_03_pad_SDIO0_D2       , alt_0_pad_periphs_a_03_pad_mux_sel_SDIO0_D2       );
-        tranif1 alt_0_a_04_pad_SDIO0_D3        (pad_periphs_a_04_pad, alt_0_pad_periphs_a_04_pad_SDIO0_D3       , alt_0_pad_periphs_a_04_pad_mux_sel_SDIO0_D3       );
-        tranif1 alt_0_a_05_pad_SDIO0_D4        (pad_periphs_a_05_pad, alt_0_pad_periphs_a_05_pad_SDIO0_D4       , alt_0_pad_periphs_a_05_pad_mux_sel_SDIO0_D4       );
-        tranif1 alt_0_a_06_pad_SDIO0_CLK       (pad_periphs_a_06_pad, alt_0_pad_periphs_a_06_pad_SDIO0_CLK      , alt_0_pad_periphs_a_06_pad_mux_sel_SDIO0_CLK      );
-        tranif1 alt_0_a_07_pad_SDIO0_CMD       (pad_periphs_a_07_pad, alt_0_pad_periphs_a_07_pad_SDIO0_CMD      , alt_0_pad_periphs_a_07_pad_mux_sel_SDIO0_CMD      );
-        tranif1 alt_0_a_08_pad_PWM0_CHANNEL0   (pad_periphs_a_08_pad, alt_0_pad_periphs_a_08_pad_PWM0_CHANNEL0  , alt_0_pad_periphs_a_08_pad_mux_sel_PWM0_CHANNEL0  );
-        tranif1 alt_0_a_09_pad_PWM1_CHANNEL0   (pad_periphs_a_09_pad, alt_0_pad_periphs_a_09_pad_PWM1_CHANNEL0  , alt_0_pad_periphs_a_09_pad_mux_sel_PWM1_CHANNEL0  );
-        tranif1 alt_0_a_10_pad_PWM2_CHANNEL0   (pad_periphs_a_10_pad, alt_0_pad_periphs_a_10_pad_PWM2_CHANNEL0  , alt_0_pad_periphs_a_10_pad_mux_sel_PWM2_CHANNEL0  );
-        tranif1 alt_0_a_11_pad_PWM3_CHANNEL0   (pad_periphs_a_11_pad, alt_0_pad_periphs_a_11_pad_PWM3_CHANNEL0  , alt_0_pad_periphs_a_11_pad_mux_sel_PWM3_CHANNEL0  );
-        tranif1 alt_0_a_12_pad_BARO1_I2C0_SCL  (pad_periphs_a_12_pad, alt_0_pad_periphs_a_12_pad_BARO1_I2C0_SCL , alt_0_pad_periphs_a_12_pad_mux_sel_BARO1_I2C0_SCL );
-        tranif1 alt_0_a_13_pad_BARO1_I2C0_SDA  (pad_periphs_a_13_pad, alt_0_pad_periphs_a_13_pad_BARO1_I2C0_SDA , alt_0_pad_periphs_a_13_pad_mux_sel_BARO1_I2C0_SDA );
-        tranif1 alt_0_a_14_pad_IMU1_SPI0_SCK   (pad_periphs_a_14_pad, alt_0_pad_periphs_a_14_pad_IMU1_SPI0_SCK  , alt_0_pad_periphs_a_14_pad_mux_sel_IMU1_SPI0_SCK  );
-        tranif1 alt_0_a_15_pad_IMU1_SPI0_CS    (pad_periphs_a_15_pad, alt_0_pad_periphs_a_15_pad_IMU1_SPI0_CS   , alt_0_pad_periphs_a_15_pad_mux_sel_IMU1_SPI0_CS   );
-        tranif1 alt_0_a_16_pad_IMU1_SPI0_MISO  (pad_periphs_a_16_pad, alt_0_pad_periphs_a_16_pad_IMU1_SPI0_MISO , alt_0_pad_periphs_a_16_pad_mux_sel_IMU1_SPI0_MISO );
-        tranif1 alt_0_a_17_pad_IMU1_SPI0_MOSI  (pad_periphs_a_17_pad, alt_0_pad_periphs_a_17_pad_IMU1_SPI0_MOSI , alt_0_pad_periphs_a_17_pad_mux_sel_IMU1_SPI0_MOSI );
-        tranif1 alt_0_a_18_pad_FRAM_SPI2_SCK   (pad_periphs_a_18_pad, alt_0_pad_periphs_a_18_pad_FRAM_SPI2_SCK  , alt_0_pad_periphs_a_18_pad_mux_sel_FRAM_SPI2_SCK  );
-        tranif1 alt_0_a_19_pad_FRAM_SPI2_CS    (pad_periphs_a_19_pad, alt_0_pad_periphs_a_19_pad_FRAM_SPI2_CS   , alt_0_pad_periphs_a_19_pad_mux_sel_FRAM_SPI2_CS   );
-        tranif1 alt_0_a_20_pad_FRAM_SPI2_MISO  (pad_periphs_a_20_pad, alt_0_pad_periphs_a_20_pad_FRAM_SPI2_MISO , alt_0_pad_periphs_a_20_pad_mux_sel_FRAM_SPI2_MISO );
-        tranif1 alt_0_a_21_pad_FRAM_SPI2_MOSI  (pad_periphs_a_21_pad, alt_0_pad_periphs_a_21_pad_FRAM_SPI2_MOSI , alt_0_pad_periphs_a_21_pad_mux_sel_FRAM_SPI2_MOSI );
-        tranif1 alt_0_a_22_pad_ADIO1_SPI3_SCK  (pad_periphs_a_22_pad, alt_0_pad_periphs_a_22_pad_ADIO1_SPI3_SCK , alt_0_pad_periphs_a_22_pad_mux_sel_ADIO1_SPI3_SCK );
-        tranif1 alt_0_a_23_pad_ADIO1_SPI3_CS   (pad_periphs_a_23_pad, alt_0_pad_periphs_a_23_pad_ADIO1_SPI3_CS  , alt_0_pad_periphs_a_23_pad_mux_sel_ADIO1_SPI3_CS  );
-        tranif1 alt_0_a_24_pad_ADIO1_SPI3_MISO (pad_periphs_a_24_pad, alt_0_pad_periphs_a_24_pad_ADIO1_SPI3_MISO, alt_0_pad_periphs_a_24_pad_mux_sel_ADIO1_SPI3_MISO);
-        tranif1 alt_0_a_25_pad_ADIO1_SPI3_MOSI (pad_periphs_a_25_pad, alt_0_pad_periphs_a_25_pad_ADIO1_SPI3_MOSI, alt_0_pad_periphs_a_25_pad_mux_sel_ADIO1_SPI3_MOSI);
-        tranif1 alt_0_a_26_pad_GPS2_UART0_TX   (pad_periphs_a_26_pad, alt_0_pad_periphs_a_26_pad_GPS2_UART0_TX  , alt_0_pad_periphs_a_26_pad_mux_sel_GPS2_UART0_TX  );
-        tranif1 alt_0_a_27_pad_GPS2_UART0_RX   (pad_periphs_a_27_pad, alt_0_pad_periphs_a_27_pad_GPS2_UART0_RX  , alt_0_pad_periphs_a_27_pad_mux_sel_GPS2_UART0_RX  );
-        tranif1 alt_0_a_28_pad_GPS2_I2C1_SCL   (pad_periphs_a_28_pad, alt_0_pad_periphs_a_28_pad_GPS2_I2C1_SCL  , alt_0_pad_periphs_a_28_pad_mux_sel_GPS2_I2C1_SCL  );
-        tranif1 alt_0_a_29_pad_GPS2_I2C1_SDA   (pad_periphs_a_29_pad, alt_0_pad_periphs_a_29_pad_GPS2_I2C1_SDA  , alt_0_pad_periphs_a_29_pad_mux_sel_GPS2_I2C1_SDA  );
-        tranif1 alt_1_a_00_pad_CORE_UART_TX    (pad_periphs_a_00_pad, alt_1_pad_periphs_a_00_pad_CORE_UART_TX   , alt_1_pad_periphs_a_00_pad_mux_sel_CORE_UART_TX   );
-        tranif1 alt_1_a_01_pad_CORE_UART_RX    (pad_periphs_a_01_pad, alt_1_pad_periphs_a_01_pad_CORE_UART_RX   , alt_1_pad_periphs_a_01_pad_mux_sel_CORE_UART_RX   );
-        tranif1 alt_1_a_02_pad_LINUX_QSPI_SCK  (pad_periphs_a_02_pad, alt_1_pad_periphs_a_02_pad_LINUX_QSPI_SCK , alt_1_pad_periphs_a_02_pad_mux_sel_LINUX_QSPI_SCK );
-        tranif1 alt_1_a_03_pad_LINUX_QSPI_CSN  (pad_periphs_a_03_pad, alt_1_pad_periphs_a_03_pad_LINUX_QSPI_CSN , alt_1_pad_periphs_a_03_pad_mux_sel_LINUX_QSPI_CSN );
-        tranif1 alt_1_a_04_pad_LINUX_QSPI_IO0  (pad_periphs_a_04_pad, alt_1_pad_periphs_a_04_pad_LINUX_QSPI_IO0 , alt_1_pad_periphs_a_04_pad_mux_sel_LINUX_QSPI_IO0 );
-        tranif1 alt_1_a_05_pad_LINUX_QSPI_IO1  (pad_periphs_a_05_pad, alt_1_pad_periphs_a_05_pad_LINUX_QSPI_IO1 , alt_1_pad_periphs_a_05_pad_mux_sel_LINUX_QSPI_IO1 );
-        tranif1 alt_1_a_06_pad_LINUX_QSPI_IO2  (pad_periphs_a_06_pad, alt_1_pad_periphs_a_06_pad_LINUX_QSPI_IO2 , alt_1_pad_periphs_a_06_pad_mux_sel_LINUX_QSPI_IO2 );
-        tranif1 alt_1_a_07_pad_LINUX_QSPI_IO3  (pad_periphs_a_07_pad, alt_1_pad_periphs_a_07_pad_LINUX_QSPI_IO3 , alt_1_pad_periphs_a_07_pad_mux_sel_LINUX_QSPI_IO3 );
-        tranif1 alt_1_a_08_pad_BARO1_I2C0_SCL  (pad_periphs_a_08_pad, alt_1_pad_periphs_a_08_pad_BARO1_I2C0_SCL , alt_1_pad_periphs_a_08_pad_mux_sel_BARO1_I2C0_SCL );
-        tranif1 alt_1_a_09_pad_BARO1_I2C0_SDA  (pad_periphs_a_09_pad, alt_1_pad_periphs_a_09_pad_BARO1_I2C0_SDA , alt_1_pad_periphs_a_09_pad_mux_sel_BARO1_I2C0_SDA );
-        tranif1 alt_1_a_10_pad_PWM0_CHANNEL0   (pad_periphs_a_10_pad, alt_1_pad_periphs_a_10_pad_PWM0_CHANNEL0  , alt_1_pad_periphs_a_10_pad_mux_sel_PWM0_CHANNEL0  );
-        tranif1 alt_1_a_11_pad_PWM1_CHANNEL0   (pad_periphs_a_11_pad, alt_1_pad_periphs_a_11_pad_PWM1_CHANNEL0  , alt_1_pad_periphs_a_11_pad_mux_sel_PWM1_CHANNEL0  );
-        tranif1 alt_1_a_12_pad_PWM2_CHANNEL0   (pad_periphs_a_12_pad, alt_1_pad_periphs_a_12_pad_PWM2_CHANNEL0  , alt_1_pad_periphs_a_12_pad_mux_sel_PWM2_CHANNEL0  );
-        tranif1 alt_1_a_13_pad_PWM3_CHANNEL0   (pad_periphs_a_13_pad, alt_1_pad_periphs_a_13_pad_PWM3_CHANNEL0  , alt_1_pad_periphs_a_13_pad_mux_sel_PWM3_CHANNEL0  );
-        tranif1 alt_1_a_14_pad_GPS1_UART2_TX   (pad_periphs_a_14_pad, alt_1_pad_periphs_a_14_pad_GPS1_UART2_TX  , alt_1_pad_periphs_a_14_pad_mux_sel_GPS1_UART2_TX  );
-        tranif1 alt_1_a_15_pad_GPS1_UART2_RX   (pad_periphs_a_15_pad, alt_1_pad_periphs_a_15_pad_GPS1_UART2_RX  , alt_1_pad_periphs_a_15_pad_mux_sel_GPS1_UART2_RX  );
-        tranif1 alt_1_a_16_pad_GPS1_I2C5_SCL   (pad_periphs_a_16_pad, alt_1_pad_periphs_a_16_pad_GPS1_I2C5_SCL  , alt_1_pad_periphs_a_16_pad_mux_sel_GPS1_I2C5_SCL  );
-        tranif1 alt_1_a_17_pad_GPS1_I2C5_SDA   (pad_periphs_a_17_pad, alt_1_pad_periphs_a_17_pad_GPS1_I2C5_SDA  , alt_1_pad_periphs_a_17_pad_mux_sel_GPS1_I2C5_SDA  );
-        tranif1 alt_1_a_18_pad_CAM0_CPI0_CLK   (pad_periphs_a_18_pad, alt_1_pad_periphs_a_18_pad_CAM0_CPI0_CLK  , alt_1_pad_periphs_a_18_pad_mux_sel_CAM0_CPI0_CLK  );
-        tranif1 alt_1_a_19_pad_CAM0_CPI0_VSYNC (pad_periphs_a_19_pad, alt_1_pad_periphs_a_19_pad_CAM0_CPI0_VSYNC, alt_1_pad_periphs_a_19_pad_mux_sel_CAM0_CPI0_VSYNC);
-        tranif1 alt_1_a_20_pad_CAM0_CPI0_HSYNC (pad_periphs_a_20_pad, alt_1_pad_periphs_a_20_pad_CAM0_CPI0_HSYNC, alt_1_pad_periphs_a_20_pad_mux_sel_CAM0_CPI0_HSYNC);
-        tranif1 alt_1_a_21_pad_CAM0_CPI0_DAT0  (pad_periphs_a_21_pad, alt_1_pad_periphs_a_21_pad_CAM0_CPI0_DAT0 , alt_1_pad_periphs_a_21_pad_mux_sel_CAM0_CPI0_DAT0 );
-        tranif1 alt_1_a_22_pad_CAM0_CPI0_DAT1  (pad_periphs_a_22_pad, alt_1_pad_periphs_a_22_pad_CAM0_CPI0_DAT1 , alt_1_pad_periphs_a_22_pad_mux_sel_CAM0_CPI0_DAT1 );
-        tranif1 alt_1_a_23_pad_CAM0_CPI0_DAT2  (pad_periphs_a_23_pad, alt_1_pad_periphs_a_23_pad_CAM0_CPI0_DAT2 , alt_1_pad_periphs_a_23_pad_mux_sel_CAM0_CPI0_DAT2 );
-        tranif1 alt_1_a_24_pad_CAM0_CPI0_DAT3  (pad_periphs_a_24_pad, alt_1_pad_periphs_a_24_pad_CAM0_CPI0_DAT3 , alt_1_pad_periphs_a_24_pad_mux_sel_CAM0_CPI0_DAT3 );
-        tranif1 alt_1_a_25_pad_CAM0_CPI0_DAT4  (pad_periphs_a_25_pad, alt_1_pad_periphs_a_25_pad_CAM0_CPI0_DAT4 , alt_1_pad_periphs_a_25_pad_mux_sel_CAM0_CPI0_DAT4 );
-        tranif1 alt_1_a_26_pad_CAM0_CPI0_DAT5  (pad_periphs_a_26_pad, alt_1_pad_periphs_a_26_pad_CAM0_CPI0_DAT5 , alt_1_pad_periphs_a_26_pad_mux_sel_CAM0_CPI0_DAT5 );
-        tranif1 alt_1_a_27_pad_CAM0_CPI0_DAT6  (pad_periphs_a_27_pad, alt_1_pad_periphs_a_27_pad_CAM0_CPI0_DAT6 , alt_1_pad_periphs_a_27_pad_mux_sel_CAM0_CPI0_DAT6 );
-        tranif1 alt_1_a_28_pad_CAM0_CPI0_DAT7  (pad_periphs_a_28_pad, alt_1_pad_periphs_a_28_pad_CAM0_CPI0_DAT7 , alt_1_pad_periphs_a_28_pad_mux_sel_CAM0_CPI0_DAT7 );
-        tranif1 alt_1_a_29_pad_FLL_SOC         (pad_periphs_a_29_pad, alt_1_pad_periphs_a_29_pad_FLL_SOC        , alt_1_pad_periphs_a_29_pad_mux_sel_FLL_SOC        );
-        tranif1 alt_2_a_00_pad_CAN0_TX            (pad_periphs_a_00_pad, alt_2_pad_periphs_a_00_pad_CAN0_TX           , alt_2_pad_periphs_a_00_pad_mux_sel_CAN0_TX           );
-        tranif1 alt_2_a_01_pad_CAN0_RX            (pad_periphs_a_01_pad, alt_2_pad_periphs_a_01_pad_CAN0_RX           , alt_2_pad_periphs_a_01_pad_mux_sel_CAN0_RX           );
-        tranif1 alt_2_a_02_pad_CAN1_TX            (pad_periphs_a_02_pad, alt_2_pad_periphs_a_02_pad_CAN1_TX           , alt_2_pad_periphs_a_02_pad_mux_sel_CAN1_TX           );
-        tranif1 alt_2_a_03_pad_CAN1_RX            (pad_periphs_a_03_pad, alt_2_pad_periphs_a_03_pad_CAN1_RX           , alt_2_pad_periphs_a_03_pad_mux_sel_CAN1_RX           );
-        tranif1 alt_2_a_04_pad_FLL_SOC            (pad_periphs_a_04_pad, alt_2_pad_periphs_a_04_pad_FLL_SOC           , alt_2_pad_periphs_a_04_pad_mux_sel_FLL_SOC           );
-        tranif1 alt_2_a_05_pad_IO_USART1_TX       (pad_periphs_a_05_pad, alt_2_pad_periphs_a_05_pad_IO_USART1_TX      , alt_2_pad_periphs_a_05_pad_mux_sel_IO_USART1_TX      );
-        tranif1 alt_2_a_06_pad_IO_USART1_RX       (pad_periphs_a_06_pad, alt_2_pad_periphs_a_06_pad_IO_USART1_RX      , alt_2_pad_periphs_a_06_pad_mux_sel_IO_USART1_RX      );
-        tranif1 alt_2_a_07_pad_IO_USART1_RTS      (pad_periphs_a_07_pad, alt_2_pad_periphs_a_07_pad_IO_USART1_RTS     , alt_2_pad_periphs_a_07_pad_mux_sel_IO_USART1_RTS     );
-        tranif1 alt_2_a_08_pad_IO_USART1_CTS      (pad_periphs_a_08_pad, alt_2_pad_periphs_a_08_pad_IO_USART1_CTS     , alt_2_pad_periphs_a_08_pad_mux_sel_IO_USART1_CTS     );
-        tranif1 alt_2_a_09_pad_WIRELESS_SDIO1_D0  (pad_periphs_a_09_pad, alt_2_pad_periphs_a_09_pad_WIRELESS_SDIO1_D0 , alt_2_pad_periphs_a_09_pad_mux_sel_WIRELESS_SDIO1_D0 );
-        tranif1 alt_2_a_10_pad_WIRELESS_SDIO1_D1  (pad_periphs_a_10_pad, alt_2_pad_periphs_a_10_pad_WIRELESS_SDIO1_D1 , alt_2_pad_periphs_a_10_pad_mux_sel_WIRELESS_SDIO1_D1 );
-        tranif1 alt_2_a_11_pad_WIRELESS_SDIO1_D2  (pad_periphs_a_11_pad, alt_2_pad_periphs_a_11_pad_WIRELESS_SDIO1_D2 , alt_2_pad_periphs_a_11_pad_mux_sel_WIRELESS_SDIO1_D2 );
-        tranif1 alt_2_a_12_pad_WIRELESS_SDIO1_D3  (pad_periphs_a_12_pad, alt_2_pad_periphs_a_12_pad_WIRELESS_SDIO1_D3 , alt_2_pad_periphs_a_12_pad_mux_sel_WIRELESS_SDIO1_D3 );
-        tranif1 alt_2_a_13_pad_WIRELESS_SDIO1_CLK (pad_periphs_a_13_pad, alt_2_pad_periphs_a_13_pad_WIRELESS_SDIO1_CLK, alt_2_pad_periphs_a_13_pad_mux_sel_WIRELESS_SDIO1_CLK);
-        tranif1 alt_2_a_14_pad_WIRELESS_SDIO1_CMD (pad_periphs_a_14_pad, alt_2_pad_periphs_a_14_pad_WIRELESS_SDIO1_CMD, alt_2_pad_periphs_a_14_pad_mux_sel_WIRELESS_SDIO1_CMD);
-        tranif1 alt_2_a_15_pad_ETH_RST            (pad_periphs_a_15_pad, alt_2_pad_periphs_a_15_pad_ETH_RST           , alt_2_pad_periphs_a_15_pad_mux_sel_ETH_RST           );
-        tranif1 alt_2_a_16_pad_ETH_RXCK           (pad_periphs_a_16_pad, alt_2_pad_periphs_a_16_pad_ETH_RXCK          , alt_2_pad_periphs_a_16_pad_mux_sel_ETH_RXCK          );
-        tranif1 alt_2_a_17_pad_ETH_RXCTL          (pad_periphs_a_17_pad, alt_2_pad_periphs_a_17_pad_ETH_RXCTL         , alt_2_pad_periphs_a_17_pad_mux_sel_ETH_RXCTL         );
-        tranif1 alt_2_a_18_pad_ETH_RXD0           (pad_periphs_a_18_pad, alt_2_pad_periphs_a_18_pad_ETH_RXD0          , alt_2_pad_periphs_a_18_pad_mux_sel_ETH_RXD0          );
-        tranif1 alt_2_a_19_pad_ETH_RXD1           (pad_periphs_a_19_pad, alt_2_pad_periphs_a_19_pad_ETH_RXD1          , alt_2_pad_periphs_a_19_pad_mux_sel_ETH_RXD1          );
-        tranif1 alt_2_a_20_pad_ETH_RXD2           (pad_periphs_a_20_pad, alt_2_pad_periphs_a_20_pad_ETH_RXD2          , alt_2_pad_periphs_a_20_pad_mux_sel_ETH_RXD2          );
-        tranif1 alt_2_a_21_pad_ETH_RXD3           (pad_periphs_a_21_pad, alt_2_pad_periphs_a_21_pad_ETH_RXD3          , alt_2_pad_periphs_a_21_pad_mux_sel_ETH_RXD3          );
-        tranif1 alt_2_a_22_pad_ETH_TXCK           (pad_periphs_a_22_pad, alt_2_pad_periphs_a_22_pad_ETH_TXCK          , alt_2_pad_periphs_a_22_pad_mux_sel_ETH_TXCK          );
-        tranif1 alt_2_a_23_pad_ETH_TXCTL          (pad_periphs_a_23_pad, alt_2_pad_periphs_a_23_pad_ETH_TXCTL         , alt_2_pad_periphs_a_23_pad_mux_sel_ETH_TXCTL         );
-        tranif1 alt_2_a_24_pad_ETH_TXD0           (pad_periphs_a_24_pad, alt_2_pad_periphs_a_24_pad_ETH_TXD0          , alt_2_pad_periphs_a_24_pad_mux_sel_ETH_TXD0          );
-        tranif1 alt_2_a_25_pad_ETH_TXD1           (pad_periphs_a_25_pad, alt_2_pad_periphs_a_25_pad_ETH_TXD1          , alt_2_pad_periphs_a_25_pad_mux_sel_ETH_TXD1          );
-        tranif1 alt_2_a_26_pad_ETH_TXD2           (pad_periphs_a_26_pad, alt_2_pad_periphs_a_26_pad_ETH_TXD2          , alt_2_pad_periphs_a_26_pad_mux_sel_ETH_TXD2          );
-        tranif1 alt_2_a_27_pad_ETH_TXD3           (pad_periphs_a_27_pad, alt_2_pad_periphs_a_27_pad_ETH_TXD3          , alt_2_pad_periphs_a_27_pad_mux_sel_ETH_TXD3          );
-        tranif1 alt_2_a_28_pad_ETH_MDIO           (pad_periphs_a_28_pad, alt_2_pad_periphs_a_28_pad_ETH_MDIO          , alt_2_pad_periphs_a_28_pad_mux_sel_ETH_MDIO          );
-        tranif1 alt_2_a_29_pad_ETH_MDC            (pad_periphs_a_29_pad, alt_2_pad_periphs_a_29_pad_ETH_MDC           , alt_2_pad_periphs_a_29_pad_mux_sel_ETH_MDC           );
-        tranif1 alt_3_a_00_pad_IO_GPIO00 (pad_periphs_a_00_pad, alt_3_pad_periphs_a_00_pad_IO_GPIO00, alt_3_pad_periphs_a_00_pad_mux_sel_IO_GPIO00);
-        tranif1 alt_3_a_01_pad_IO_GPIO01 (pad_periphs_a_01_pad, alt_3_pad_periphs_a_01_pad_IO_GPIO01, alt_3_pad_periphs_a_01_pad_mux_sel_IO_GPIO01);
-        tranif1 alt_3_a_02_pad_IO_GPIO02 (pad_periphs_a_02_pad, alt_3_pad_periphs_a_02_pad_IO_GPIO02, alt_3_pad_periphs_a_02_pad_mux_sel_IO_GPIO02);
-        tranif1 alt_3_a_03_pad_IO_GPIO03 (pad_periphs_a_03_pad, alt_3_pad_periphs_a_03_pad_IO_GPIO03, alt_3_pad_periphs_a_03_pad_mux_sel_IO_GPIO03);
-        tranif1 alt_3_a_04_pad_IO_GPIO04 (pad_periphs_a_04_pad, alt_3_pad_periphs_a_04_pad_IO_GPIO04, alt_3_pad_periphs_a_04_pad_mux_sel_IO_GPIO04);
-        tranif1 alt_3_a_05_pad_IO_GPIO05 (pad_periphs_a_05_pad, alt_3_pad_periphs_a_05_pad_IO_GPIO05, alt_3_pad_periphs_a_05_pad_mux_sel_IO_GPIO05);
-        tranif1 alt_3_a_06_pad_IO_GPIO06 (pad_periphs_a_06_pad, alt_3_pad_periphs_a_06_pad_IO_GPIO06, alt_3_pad_periphs_a_06_pad_mux_sel_IO_GPIO06);
-        tranif1 alt_3_a_07_pad_IO_GPIO07 (pad_periphs_a_07_pad, alt_3_pad_periphs_a_07_pad_IO_GPIO07, alt_3_pad_periphs_a_07_pad_mux_sel_IO_GPIO07);
-        tranif1 alt_3_a_08_pad_IO_GPIO08 (pad_periphs_a_08_pad, alt_3_pad_periphs_a_08_pad_IO_GPIO08, alt_3_pad_periphs_a_08_pad_mux_sel_IO_GPIO08);
-        tranif1 alt_3_a_09_pad_IO_GPIO09 (pad_periphs_a_09_pad, alt_3_pad_periphs_a_09_pad_IO_GPIO09, alt_3_pad_periphs_a_09_pad_mux_sel_IO_GPIO09);
-        tranif1 alt_3_a_10_pad_IO_GPIO10 (pad_periphs_a_10_pad, alt_3_pad_periphs_a_10_pad_IO_GPIO10, alt_3_pad_periphs_a_10_pad_mux_sel_IO_GPIO10);
-        tranif1 alt_3_a_11_pad_IO_GPIO11 (pad_periphs_a_11_pad, alt_3_pad_periphs_a_11_pad_IO_GPIO11, alt_3_pad_periphs_a_11_pad_mux_sel_IO_GPIO11);
-        tranif1 alt_3_a_12_pad_IO_GPIO12 (pad_periphs_a_12_pad, alt_3_pad_periphs_a_12_pad_IO_GPIO12, alt_3_pad_periphs_a_12_pad_mux_sel_IO_GPIO12);
-        tranif1 alt_3_a_13_pad_IO_GPIO13 (pad_periphs_a_13_pad, alt_3_pad_periphs_a_13_pad_IO_GPIO13, alt_3_pad_periphs_a_13_pad_mux_sel_IO_GPIO13);
-        tranif1 alt_3_a_14_pad_IO_GPIO14 (pad_periphs_a_14_pad, alt_3_pad_periphs_a_14_pad_IO_GPIO14, alt_3_pad_periphs_a_14_pad_mux_sel_IO_GPIO14);
-        tranif1 alt_3_a_15_pad_IO_GPIO15 (pad_periphs_a_15_pad, alt_3_pad_periphs_a_15_pad_IO_GPIO15, alt_3_pad_periphs_a_15_pad_mux_sel_IO_GPIO15);
-        tranif1 alt_3_a_16_pad_IO_GPIO16 (pad_periphs_a_16_pad, alt_3_pad_periphs_a_16_pad_IO_GPIO16, alt_3_pad_periphs_a_16_pad_mux_sel_IO_GPIO16);
-        tranif1 alt_3_a_17_pad_IO_GPIO17 (pad_periphs_a_17_pad, alt_3_pad_periphs_a_17_pad_IO_GPIO17, alt_3_pad_periphs_a_17_pad_mux_sel_IO_GPIO17);
-        tranif1 alt_3_a_18_pad_IO_GPIO18 (pad_periphs_a_18_pad, alt_3_pad_periphs_a_18_pad_IO_GPIO18, alt_3_pad_periphs_a_18_pad_mux_sel_IO_GPIO18);
-        tranif1 alt_3_a_19_pad_IO_GPIO19 (pad_periphs_a_19_pad, alt_3_pad_periphs_a_19_pad_IO_GPIO19, alt_3_pad_periphs_a_19_pad_mux_sel_IO_GPIO19);
-        tranif1 alt_3_a_20_pad_IO_GPIO20 (pad_periphs_a_20_pad, alt_3_pad_periphs_a_20_pad_IO_GPIO20, alt_3_pad_periphs_a_20_pad_mux_sel_IO_GPIO20);
-        tranif1 alt_3_a_21_pad_IO_GPIO21 (pad_periphs_a_21_pad, alt_3_pad_periphs_a_21_pad_IO_GPIO21, alt_3_pad_periphs_a_21_pad_mux_sel_IO_GPIO21);
-        tranif1 alt_3_a_22_pad_IO_GPIO22 (pad_periphs_a_22_pad, alt_3_pad_periphs_a_22_pad_IO_GPIO22, alt_3_pad_periphs_a_22_pad_mux_sel_IO_GPIO22);
-        tranif1 alt_3_a_23_pad_IO_GPIO23 (pad_periphs_a_23_pad, alt_3_pad_periphs_a_23_pad_IO_GPIO23, alt_3_pad_periphs_a_23_pad_mux_sel_IO_GPIO23);
-        tranif1 alt_3_a_24_pad_IO_GPIO24 (pad_periphs_a_24_pad, alt_3_pad_periphs_a_24_pad_IO_GPIO24, alt_3_pad_periphs_a_24_pad_mux_sel_IO_GPIO24);
-        tranif1 alt_3_a_25_pad_IO_GPIO25 (pad_periphs_a_25_pad, alt_3_pad_periphs_a_25_pad_IO_GPIO25, alt_3_pad_periphs_a_25_pad_mux_sel_IO_GPIO25);
-        tranif1 alt_3_a_26_pad_IO_GPIO26 (pad_periphs_a_26_pad, alt_3_pad_periphs_a_26_pad_IO_GPIO26, alt_3_pad_periphs_a_26_pad_mux_sel_IO_GPIO26);
-        tranif1 alt_3_a_27_pad_IO_GPIO27 (pad_periphs_a_27_pad, alt_3_pad_periphs_a_27_pad_IO_GPIO27, alt_3_pad_periphs_a_27_pad_mux_sel_IO_GPIO27);
-        tranif1 alt_3_a_28_pad_IO_GPIO28 (pad_periphs_a_28_pad, alt_3_pad_periphs_a_28_pad_IO_GPIO28, alt_3_pad_periphs_a_28_pad_mux_sel_IO_GPIO28);
-        tranif1 alt_3_a_29_pad_IO_GPIO29 (pad_periphs_a_29_pad, alt_3_pad_periphs_a_29_pad_IO_GPIO29, alt_3_pad_periphs_a_29_pad_mux_sel_IO_GPIO29);
-        tranif1 alt_0_b_00_pad_TLM1_USART0_TX  (pad_periphs_b_00_pad, alt_0_pad_periphs_b_00_pad_TLM1_USART0_TX , alt_0_pad_periphs_b_00_pad_mux_sel_TLM1_USART0_TX );
-        tranif1 alt_0_b_01_pad_TLM1_USART0_RX  (pad_periphs_b_01_pad, alt_0_pad_periphs_b_01_pad_TLM1_USART0_RX , alt_0_pad_periphs_b_01_pad_mux_sel_TLM1_USART0_RX );
-        tranif1 alt_0_b_02_pad_TLM1_USART0_RTS (pad_periphs_b_02_pad, alt_0_pad_periphs_b_02_pad_TLM1_USART0_RTS, alt_0_pad_periphs_b_02_pad_mux_sel_TLM1_USART0_RTS);
-        tranif1 alt_0_b_03_pad_TLM1_USART0_CTS (pad_periphs_b_03_pad, alt_0_pad_periphs_b_03_pad_TLM1_USART0_CTS, alt_0_pad_periphs_b_03_pad_mux_sel_TLM1_USART0_CTS);
-        tranif1 alt_0_b_04_pad_ADC0_SPI4_SCK   (pad_periphs_b_04_pad, alt_0_pad_periphs_b_04_pad_ADC0_SPI4_SCK  , alt_0_pad_periphs_b_04_pad_mux_sel_ADC0_SPI4_SCK  );
-        tranif1 alt_0_b_05_pad_ADC0_SPI4_CS    (pad_periphs_b_05_pad, alt_0_pad_periphs_b_05_pad_ADC0_SPI4_CS   , alt_0_pad_periphs_b_05_pad_mux_sel_ADC0_SPI4_CS   );
-        tranif1 alt_0_b_06_pad_ADC0_SPI4_MISO  (pad_periphs_b_06_pad, alt_0_pad_periphs_b_06_pad_ADC0_SPI4_MISO , alt_0_pad_periphs_b_06_pad_mux_sel_ADC0_SPI4_MISO );
-        tranif1 alt_0_b_07_pad_ADC0_SPI4_MOSI  (pad_periphs_b_07_pad, alt_0_pad_periphs_b_07_pad_ADC0_SPI4_MOSI , alt_0_pad_periphs_b_07_pad_mux_sel_ADC0_SPI4_MOSI );
-        tranif1 alt_0_b_08_pad_PMIC_I2C2_SCL   (pad_periphs_b_08_pad, alt_0_pad_periphs_b_08_pad_PMIC_I2C2_SCL  , alt_0_pad_periphs_b_08_pad_mux_sel_PMIC_I2C2_SCL  );
-        tranif1 alt_0_b_09_pad_PMIC_I2C2_SDA   (pad_periphs_b_09_pad, alt_0_pad_periphs_b_09_pad_PMIC_I2C2_SDA  , alt_0_pad_periphs_b_09_pad_mux_sel_PMIC_I2C2_SDA  );
-        tranif1 alt_0_b_10_pad_EXT1_SPI7_SCK   (pad_periphs_b_10_pad, alt_0_pad_periphs_b_10_pad_EXT1_SPI7_SCK  , alt_0_pad_periphs_b_10_pad_mux_sel_EXT1_SPI7_SCK  );
-        tranif1 alt_0_b_11_pad_EXT1_SPI7_MISO  (pad_periphs_b_11_pad, alt_0_pad_periphs_b_11_pad_EXT1_SPI7_MISO , alt_0_pad_periphs_b_11_pad_mux_sel_EXT1_SPI7_MISO );
-        tranif1 alt_0_b_12_pad_EXT1_SPI7_MOSI  (pad_periphs_b_12_pad, alt_0_pad_periphs_b_12_pad_EXT1_SPI7_MOSI , alt_0_pad_periphs_b_12_pad_mux_sel_EXT1_SPI7_MOSI );
-        tranif1 alt_0_b_13_pad_EXT1_SPI7_CS0   (pad_periphs_b_13_pad, alt_0_pad_periphs_b_13_pad_EXT1_SPI7_CS0  , alt_0_pad_periphs_b_13_pad_mux_sel_EXT1_SPI7_CS0  );
-        tranif1 alt_0_b_14_pad_EXT1_SPI7_CS1   (pad_periphs_b_14_pad, alt_0_pad_periphs_b_14_pad_EXT1_SPI7_CS1  , alt_0_pad_periphs_b_14_pad_mux_sel_EXT1_SPI7_CS1  );
-        tranif1 alt_0_b_15_pad_EXT2_I2C4_SCL   (pad_periphs_b_15_pad, alt_0_pad_periphs_b_15_pad_EXT2_I2C4_SCL  , alt_0_pad_periphs_b_15_pad_mux_sel_EXT2_I2C4_SCL  );
-        tranif1 alt_0_b_16_pad_EXT2_I2C4_SDA   (pad_periphs_b_16_pad, alt_0_pad_periphs_b_16_pad_EXT2_I2C4_SDA  , alt_0_pad_periphs_b_16_pad_mux_sel_EXT2_I2C4_SDA  );
-        tranif1 alt_0_b_17_pad_EXT3_UART1_TX   (pad_periphs_b_17_pad, alt_0_pad_periphs_b_17_pad_EXT3_UART1_TX  , alt_0_pad_periphs_b_17_pad_mux_sel_EXT3_UART1_TX  );
-        tranif1 alt_0_b_18_pad_EXT3_UART1_RX   (pad_periphs_b_18_pad, alt_0_pad_periphs_b_18_pad_EXT3_UART1_RX  , alt_0_pad_periphs_b_18_pad_mux_sel_EXT3_UART1_RX  );
-        tranif1 alt_0_b_19_pad_IO_USART1_TX    (pad_periphs_b_19_pad, alt_0_pad_periphs_b_19_pad_IO_USART1_TX   , alt_0_pad_periphs_b_19_pad_mux_sel_IO_USART1_TX   );
-        tranif1 alt_0_b_20_pad_IO_USART1_RX    (pad_periphs_b_20_pad, alt_0_pad_periphs_b_20_pad_IO_USART1_RX   , alt_0_pad_periphs_b_20_pad_mux_sel_IO_USART1_RX   );
-        tranif1 alt_0_b_21_pad_IO_USART1_RTS   (pad_periphs_b_21_pad, alt_0_pad_periphs_b_21_pad_IO_USART1_RTS  , alt_0_pad_periphs_b_21_pad_mux_sel_IO_USART1_RTS  );
-        tranif1 alt_0_b_22_pad_IO_USART1_CTS   (pad_periphs_b_22_pad, alt_0_pad_periphs_b_22_pad_IO_USART1_CTS  , alt_0_pad_periphs_b_22_pad_mux_sel_IO_USART1_CTS  );
-        tranif1 alt_0_b_23_pad_ETH_RST         (pad_periphs_b_23_pad, alt_0_pad_periphs_b_23_pad_ETH_RST        , alt_0_pad_periphs_b_23_pad_mux_sel_ETH_RST        );
-        tranif1 alt_0_b_24_pad_ETH_RXCK        (pad_periphs_b_24_pad, alt_0_pad_periphs_b_24_pad_ETH_RXCK       , alt_0_pad_periphs_b_24_pad_mux_sel_ETH_RXCK       );
-        tranif1 alt_0_b_25_pad_ETH_RXCTL       (pad_periphs_b_25_pad, alt_0_pad_periphs_b_25_pad_ETH_RXCTL      , alt_0_pad_periphs_b_25_pad_mux_sel_ETH_RXCTL      );
-        tranif1 alt_0_b_26_pad_ETH_RXD0        (pad_periphs_b_26_pad, alt_0_pad_periphs_b_26_pad_ETH_RXD0       , alt_0_pad_periphs_b_26_pad_mux_sel_ETH_RXD0       );
-        tranif1 alt_0_b_27_pad_ETH_RXD1        (pad_periphs_b_27_pad, alt_0_pad_periphs_b_27_pad_ETH_RXD1       , alt_0_pad_periphs_b_27_pad_mux_sel_ETH_RXD1       );
-        tranif1 alt_0_b_28_pad_ETH_RXD2        (pad_periphs_b_28_pad, alt_0_pad_periphs_b_28_pad_ETH_RXD2       , alt_0_pad_periphs_b_28_pad_mux_sel_ETH_RXD2       );
-        tranif1 alt_0_b_29_pad_ETH_RXD3        (pad_periphs_b_29_pad, alt_0_pad_periphs_b_29_pad_ETH_RXD3       , alt_0_pad_periphs_b_29_pad_mux_sel_ETH_RXD3       );
-        tranif1 alt_0_b_30_pad_ETH_TXCK        (pad_periphs_b_30_pad, alt_0_pad_periphs_b_30_pad_ETH_TXCK       , alt_0_pad_periphs_b_30_pad_mux_sel_ETH_TXCK       );
-        tranif1 alt_0_b_31_pad_ETH_TXCTL       (pad_periphs_b_31_pad, alt_0_pad_periphs_b_31_pad_ETH_TXCTL      , alt_0_pad_periphs_b_31_pad_mux_sel_ETH_TXCTL      );
-        tranif1 alt_0_b_32_pad_ETH_TXD0        (pad_periphs_b_32_pad, alt_0_pad_periphs_b_32_pad_ETH_TXD0       , alt_0_pad_periphs_b_32_pad_mux_sel_ETH_TXD0       );
-        tranif1 alt_0_b_33_pad_ETH_TXD1        (pad_periphs_b_33_pad, alt_0_pad_periphs_b_33_pad_ETH_TXD1       , alt_0_pad_periphs_b_33_pad_mux_sel_ETH_TXD1       );
-        tranif1 alt_0_b_34_pad_ETH_TXD2        (pad_periphs_b_34_pad, alt_0_pad_periphs_b_34_pad_ETH_TXD2       , alt_0_pad_periphs_b_34_pad_mux_sel_ETH_TXD2       );
-        tranif1 alt_0_b_35_pad_ETH_TXD3        (pad_periphs_b_35_pad, alt_0_pad_periphs_b_35_pad_ETH_TXD3       , alt_0_pad_periphs_b_35_pad_mux_sel_ETH_TXD3       );
-        tranif1 alt_0_b_36_pad_ETH_MDIO        (pad_periphs_b_36_pad, alt_0_pad_periphs_b_36_pad_ETH_MDIO       , alt_0_pad_periphs_b_36_pad_mux_sel_ETH_MDIO       );
-        tranif1 alt_0_b_37_pad_ETH_MDC         (pad_periphs_b_37_pad, alt_0_pad_periphs_b_37_pad_ETH_MDC        , alt_0_pad_periphs_b_37_pad_mux_sel_ETH_MDC        );
-        tranif1 alt_0_b_38_pad_USB1_SPI10_SCK  (pad_periphs_b_38_pad, alt_0_pad_periphs_b_38_pad_USB1_SPI10_SCK , alt_0_pad_periphs_b_38_pad_mux_sel_USB1_SPI10_SCK );
-        tranif1 alt_0_b_39_pad_USB1_SPI10_CS   (pad_periphs_b_39_pad, alt_0_pad_periphs_b_39_pad_USB1_SPI10_CS  , alt_0_pad_periphs_b_39_pad_mux_sel_USB1_SPI10_CS  );
-        tranif1 alt_0_b_40_pad_USB1_SPI10_MISO (pad_periphs_b_40_pad, alt_0_pad_periphs_b_40_pad_USB1_SPI10_MISO, alt_0_pad_periphs_b_40_pad_mux_sel_USB1_SPI10_MISO);
-        tranif1 alt_0_b_41_pad_USB1_SPI10_MOSI (pad_periphs_b_41_pad, alt_0_pad_periphs_b_41_pad_USB1_SPI10_MOSI, alt_0_pad_periphs_b_41_pad_mux_sel_USB1_SPI10_MOSI);
-        tranif1 alt_0_b_42_pad_CAN0_TX         (pad_periphs_b_42_pad, alt_0_pad_periphs_b_42_pad_CAN0_TX        , alt_0_pad_periphs_b_42_pad_mux_sel_CAN0_TX        );
-        tranif1 alt_0_b_43_pad_CAN0_RX         (pad_periphs_b_43_pad, alt_0_pad_periphs_b_43_pad_CAN0_RX        , alt_0_pad_periphs_b_43_pad_mux_sel_CAN0_RX        );
-        tranif1 alt_0_b_44_pad_PWM0_CHANNEL1   (pad_periphs_b_44_pad, alt_0_pad_periphs_b_44_pad_PWM0_CHANNEL1  , alt_0_pad_periphs_b_44_pad_mux_sel_PWM0_CHANNEL1  );
-        tranif1 alt_0_b_45_pad_PWM1_CHANNEL1   (pad_periphs_b_45_pad, alt_0_pad_periphs_b_45_pad_PWM1_CHANNEL1  , alt_0_pad_periphs_b_45_pad_mux_sel_PWM1_CHANNEL1  );
-        tranif1 alt_0_b_46_pad_PWM2_CHANNEL1   (pad_periphs_b_46_pad, alt_0_pad_periphs_b_46_pad_PWM2_CHANNEL1  , alt_0_pad_periphs_b_46_pad_mux_sel_PWM2_CHANNEL1  );
-        tranif1 alt_0_b_47_pad_PWM3_CHANNEL1   (pad_periphs_b_47_pad, alt_0_pad_periphs_b_47_pad_PWM3_CHANNEL1  , alt_0_pad_periphs_b_47_pad_mux_sel_PWM3_CHANNEL1  );
-        tranif1 alt_1_b_00_pad_WIRELESS_SDIO1_D0  (pad_periphs_b_00_pad, alt_1_pad_periphs_b_00_pad_WIRELESS_SDIO1_D0 , alt_1_pad_periphs_b_00_pad_mux_sel_WIRELESS_SDIO1_D0 );
-        tranif1 alt_1_b_01_pad_WIRELESS_SDIO1_D1  (pad_periphs_b_01_pad, alt_1_pad_periphs_b_01_pad_WIRELESS_SDIO1_D1 , alt_1_pad_periphs_b_01_pad_mux_sel_WIRELESS_SDIO1_D1 );
-        tranif1 alt_1_b_02_pad_WIRELESS_SDIO1_D2  (pad_periphs_b_02_pad, alt_1_pad_periphs_b_02_pad_WIRELESS_SDIO1_D2 , alt_1_pad_periphs_b_02_pad_mux_sel_WIRELESS_SDIO1_D2 );
-        tranif1 alt_1_b_03_pad_WIRELESS_SDIO1_D3  (pad_periphs_b_03_pad, alt_1_pad_periphs_b_03_pad_WIRELESS_SDIO1_D3 , alt_1_pad_periphs_b_03_pad_mux_sel_WIRELESS_SDIO1_D3 );
-        tranif1 alt_1_b_04_pad_WIRELESS_SDIO1_CLK (pad_periphs_b_04_pad, alt_1_pad_periphs_b_04_pad_WIRELESS_SDIO1_CLK, alt_1_pad_periphs_b_04_pad_mux_sel_WIRELESS_SDIO1_CLK);
-        tranif1 alt_1_b_05_pad_WIRELESS_SDIO1_CMD (pad_periphs_b_05_pad, alt_1_pad_periphs_b_05_pad_WIRELESS_SDIO1_CMD, alt_1_pad_periphs_b_05_pad_mux_sel_WIRELESS_SDIO1_CMD);
-        tranif1 alt_1_b_06_pad_IMU1_SPI0_SCK      (pad_periphs_b_06_pad, alt_1_pad_periphs_b_06_pad_IMU1_SPI0_SCK     , alt_1_pad_periphs_b_06_pad_mux_sel_IMU1_SPI0_SCK     );
-        tranif1 alt_1_b_07_pad_IMU1_SPI0_CS       (pad_periphs_b_07_pad, alt_1_pad_periphs_b_07_pad_IMU1_SPI0_CS      , alt_1_pad_periphs_b_07_pad_mux_sel_IMU1_SPI0_CS      );
-        tranif1 alt_1_b_08_pad_IMU1_SPI0_MISO     (pad_periphs_b_08_pad, alt_1_pad_periphs_b_08_pad_IMU1_SPI0_MISO    , alt_1_pad_periphs_b_08_pad_mux_sel_IMU1_SPI0_MISO    );
-        tranif1 alt_1_b_09_pad_IMU1_SPI0_MOSI     (pad_periphs_b_09_pad, alt_1_pad_periphs_b_09_pad_IMU1_SPI0_MOSI    , alt_1_pad_periphs_b_09_pad_mux_sel_IMU1_SPI0_MOSI    );
-        tranif1 alt_1_b_10_pad_TLM1_USART0_TX     (pad_periphs_b_10_pad, alt_1_pad_periphs_b_10_pad_TLM1_USART0_TX    , alt_1_pad_periphs_b_10_pad_mux_sel_TLM1_USART0_TX    );
-        tranif1 alt_1_b_11_pad_TLM1_USART0_RX     (pad_periphs_b_11_pad, alt_1_pad_periphs_b_11_pad_TLM1_USART0_RX    , alt_1_pad_periphs_b_11_pad_mux_sel_TLM1_USART0_RX    );
-        tranif1 alt_1_b_12_pad_TLM1_USART0_RTS    (pad_periphs_b_12_pad, alt_1_pad_periphs_b_12_pad_TLM1_USART0_RTS   , alt_1_pad_periphs_b_12_pad_mux_sel_TLM1_USART0_RTS   );
-        tranif1 alt_1_b_13_pad_TLM1_USART0_CTS    (pad_periphs_b_13_pad, alt_1_pad_periphs_b_13_pad_TLM1_USART0_CTS   , alt_1_pad_periphs_b_13_pad_mux_sel_TLM1_USART0_CTS   );
-        tranif1 alt_1_b_14_pad_ADC0_SPI4_SCK      (pad_periphs_b_14_pad, alt_1_pad_periphs_b_14_pad_ADC0_SPI4_SCK     , alt_1_pad_periphs_b_14_pad_mux_sel_ADC0_SPI4_SCK     );
-        tranif1 alt_1_b_15_pad_ADC0_SPI4_CS       (pad_periphs_b_15_pad, alt_1_pad_periphs_b_15_pad_ADC0_SPI4_CS      , alt_1_pad_periphs_b_15_pad_mux_sel_ADC0_SPI4_CS      );
-        tranif1 alt_1_b_16_pad_ADC0_SPI4_MISO     (pad_periphs_b_16_pad, alt_1_pad_periphs_b_16_pad_ADC0_SPI4_MISO    , alt_1_pad_periphs_b_16_pad_mux_sel_ADC0_SPI4_MISO    );
-        tranif1 alt_1_b_17_pad_ADC0_SPI4_MOSI     (pad_periphs_b_17_pad, alt_1_pad_periphs_b_17_pad_ADC0_SPI4_MOSI    , alt_1_pad_periphs_b_17_pad_mux_sel_ADC0_SPI4_MOSI    );
-        tranif1 alt_1_b_18_pad_FRAM_SPI2_SCK      (pad_periphs_b_18_pad, alt_1_pad_periphs_b_18_pad_FRAM_SPI2_SCK     , alt_1_pad_periphs_b_18_pad_mux_sel_FRAM_SPI2_SCK     );
-        tranif1 alt_1_b_19_pad_FRAM_SPI2_CS       (pad_periphs_b_19_pad, alt_1_pad_periphs_b_19_pad_FRAM_SPI2_CS      , alt_1_pad_periphs_b_19_pad_mux_sel_FRAM_SPI2_CS      );
-        tranif1 alt_1_b_20_pad_FRAM_SPI2_MISO     (pad_periphs_b_20_pad, alt_1_pad_periphs_b_20_pad_FRAM_SPI2_MISO    , alt_1_pad_periphs_b_20_pad_mux_sel_FRAM_SPI2_MISO    );
-        tranif1 alt_1_b_21_pad_FRAM_SPI2_MOSI     (pad_periphs_b_21_pad, alt_1_pad_periphs_b_21_pad_FRAM_SPI2_MOSI    , alt_1_pad_periphs_b_21_pad_mux_sel_FRAM_SPI2_MOSI    );
-        tranif1 alt_1_b_22_pad_ADIO1_SPI3_SCK     (pad_periphs_b_22_pad, alt_1_pad_periphs_b_22_pad_ADIO1_SPI3_SCK    , alt_1_pad_periphs_b_22_pad_mux_sel_ADIO1_SPI3_SCK    );
-        tranif1 alt_1_b_23_pad_ADIO1_SPI3_CS      (pad_periphs_b_23_pad, alt_1_pad_periphs_b_23_pad_ADIO1_SPI3_CS     , alt_1_pad_periphs_b_23_pad_mux_sel_ADIO1_SPI3_CS     );
-        tranif1 alt_1_b_24_pad_ADIO1_SPI3_MISO    (pad_periphs_b_24_pad, alt_1_pad_periphs_b_24_pad_ADIO1_SPI3_MISO   , alt_1_pad_periphs_b_24_pad_mux_sel_ADIO1_SPI3_MISO   );
-        tranif1 alt_1_b_25_pad_ADIO1_SPI3_MOSI    (pad_periphs_b_25_pad, alt_1_pad_periphs_b_25_pad_ADIO1_SPI3_MOSI   , alt_1_pad_periphs_b_25_pad_mux_sel_ADIO1_SPI3_MOSI   );
-        tranif1 alt_1_b_26_pad_MAG_SPI1_SCK       (pad_periphs_b_26_pad, alt_1_pad_periphs_b_26_pad_MAG_SPI1_SCK      , alt_1_pad_periphs_b_26_pad_mux_sel_MAG_SPI1_SCK      );
-        tranif1 alt_1_b_27_pad_MAG_SPI1_CS        (pad_periphs_b_27_pad, alt_1_pad_periphs_b_27_pad_MAG_SPI1_CS       , alt_1_pad_periphs_b_27_pad_mux_sel_MAG_SPI1_CS       );
-        tranif1 alt_1_b_28_pad_MAG_SPI1_MISO      (pad_periphs_b_28_pad, alt_1_pad_periphs_b_28_pad_MAG_SPI1_MISO     , alt_1_pad_periphs_b_28_pad_mux_sel_MAG_SPI1_MISO     );
-        tranif1 alt_1_b_29_pad_MAG_SPI1_MOSI      (pad_periphs_b_29_pad, alt_1_pad_periphs_b_29_pad_MAG_SPI1_MOSI     , alt_1_pad_periphs_b_29_pad_mux_sel_MAG_SPI1_MOSI     );
-        tranif1 alt_1_b_30_pad_CAN1_TX            (pad_periphs_b_30_pad, alt_1_pad_periphs_b_30_pad_CAN1_TX           , alt_1_pad_periphs_b_30_pad_mux_sel_CAN1_TX           );
-        tranif1 alt_1_b_31_pad_CAN1_RX            (pad_periphs_b_31_pad, alt_1_pad_periphs_b_31_pad_CAN1_RX           , alt_1_pad_periphs_b_31_pad_mux_sel_CAN1_RX           );
-        tranif1 alt_1_b_32_pad_PWM0_CHANNEL1      (pad_periphs_b_32_pad, alt_1_pad_periphs_b_32_pad_PWM0_CHANNEL1     , alt_1_pad_periphs_b_32_pad_mux_sel_PWM0_CHANNEL1     );
-        tranif1 alt_1_b_33_pad_PWM1_CHANNEL1      (pad_periphs_b_33_pad, alt_1_pad_periphs_b_33_pad_PWM1_CHANNEL1     , alt_1_pad_periphs_b_33_pad_mux_sel_PWM1_CHANNEL1     );
-        tranif1 alt_1_b_34_pad_PWM2_CHANNEL1      (pad_periphs_b_34_pad, alt_1_pad_periphs_b_34_pad_PWM2_CHANNEL1     , alt_1_pad_periphs_b_34_pad_mux_sel_PWM2_CHANNEL1     );
-        tranif1 alt_1_b_35_pad_PWM3_CHANNEL1      (pad_periphs_b_35_pad, alt_1_pad_periphs_b_35_pad_PWM3_CHANNEL1     , alt_1_pad_periphs_b_35_pad_mux_sel_PWM3_CHANNEL1     );
-        tranif1 alt_1_b_36_pad_CAM1_CPI1_CLK      (pad_periphs_b_36_pad, alt_1_pad_periphs_b_36_pad_CAM1_CPI1_CLK     , alt_1_pad_periphs_b_36_pad_mux_sel_CAM1_CPI1_CLK     );
-        tranif1 alt_1_b_37_pad_CAM1_CPI1_VSYNC    (pad_periphs_b_37_pad, alt_1_pad_periphs_b_37_pad_CAM1_CPI1_VSYNC   , alt_1_pad_periphs_b_37_pad_mux_sel_CAM1_CPI1_VSYNC   );
-        tranif1 alt_1_b_38_pad_CAM1_CPI1_HSYNC    (pad_periphs_b_38_pad, alt_1_pad_periphs_b_38_pad_CAM1_CPI1_HSYNC   , alt_1_pad_periphs_b_38_pad_mux_sel_CAM1_CPI1_HSYNC   );
-        tranif1 alt_1_b_39_pad_CAM1_CPI1_DAT0     (pad_periphs_b_39_pad, alt_1_pad_periphs_b_39_pad_CAM1_CPI1_DAT0    , alt_1_pad_periphs_b_39_pad_mux_sel_CAM1_CPI1_DAT0    );
-        tranif1 alt_1_b_40_pad_CAM1_CPI1_DAT1     (pad_periphs_b_40_pad, alt_1_pad_periphs_b_40_pad_CAM1_CPI1_DAT1    , alt_1_pad_periphs_b_40_pad_mux_sel_CAM1_CPI1_DAT1    );
-        tranif1 alt_1_b_41_pad_CAM1_CPI1_DAT2     (pad_periphs_b_41_pad, alt_1_pad_periphs_b_41_pad_CAM1_CPI1_DAT2    , alt_1_pad_periphs_b_41_pad_mux_sel_CAM1_CPI1_DAT2    );
-        tranif1 alt_1_b_42_pad_CAM1_CPI1_DAT3     (pad_periphs_b_42_pad, alt_1_pad_periphs_b_42_pad_CAM1_CPI1_DAT3    , alt_1_pad_periphs_b_42_pad_mux_sel_CAM1_CPI1_DAT3    );
-        tranif1 alt_1_b_43_pad_CAM1_CPI1_DAT4     (pad_periphs_b_43_pad, alt_1_pad_periphs_b_43_pad_CAM1_CPI1_DAT4    , alt_1_pad_periphs_b_43_pad_mux_sel_CAM1_CPI1_DAT4    );
-        tranif1 alt_1_b_44_pad_CAM1_CPI1_DAT5     (pad_periphs_b_44_pad, alt_1_pad_periphs_b_44_pad_CAM1_CPI1_DAT5    , alt_1_pad_periphs_b_44_pad_mux_sel_CAM1_CPI1_DAT5    );
-        tranif1 alt_1_b_45_pad_CAM1_CPI1_DAT6     (pad_periphs_b_45_pad, alt_1_pad_periphs_b_45_pad_CAM1_CPI1_DAT6    , alt_1_pad_periphs_b_45_pad_mux_sel_CAM1_CPI1_DAT6    );
-        tranif1 alt_1_b_46_pad_CAM1_CPI1_DAT7     (pad_periphs_b_46_pad, alt_1_pad_periphs_b_46_pad_CAM1_CPI1_DAT7    , alt_1_pad_periphs_b_46_pad_mux_sel_CAM1_CPI1_DAT7    );
-        tranif1 alt_1_b_47_pad_FLL_CVA6           (pad_periphs_b_47_pad, alt_1_pad_periphs_b_47_pad_FLL_CVA6          , alt_1_pad_periphs_b_47_pad_mux_sel_FLL_CVA6          );
-        tranif1 alt_2_b_00_pad_IO_GPIO00 (pad_periphs_b_00_pad, alt_2_pad_periphs_b_00_pad_IO_GPIO00, alt_2_pad_periphs_b_00_pad_mux_sel_IO_GPIO00);
-        tranif1 alt_2_b_01_pad_IO_GPIO01 (pad_periphs_b_01_pad, alt_2_pad_periphs_b_01_pad_IO_GPIO01, alt_2_pad_periphs_b_01_pad_mux_sel_IO_GPIO01);
-        tranif1 alt_2_b_02_pad_IO_GPIO02 (pad_periphs_b_02_pad, alt_2_pad_periphs_b_02_pad_IO_GPIO02, alt_2_pad_periphs_b_02_pad_mux_sel_IO_GPIO02);
-        tranif1 alt_2_b_03_pad_IO_GPIO03 (pad_periphs_b_03_pad, alt_2_pad_periphs_b_03_pad_IO_GPIO03, alt_2_pad_periphs_b_03_pad_mux_sel_IO_GPIO03);
-        tranif1 alt_2_b_04_pad_IO_GPIO04 (pad_periphs_b_04_pad, alt_2_pad_periphs_b_04_pad_IO_GPIO04, alt_2_pad_periphs_b_04_pad_mux_sel_IO_GPIO04);
-        tranif1 alt_2_b_05_pad_IO_GPIO05 (pad_periphs_b_05_pad, alt_2_pad_periphs_b_05_pad_IO_GPIO05, alt_2_pad_periphs_b_05_pad_mux_sel_IO_GPIO05);
-        tranif1 alt_2_b_06_pad_IO_GPIO06 (pad_periphs_b_06_pad, alt_2_pad_periphs_b_06_pad_IO_GPIO06, alt_2_pad_periphs_b_06_pad_mux_sel_IO_GPIO06);
-        tranif1 alt_2_b_07_pad_IO_GPIO07 (pad_periphs_b_07_pad, alt_2_pad_periphs_b_07_pad_IO_GPIO07, alt_2_pad_periphs_b_07_pad_mux_sel_IO_GPIO07);
-        tranif1 alt_2_b_08_pad_IO_GPIO08 (pad_periphs_b_08_pad, alt_2_pad_periphs_b_08_pad_IO_GPIO08, alt_2_pad_periphs_b_08_pad_mux_sel_IO_GPIO08);
-        tranif1 alt_2_b_09_pad_IO_GPIO09 (pad_periphs_b_09_pad, alt_2_pad_periphs_b_09_pad_IO_GPIO09, alt_2_pad_periphs_b_09_pad_mux_sel_IO_GPIO09);
-        tranif1 alt_2_b_10_pad_IO_GPIO10 (pad_periphs_b_10_pad, alt_2_pad_periphs_b_10_pad_IO_GPIO10, alt_2_pad_periphs_b_10_pad_mux_sel_IO_GPIO10);
-        tranif1 alt_2_b_11_pad_IO_GPIO11 (pad_periphs_b_11_pad, alt_2_pad_periphs_b_11_pad_IO_GPIO11, alt_2_pad_periphs_b_11_pad_mux_sel_IO_GPIO11);
-        tranif1 alt_2_b_12_pad_IO_GPIO12 (pad_periphs_b_12_pad, alt_2_pad_periphs_b_12_pad_IO_GPIO12, alt_2_pad_periphs_b_12_pad_mux_sel_IO_GPIO12);
-        tranif1 alt_2_b_13_pad_IO_GPIO13 (pad_periphs_b_13_pad, alt_2_pad_periphs_b_13_pad_IO_GPIO13, alt_2_pad_periphs_b_13_pad_mux_sel_IO_GPIO13);
-        tranif1 alt_2_b_14_pad_IO_GPIO14 (pad_periphs_b_14_pad, alt_2_pad_periphs_b_14_pad_IO_GPIO14, alt_2_pad_periphs_b_14_pad_mux_sel_IO_GPIO14);
-        tranif1 alt_2_b_15_pad_IO_GPIO15 (pad_periphs_b_15_pad, alt_2_pad_periphs_b_15_pad_IO_GPIO15, alt_2_pad_periphs_b_15_pad_mux_sel_IO_GPIO15);
-        tranif1 alt_2_b_16_pad_IO_GPIO16 (pad_periphs_b_16_pad, alt_2_pad_periphs_b_16_pad_IO_GPIO16, alt_2_pad_periphs_b_16_pad_mux_sel_IO_GPIO16);
-        tranif1 alt_2_b_17_pad_IO_GPIO17 (pad_periphs_b_17_pad, alt_2_pad_periphs_b_17_pad_IO_GPIO17, alt_2_pad_periphs_b_17_pad_mux_sel_IO_GPIO17);
-        tranif1 alt_2_b_18_pad_IO_GPIO18 (pad_periphs_b_18_pad, alt_2_pad_periphs_b_18_pad_IO_GPIO18, alt_2_pad_periphs_b_18_pad_mux_sel_IO_GPIO18);
-        tranif1 alt_2_b_19_pad_IO_GPIO19 (pad_periphs_b_19_pad, alt_2_pad_periphs_b_19_pad_IO_GPIO19, alt_2_pad_periphs_b_19_pad_mux_sel_IO_GPIO19);
-        tranif1 alt_2_b_20_pad_IO_GPIO20 (pad_periphs_b_20_pad, alt_2_pad_periphs_b_20_pad_IO_GPIO20, alt_2_pad_periphs_b_20_pad_mux_sel_IO_GPIO20);
-        tranif1 alt_2_b_21_pad_IO_GPIO21 (pad_periphs_b_21_pad, alt_2_pad_periphs_b_21_pad_IO_GPIO21, alt_2_pad_periphs_b_21_pad_mux_sel_IO_GPIO21);
-        tranif1 alt_2_b_22_pad_IO_GPIO22 (pad_periphs_b_22_pad, alt_2_pad_periphs_b_22_pad_IO_GPIO22, alt_2_pad_periphs_b_22_pad_mux_sel_IO_GPIO22);
-        tranif1 alt_2_b_23_pad_IO_GPIO23 (pad_periphs_b_23_pad, alt_2_pad_periphs_b_23_pad_IO_GPIO23, alt_2_pad_periphs_b_23_pad_mux_sel_IO_GPIO23);
-        tranif1 alt_2_b_24_pad_IO_GPIO24 (pad_periphs_b_24_pad, alt_2_pad_periphs_b_24_pad_IO_GPIO24, alt_2_pad_periphs_b_24_pad_mux_sel_IO_GPIO24);
-        tranif1 alt_2_b_25_pad_IO_GPIO25 (pad_periphs_b_25_pad, alt_2_pad_periphs_b_25_pad_IO_GPIO25, alt_2_pad_periphs_b_25_pad_mux_sel_IO_GPIO25);
-        tranif1 alt_2_b_26_pad_IO_GPIO26 (pad_periphs_b_26_pad, alt_2_pad_periphs_b_26_pad_IO_GPIO26, alt_2_pad_periphs_b_26_pad_mux_sel_IO_GPIO26);
-        tranif1 alt_2_b_27_pad_IO_GPIO27 (pad_periphs_b_27_pad, alt_2_pad_periphs_b_27_pad_IO_GPIO27, alt_2_pad_periphs_b_27_pad_mux_sel_IO_GPIO27);
-        tranif1 alt_2_b_28_pad_IO_GPIO28 (pad_periphs_b_28_pad, alt_2_pad_periphs_b_28_pad_IO_GPIO28, alt_2_pad_periphs_b_28_pad_mux_sel_IO_GPIO28);
-        tranif1 alt_2_b_29_pad_IO_GPIO29 (pad_periphs_b_29_pad, alt_2_pad_periphs_b_29_pad_IO_GPIO29, alt_2_pad_periphs_b_29_pad_mux_sel_IO_GPIO29);
-        tranif1 alt_2_b_30_pad_IO_GPIO30 (pad_periphs_b_30_pad, alt_2_pad_periphs_b_30_pad_IO_GPIO30, alt_2_pad_periphs_b_30_pad_mux_sel_IO_GPIO30);
-        tranif1 alt_2_b_31_pad_IO_GPIO31 (pad_periphs_b_31_pad, alt_2_pad_periphs_b_31_pad_IO_GPIO31, alt_2_pad_periphs_b_31_pad_mux_sel_IO_GPIO31);
-        tranif1 alt_2_b_32_pad_IO_GPIO32 (pad_periphs_b_32_pad, alt_2_pad_periphs_b_32_pad_IO_GPIO32, alt_2_pad_periphs_b_32_pad_mux_sel_IO_GPIO32);
-        tranif1 alt_2_b_33_pad_IO_GPIO33 (pad_periphs_b_33_pad, alt_2_pad_periphs_b_33_pad_IO_GPIO33, alt_2_pad_periphs_b_33_pad_mux_sel_IO_GPIO33);
-        tranif1 alt_2_b_34_pad_IO_GPIO34 (pad_periphs_b_34_pad, alt_2_pad_periphs_b_34_pad_IO_GPIO34, alt_2_pad_periphs_b_34_pad_mux_sel_IO_GPIO34);
-        tranif1 alt_2_b_35_pad_IO_GPIO35 (pad_periphs_b_35_pad, alt_2_pad_periphs_b_35_pad_IO_GPIO35, alt_2_pad_periphs_b_35_pad_mux_sel_IO_GPIO35);
-        tranif1 alt_2_b_36_pad_IO_GPIO36 (pad_periphs_b_36_pad, alt_2_pad_periphs_b_36_pad_IO_GPIO36, alt_2_pad_periphs_b_36_pad_mux_sel_IO_GPIO36);
-        tranif1 alt_2_b_37_pad_IO_GPIO37 (pad_periphs_b_37_pad, alt_2_pad_periphs_b_37_pad_IO_GPIO37, alt_2_pad_periphs_b_37_pad_mux_sel_IO_GPIO37);
-        tranif1 alt_2_b_38_pad_IO_GPIO38 (pad_periphs_b_38_pad, alt_2_pad_periphs_b_38_pad_IO_GPIO38, alt_2_pad_periphs_b_38_pad_mux_sel_IO_GPIO38);
-        tranif1 alt_2_b_39_pad_IO_GPIO39 (pad_periphs_b_39_pad, alt_2_pad_periphs_b_39_pad_IO_GPIO39, alt_2_pad_periphs_b_39_pad_mux_sel_IO_GPIO39);
-        tranif1 alt_2_b_40_pad_IO_GPIO40 (pad_periphs_b_40_pad, alt_2_pad_periphs_b_40_pad_IO_GPIO40, alt_2_pad_periphs_b_40_pad_mux_sel_IO_GPIO40);
-        tranif1 alt_2_b_41_pad_IO_GPIO41 (pad_periphs_b_41_pad, alt_2_pad_periphs_b_41_pad_IO_GPIO41, alt_2_pad_periphs_b_41_pad_mux_sel_IO_GPIO41);
-        tranif1 alt_2_b_42_pad_IO_GPIO42 (pad_periphs_b_42_pad, alt_2_pad_periphs_b_42_pad_IO_GPIO42, alt_2_pad_periphs_b_42_pad_mux_sel_IO_GPIO42);
-        tranif1 alt_2_b_43_pad_IO_GPIO43 (pad_periphs_b_43_pad, alt_2_pad_periphs_b_43_pad_IO_GPIO43, alt_2_pad_periphs_b_43_pad_mux_sel_IO_GPIO43);
-        tranif1 alt_2_b_44_pad_IO_GPIO44 (pad_periphs_b_44_pad, alt_2_pad_periphs_b_44_pad_IO_GPIO44, alt_2_pad_periphs_b_44_pad_mux_sel_IO_GPIO44);
-        tranif1 alt_2_b_45_pad_IO_GPIO45 (pad_periphs_b_45_pad, alt_2_pad_periphs_b_45_pad_IO_GPIO45, alt_2_pad_periphs_b_45_pad_mux_sel_IO_GPIO45);
-        tranif1 alt_2_b_46_pad_IO_GPIO46 (pad_periphs_b_46_pad, alt_2_pad_periphs_b_46_pad_IO_GPIO46, alt_2_pad_periphs_b_46_pad_mux_sel_IO_GPIO46);
-        tranif1 alt_2_b_47_pad_IO_GPIO47 (pad_periphs_b_47_pad, alt_2_pad_periphs_b_47_pad_IO_GPIO47, alt_2_pad_periphs_b_47_pad_mux_sel_IO_GPIO47);
-        tranif1 alt_3_b_00_pad_GPS2_UART0_TX   (pad_periphs_b_00_pad, alt_3_pad_periphs_b_00_pad_GPS2_UART0_TX  , alt_3_pad_periphs_b_00_pad_mux_sel_GPS2_UART0_TX  );
-        tranif1 alt_3_b_01_pad_GPS2_UART0_RX   (pad_periphs_b_01_pad, alt_3_pad_periphs_b_01_pad_GPS2_UART0_RX  , alt_3_pad_periphs_b_01_pad_mux_sel_GPS2_UART0_RX  );
-        tranif1 alt_3_b_02_pad_GPS2_I2C1_SCL   (pad_periphs_b_02_pad, alt_3_pad_periphs_b_02_pad_GPS2_I2C1_SCL  , alt_3_pad_periphs_b_02_pad_mux_sel_GPS2_I2C1_SCL  );
-        tranif1 alt_3_b_03_pad_GPS2_I2C1_SDA   (pad_periphs_b_03_pad, alt_3_pad_periphs_b_03_pad_GPS2_I2C1_SDA  , alt_3_pad_periphs_b_03_pad_mux_sel_GPS2_I2C1_SDA  );
-        tranif1 alt_3_b_04_pad_IMU2_SPI5_SCK   (pad_periphs_b_04_pad, alt_3_pad_periphs_b_04_pad_IMU2_SPI5_SCK  , alt_3_pad_periphs_b_04_pad_mux_sel_IMU2_SPI5_SCK  );
-        tranif1 alt_3_b_05_pad_IMU2_SPI5_CS    (pad_periphs_b_05_pad, alt_3_pad_periphs_b_05_pad_IMU2_SPI5_CS   , alt_3_pad_periphs_b_05_pad_mux_sel_IMU2_SPI5_CS   );
-        tranif1 alt_3_b_06_pad_IMU2_SPI5_MISO  (pad_periphs_b_06_pad, alt_3_pad_periphs_b_06_pad_IMU2_SPI5_MISO , alt_3_pad_periphs_b_06_pad_mux_sel_IMU2_SPI5_MISO );
-        tranif1 alt_3_b_07_pad_IMU2_SPI5_MOSI  (pad_periphs_b_07_pad, alt_3_pad_periphs_b_07_pad_IMU2_SPI5_MOSI , alt_3_pad_periphs_b_07_pad_mux_sel_IMU2_SPI5_MOSI );
-        tranif1 alt_3_b_08_pad_BARO2_I2C3_SCL  (pad_periphs_b_08_pad, alt_3_pad_periphs_b_08_pad_BARO2_I2C3_SCL , alt_3_pad_periphs_b_08_pad_mux_sel_BARO2_I2C3_SCL );
-        tranif1 alt_3_b_09_pad_BARO2_I2C3_SDA  (pad_periphs_b_09_pad, alt_3_pad_periphs_b_09_pad_BARO2_I2C3_SDA , alt_3_pad_periphs_b_09_pad_mux_sel_BARO2_I2C3_SDA );
-        tranif1 alt_3_b_10_pad_IMU3_SPI6_SCK   (pad_periphs_b_10_pad, alt_3_pad_periphs_b_10_pad_IMU3_SPI6_SCK  , alt_3_pad_periphs_b_10_pad_mux_sel_IMU3_SPI6_SCK  );
-        tranif1 alt_3_b_11_pad_IMU3_SPI6_CS    (pad_periphs_b_11_pad, alt_3_pad_periphs_b_11_pad_IMU3_SPI6_CS   , alt_3_pad_periphs_b_11_pad_mux_sel_IMU3_SPI6_CS   );
-        tranif1 alt_3_b_12_pad_IMU3_SPI6_MISO  (pad_periphs_b_12_pad, alt_3_pad_periphs_b_12_pad_IMU3_SPI6_MISO , alt_3_pad_periphs_b_12_pad_mux_sel_IMU3_SPI6_MISO );
-        tranif1 alt_3_b_13_pad_IMU3_SPI6_MOSI  (pad_periphs_b_13_pad, alt_3_pad_periphs_b_13_pad_IMU3_SPI6_MOSI , alt_3_pad_periphs_b_13_pad_mux_sel_IMU3_SPI6_MOSI );
-        tranif1 alt_3_b_14_pad_TLM2_USART2_TX  (pad_periphs_b_14_pad, alt_3_pad_periphs_b_14_pad_TLM2_USART2_TX , alt_3_pad_periphs_b_14_pad_mux_sel_TLM2_USART2_TX );
-        tranif1 alt_3_b_15_pad_TLM2_USART2_RX  (pad_periphs_b_15_pad, alt_3_pad_periphs_b_15_pad_TLM2_USART2_RX , alt_3_pad_periphs_b_15_pad_mux_sel_TLM2_USART2_RX );
-        tranif1 alt_3_b_16_pad_TLM2_USART2_RTS (pad_periphs_b_16_pad, alt_3_pad_periphs_b_16_pad_TLM2_USART2_RTS, alt_3_pad_periphs_b_16_pad_mux_sel_TLM2_USART2_RTS);
-        tranif1 alt_3_b_17_pad_TLM2_USART2_CTS (pad_periphs_b_17_pad, alt_3_pad_periphs_b_17_pad_TLM2_USART2_CTS, alt_3_pad_periphs_b_17_pad_mux_sel_TLM2_USART2_CTS);
-        tranif1 alt_3_b_18_pad_TLM3_USART3_TX  (pad_periphs_b_18_pad, alt_3_pad_periphs_b_18_pad_TLM3_USART3_TX , alt_3_pad_periphs_b_18_pad_mux_sel_TLM3_USART3_TX );
-        tranif1 alt_3_b_19_pad_TLM3_USART3_RX  (pad_periphs_b_19_pad, alt_3_pad_periphs_b_19_pad_TLM3_USART3_RX , alt_3_pad_periphs_b_19_pad_mux_sel_TLM3_USART3_RX );
-        tranif1 alt_3_b_20_pad_TLM3_USART3_RTS (pad_periphs_b_20_pad, alt_3_pad_periphs_b_20_pad_TLM3_USART3_RTS, alt_3_pad_periphs_b_20_pad_mux_sel_TLM3_USART3_RTS);
-        tranif1 alt_3_b_21_pad_TLM3_USART3_CTS (pad_periphs_b_21_pad, alt_3_pad_periphs_b_21_pad_TLM3_USART3_CTS, alt_3_pad_periphs_b_21_pad_mux_sel_TLM3_USART3_CTS);
-        tranif1 alt_3_b_22_pad_CAN0_SPI8_SCK   (pad_periphs_b_22_pad, alt_3_pad_periphs_b_22_pad_CAN0_SPI8_SCK  , alt_3_pad_periphs_b_22_pad_mux_sel_CAN0_SPI8_SCK  );
-        tranif1 alt_3_b_23_pad_CAN0_SPI8_CS    (pad_periphs_b_23_pad, alt_3_pad_periphs_b_23_pad_CAN0_SPI8_CS   , alt_3_pad_periphs_b_23_pad_mux_sel_CAN0_SPI8_CS   );
-        tranif1 alt_3_b_24_pad_CAN0_SPI8_MISO  (pad_periphs_b_24_pad, alt_3_pad_periphs_b_24_pad_CAN0_SPI8_MISO , alt_3_pad_periphs_b_24_pad_mux_sel_CAN0_SPI8_MISO );
-        tranif1 alt_3_b_25_pad_CAN0_SPI8_MOSI  (pad_periphs_b_25_pad, alt_3_pad_periphs_b_25_pad_CAN0_SPI8_MOSI , alt_3_pad_periphs_b_25_pad_mux_sel_CAN0_SPI8_MOSI );
-        tranif1 alt_3_b_26_pad_CAN1_SPI9_SCK   (pad_periphs_b_26_pad, alt_3_pad_periphs_b_26_pad_CAN1_SPI9_SCK  , alt_3_pad_periphs_b_26_pad_mux_sel_CAN1_SPI9_SCK  );
-        tranif1 alt_3_b_27_pad_CAN1_SPI9_CS    (pad_periphs_b_27_pad, alt_3_pad_periphs_b_27_pad_CAN1_SPI9_CS   , alt_3_pad_periphs_b_27_pad_mux_sel_CAN1_SPI9_CS   );
-        tranif1 alt_3_b_28_pad_CAN1_SPI9_MISO  (pad_periphs_b_28_pad, alt_3_pad_periphs_b_28_pad_CAN1_SPI9_MISO , alt_3_pad_periphs_b_28_pad_mux_sel_CAN1_SPI9_MISO );
-        tranif1 alt_3_b_29_pad_CAN1_SPI9_MOSI  (pad_periphs_b_29_pad, alt_3_pad_periphs_b_29_pad_CAN1_SPI9_MOSI , alt_3_pad_periphs_b_29_pad_mux_sel_CAN1_SPI9_MOSI );
-        tranif1 alt_3_b_30_pad_USB1_SPI10_SCK  (pad_periphs_b_30_pad, alt_3_pad_periphs_b_30_pad_USB1_SPI10_SCK , alt_3_pad_periphs_b_30_pad_mux_sel_USB1_SPI10_SCK );
-        tranif1 alt_3_b_31_pad_USB1_SPI10_CS   (pad_periphs_b_31_pad, alt_3_pad_periphs_b_31_pad_USB1_SPI10_CS  , alt_3_pad_periphs_b_31_pad_mux_sel_USB1_SPI10_CS  );
-        tranif1 alt_3_b_32_pad_USB1_SPI10_MISO (pad_periphs_b_32_pad, alt_3_pad_periphs_b_32_pad_USB1_SPI10_MISO, alt_3_pad_periphs_b_32_pad_mux_sel_USB1_SPI10_MISO);
-        tranif1 alt_3_b_33_pad_USB1_SPI10_MOSI (pad_periphs_b_33_pad, alt_3_pad_periphs_b_33_pad_USB1_SPI10_MOSI, alt_3_pad_periphs_b_33_pad_mux_sel_USB1_SPI10_MOSI);
-        tranif1 alt_3_b_34_pad_IO_GPIO34       (pad_periphs_b_34_pad, alt_3_pad_periphs_b_34_pad_IO_GPIO34      , alt_3_pad_periphs_b_34_pad_mux_sel_IO_GPIO34      );
-        tranif1 alt_3_b_35_pad_IO_GPIO35       (pad_periphs_b_35_pad, alt_3_pad_periphs_b_35_pad_IO_GPIO35      , alt_3_pad_periphs_b_35_pad_mux_sel_IO_GPIO35      );
-        tranif1 alt_3_b_36_pad_IO_GPIO36       (pad_periphs_b_36_pad, alt_3_pad_periphs_b_36_pad_IO_GPIO36      , alt_3_pad_periphs_b_36_pad_mux_sel_IO_GPIO36      );
-        tranif1 alt_3_b_37_pad_IO_GPIO37       (pad_periphs_b_37_pad, alt_3_pad_periphs_b_37_pad_IO_GPIO37      , alt_3_pad_periphs_b_37_pad_mux_sel_IO_GPIO37      );
-        tranif1 alt_3_b_38_pad_IO_GPIO38       (pad_periphs_b_38_pad, alt_3_pad_periphs_b_38_pad_IO_GPIO38      , alt_3_pad_periphs_b_38_pad_mux_sel_IO_GPIO38      );
-        tranif1 alt_3_b_39_pad_IO_GPIO39       (pad_periphs_b_39_pad, alt_3_pad_periphs_b_39_pad_IO_GPIO39      , alt_3_pad_periphs_b_39_pad_mux_sel_IO_GPIO39      );
-        tranif1 alt_3_b_40_pad_IO_GPIO40       (pad_periphs_b_40_pad, alt_3_pad_periphs_b_40_pad_IO_GPIO40      , alt_3_pad_periphs_b_40_pad_mux_sel_IO_GPIO40      );
-        tranif1 alt_3_b_41_pad_IO_GPIO41       (pad_periphs_b_41_pad, alt_3_pad_periphs_b_41_pad_IO_GPIO41      , alt_3_pad_periphs_b_41_pad_mux_sel_IO_GPIO41      );
-        tranif1 alt_3_b_42_pad_IO_GPIO42       (pad_periphs_b_42_pad, alt_3_pad_periphs_b_42_pad_IO_GPIO42      , alt_3_pad_periphs_b_42_pad_mux_sel_IO_GPIO42      );
-        tranif1 alt_3_b_43_pad_IO_GPIO43       (pad_periphs_b_43_pad, alt_3_pad_periphs_b_43_pad_IO_GPIO43      , alt_3_pad_periphs_b_43_pad_mux_sel_IO_GPIO43      );
-        tranif1 alt_3_b_44_pad_IO_GPIO44       (pad_periphs_b_44_pad, alt_3_pad_periphs_b_44_pad_IO_GPIO44      , alt_3_pad_periphs_b_44_pad_mux_sel_IO_GPIO44      );
-        tranif1 alt_3_b_45_pad_IO_GPIO45       (pad_periphs_b_45_pad, alt_3_pad_periphs_b_45_pad_IO_GPIO45      , alt_3_pad_periphs_b_45_pad_mux_sel_IO_GPIO45      );
-        tranif1 alt_3_b_46_pad_IO_GPIO46       (pad_periphs_b_46_pad, alt_3_pad_periphs_b_46_pad_IO_GPIO46      , alt_3_pad_periphs_b_46_pad_mux_sel_IO_GPIO46      );
-        tranif1 alt_3_b_47_pad_IO_GPIO47       (pad_periphs_b_47_pad, alt_3_pad_periphs_b_47_pad_IO_GPIO47      , alt_3_pad_periphs_b_47_pad_mux_sel_IO_GPIO47      );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_00_pad_CORE_UART_TX    (pad_periphs_a_00_pad, alt_0_pad_periphs_a_00_pad_CORE_UART_TX   , alt_0_pad_periphs_a_00_pad_mux_sel_CORE_UART_TX   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_01_pad_CORE_UART_RX    (pad_periphs_a_01_pad, alt_0_pad_periphs_a_01_pad_CORE_UART_RX   , alt_0_pad_periphs_a_01_pad_mux_sel_CORE_UART_RX   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_02_pad_SDIO0_D1        (pad_periphs_a_02_pad, alt_0_pad_periphs_a_02_pad_SDIO0_D1       , alt_0_pad_periphs_a_02_pad_mux_sel_SDIO0_D1       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_03_pad_SDIO0_D2        (pad_periphs_a_03_pad, alt_0_pad_periphs_a_03_pad_SDIO0_D2       , alt_0_pad_periphs_a_03_pad_mux_sel_SDIO0_D2       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_04_pad_SDIO0_D3        (pad_periphs_a_04_pad, alt_0_pad_periphs_a_04_pad_SDIO0_D3       , alt_0_pad_periphs_a_04_pad_mux_sel_SDIO0_D3       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_05_pad_SDIO0_D4        (pad_periphs_a_05_pad, alt_0_pad_periphs_a_05_pad_SDIO0_D4       , alt_0_pad_periphs_a_05_pad_mux_sel_SDIO0_D4       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_06_pad_SDIO0_CLK       (pad_periphs_a_06_pad, alt_0_pad_periphs_a_06_pad_SDIO0_CLK      , alt_0_pad_periphs_a_06_pad_mux_sel_SDIO0_CLK      );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_07_pad_SDIO0_CMD       (pad_periphs_a_07_pad, alt_0_pad_periphs_a_07_pad_SDIO0_CMD      , alt_0_pad_periphs_a_07_pad_mux_sel_SDIO0_CMD      );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_08_pad_PWM0_CHANNEL0   (pad_periphs_a_08_pad, alt_0_pad_periphs_a_08_pad_PWM0_CHANNEL0  , alt_0_pad_periphs_a_08_pad_mux_sel_PWM0_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_09_pad_PWM1_CHANNEL0   (pad_periphs_a_09_pad, alt_0_pad_periphs_a_09_pad_PWM1_CHANNEL0  , alt_0_pad_periphs_a_09_pad_mux_sel_PWM1_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_10_pad_PWM2_CHANNEL0   (pad_periphs_a_10_pad, alt_0_pad_periphs_a_10_pad_PWM2_CHANNEL0  , alt_0_pad_periphs_a_10_pad_mux_sel_PWM2_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_11_pad_PWM3_CHANNEL0   (pad_periphs_a_11_pad, alt_0_pad_periphs_a_11_pad_PWM3_CHANNEL0  , alt_0_pad_periphs_a_11_pad_mux_sel_PWM3_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_12_pad_BARO1_I2C0_SCL  (pad_periphs_a_12_pad, alt_0_pad_periphs_a_12_pad_BARO1_I2C0_SCL , alt_0_pad_periphs_a_12_pad_mux_sel_BARO1_I2C0_SCL );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_13_pad_BARO1_I2C0_SDA  (pad_periphs_a_13_pad, alt_0_pad_periphs_a_13_pad_BARO1_I2C0_SDA , alt_0_pad_periphs_a_13_pad_mux_sel_BARO1_I2C0_SDA );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_14_pad_IMU1_SPI0_SCK   (pad_periphs_a_14_pad, alt_0_pad_periphs_a_14_pad_IMU1_SPI0_SCK  , alt_0_pad_periphs_a_14_pad_mux_sel_IMU1_SPI0_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_15_pad_IMU1_SPI0_CS    (pad_periphs_a_15_pad, alt_0_pad_periphs_a_15_pad_IMU1_SPI0_CS   , alt_0_pad_periphs_a_15_pad_mux_sel_IMU1_SPI0_CS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_16_pad_IMU1_SPI0_MISO  (pad_periphs_a_16_pad, alt_0_pad_periphs_a_16_pad_IMU1_SPI0_MISO , alt_0_pad_periphs_a_16_pad_mux_sel_IMU1_SPI0_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_17_pad_IMU1_SPI0_MOSI  (pad_periphs_a_17_pad, alt_0_pad_periphs_a_17_pad_IMU1_SPI0_MOSI , alt_0_pad_periphs_a_17_pad_mux_sel_IMU1_SPI0_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_18_pad_FRAM_SPI2_SCK   (pad_periphs_a_18_pad, alt_0_pad_periphs_a_18_pad_FRAM_SPI2_SCK  , alt_0_pad_periphs_a_18_pad_mux_sel_FRAM_SPI2_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_19_pad_FRAM_SPI2_CS    (pad_periphs_a_19_pad, alt_0_pad_periphs_a_19_pad_FRAM_SPI2_CS   , alt_0_pad_periphs_a_19_pad_mux_sel_FRAM_SPI2_CS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_20_pad_FRAM_SPI2_MISO  (pad_periphs_a_20_pad, alt_0_pad_periphs_a_20_pad_FRAM_SPI2_MISO , alt_0_pad_periphs_a_20_pad_mux_sel_FRAM_SPI2_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_21_pad_FRAM_SPI2_MOSI  (pad_periphs_a_21_pad, alt_0_pad_periphs_a_21_pad_FRAM_SPI2_MOSI , alt_0_pad_periphs_a_21_pad_mux_sel_FRAM_SPI2_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_22_pad_ADIO1_SPI3_SCK  (pad_periphs_a_22_pad, alt_0_pad_periphs_a_22_pad_ADIO1_SPI3_SCK , alt_0_pad_periphs_a_22_pad_mux_sel_ADIO1_SPI3_SCK );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_23_pad_ADIO1_SPI3_CS   (pad_periphs_a_23_pad, alt_0_pad_periphs_a_23_pad_ADIO1_SPI3_CS  , alt_0_pad_periphs_a_23_pad_mux_sel_ADIO1_SPI3_CS  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_24_pad_ADIO1_SPI3_MISO (pad_periphs_a_24_pad, alt_0_pad_periphs_a_24_pad_ADIO1_SPI3_MISO, alt_0_pad_periphs_a_24_pad_mux_sel_ADIO1_SPI3_MISO);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_25_pad_ADIO1_SPI3_MOSI (pad_periphs_a_25_pad, alt_0_pad_periphs_a_25_pad_ADIO1_SPI3_MOSI, alt_0_pad_periphs_a_25_pad_mux_sel_ADIO1_SPI3_MOSI);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_26_pad_GPS2_UART0_TX   (pad_periphs_a_26_pad, alt_0_pad_periphs_a_26_pad_GPS2_UART0_TX  , alt_0_pad_periphs_a_26_pad_mux_sel_GPS2_UART0_TX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_27_pad_GPS2_UART0_RX   (pad_periphs_a_27_pad, alt_0_pad_periphs_a_27_pad_GPS2_UART0_RX  , alt_0_pad_periphs_a_27_pad_mux_sel_GPS2_UART0_RX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_28_pad_GPS2_I2C1_SCL   (pad_periphs_a_28_pad, alt_0_pad_periphs_a_28_pad_GPS2_I2C1_SCL  , alt_0_pad_periphs_a_28_pad_mux_sel_GPS2_I2C1_SCL  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_a_29_pad_GPS2_I2C1_SDA   (pad_periphs_a_29_pad, alt_0_pad_periphs_a_29_pad_GPS2_I2C1_SDA  , alt_0_pad_periphs_a_29_pad_mux_sel_GPS2_I2C1_SDA  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_00_pad_CORE_UART_TX    (pad_periphs_a_00_pad, alt_1_pad_periphs_a_00_pad_CORE_UART_TX   , alt_1_pad_periphs_a_00_pad_mux_sel_CORE_UART_TX   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_01_pad_CORE_UART_RX    (pad_periphs_a_01_pad, alt_1_pad_periphs_a_01_pad_CORE_UART_RX   , alt_1_pad_periphs_a_01_pad_mux_sel_CORE_UART_RX   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_02_pad_LINUX_QSPI_SCK  (pad_periphs_a_02_pad, alt_1_pad_periphs_a_02_pad_LINUX_QSPI_SCK , alt_1_pad_periphs_a_02_pad_mux_sel_LINUX_QSPI_SCK );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_03_pad_LINUX_QSPI_CSN  (pad_periphs_a_03_pad, alt_1_pad_periphs_a_03_pad_LINUX_QSPI_CSN , alt_1_pad_periphs_a_03_pad_mux_sel_LINUX_QSPI_CSN );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_04_pad_LINUX_QSPI_IO0  (pad_periphs_a_04_pad, alt_1_pad_periphs_a_04_pad_LINUX_QSPI_IO0 , alt_1_pad_periphs_a_04_pad_mux_sel_LINUX_QSPI_IO0 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_05_pad_LINUX_QSPI_IO1  (pad_periphs_a_05_pad, alt_1_pad_periphs_a_05_pad_LINUX_QSPI_IO1 , alt_1_pad_periphs_a_05_pad_mux_sel_LINUX_QSPI_IO1 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_06_pad_LINUX_QSPI_IO2  (pad_periphs_a_06_pad, alt_1_pad_periphs_a_06_pad_LINUX_QSPI_IO2 , alt_1_pad_periphs_a_06_pad_mux_sel_LINUX_QSPI_IO2 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_07_pad_LINUX_QSPI_IO3  (pad_periphs_a_07_pad, alt_1_pad_periphs_a_07_pad_LINUX_QSPI_IO3 , alt_1_pad_periphs_a_07_pad_mux_sel_LINUX_QSPI_IO3 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_08_pad_BARO1_I2C0_SCL  (pad_periphs_a_08_pad, alt_1_pad_periphs_a_08_pad_BARO1_I2C0_SCL , alt_1_pad_periphs_a_08_pad_mux_sel_BARO1_I2C0_SCL );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_09_pad_BARO1_I2C0_SDA  (pad_periphs_a_09_pad, alt_1_pad_periphs_a_09_pad_BARO1_I2C0_SDA , alt_1_pad_periphs_a_09_pad_mux_sel_BARO1_I2C0_SDA );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_10_pad_PWM0_CHANNEL0   (pad_periphs_a_10_pad, alt_1_pad_periphs_a_10_pad_PWM0_CHANNEL0  , alt_1_pad_periphs_a_10_pad_mux_sel_PWM0_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_11_pad_PWM1_CHANNEL0   (pad_periphs_a_11_pad, alt_1_pad_periphs_a_11_pad_PWM1_CHANNEL0  , alt_1_pad_periphs_a_11_pad_mux_sel_PWM1_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_12_pad_PWM2_CHANNEL0   (pad_periphs_a_12_pad, alt_1_pad_periphs_a_12_pad_PWM2_CHANNEL0  , alt_1_pad_periphs_a_12_pad_mux_sel_PWM2_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_13_pad_PWM3_CHANNEL0   (pad_periphs_a_13_pad, alt_1_pad_periphs_a_13_pad_PWM3_CHANNEL0  , alt_1_pad_periphs_a_13_pad_mux_sel_PWM3_CHANNEL0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_14_pad_GPS1_UART2_TX   (pad_periphs_a_14_pad, alt_1_pad_periphs_a_14_pad_GPS1_UART2_TX  , alt_1_pad_periphs_a_14_pad_mux_sel_GPS1_UART2_TX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_15_pad_GPS1_UART2_RX   (pad_periphs_a_15_pad, alt_1_pad_periphs_a_15_pad_GPS1_UART2_RX  , alt_1_pad_periphs_a_15_pad_mux_sel_GPS1_UART2_RX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_16_pad_GPS1_I2C5_SCL   (pad_periphs_a_16_pad, alt_1_pad_periphs_a_16_pad_GPS1_I2C5_SCL  , alt_1_pad_periphs_a_16_pad_mux_sel_GPS1_I2C5_SCL  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_17_pad_GPS1_I2C5_SDA   (pad_periphs_a_17_pad, alt_1_pad_periphs_a_17_pad_GPS1_I2C5_SDA  , alt_1_pad_periphs_a_17_pad_mux_sel_GPS1_I2C5_SDA  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_18_pad_CAM0_CPI0_CLK   (pad_periphs_a_18_pad, alt_1_pad_periphs_a_18_pad_CAM0_CPI0_CLK  , alt_1_pad_periphs_a_18_pad_mux_sel_CAM0_CPI0_CLK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_19_pad_CAM0_CPI0_VSYNC (pad_periphs_a_19_pad, alt_1_pad_periphs_a_19_pad_CAM0_CPI0_VSYNC, alt_1_pad_periphs_a_19_pad_mux_sel_CAM0_CPI0_VSYNC);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_20_pad_CAM0_CPI0_HSYNC (pad_periphs_a_20_pad, alt_1_pad_periphs_a_20_pad_CAM0_CPI0_HSYNC, alt_1_pad_periphs_a_20_pad_mux_sel_CAM0_CPI0_HSYNC);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_21_pad_CAM0_CPI0_DAT0  (pad_periphs_a_21_pad, alt_1_pad_periphs_a_21_pad_CAM0_CPI0_DAT0 , alt_1_pad_periphs_a_21_pad_mux_sel_CAM0_CPI0_DAT0 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_22_pad_CAM0_CPI0_DAT1  (pad_periphs_a_22_pad, alt_1_pad_periphs_a_22_pad_CAM0_CPI0_DAT1 , alt_1_pad_periphs_a_22_pad_mux_sel_CAM0_CPI0_DAT1 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_23_pad_CAM0_CPI0_DAT2  (pad_periphs_a_23_pad, alt_1_pad_periphs_a_23_pad_CAM0_CPI0_DAT2 , alt_1_pad_periphs_a_23_pad_mux_sel_CAM0_CPI0_DAT2 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_24_pad_CAM0_CPI0_DAT3  (pad_periphs_a_24_pad, alt_1_pad_periphs_a_24_pad_CAM0_CPI0_DAT3 , alt_1_pad_periphs_a_24_pad_mux_sel_CAM0_CPI0_DAT3 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_25_pad_CAM0_CPI0_DAT4  (pad_periphs_a_25_pad, alt_1_pad_periphs_a_25_pad_CAM0_CPI0_DAT4 , alt_1_pad_periphs_a_25_pad_mux_sel_CAM0_CPI0_DAT4 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_26_pad_CAM0_CPI0_DAT5  (pad_periphs_a_26_pad, alt_1_pad_periphs_a_26_pad_CAM0_CPI0_DAT5 , alt_1_pad_periphs_a_26_pad_mux_sel_CAM0_CPI0_DAT5 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_27_pad_CAM0_CPI0_DAT6  (pad_periphs_a_27_pad, alt_1_pad_periphs_a_27_pad_CAM0_CPI0_DAT6 , alt_1_pad_periphs_a_27_pad_mux_sel_CAM0_CPI0_DAT6 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_28_pad_CAM0_CPI0_DAT7  (pad_periphs_a_28_pad, alt_1_pad_periphs_a_28_pad_CAM0_CPI0_DAT7 , alt_1_pad_periphs_a_28_pad_mux_sel_CAM0_CPI0_DAT7 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_a_29_pad_FLL_SOC         (pad_periphs_a_29_pad, alt_1_pad_periphs_a_29_pad_FLL_SOC        , alt_1_pad_periphs_a_29_pad_mux_sel_FLL_SOC        );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_00_pad_CAN0_TX            (pad_periphs_a_00_pad, alt_2_pad_periphs_a_00_pad_CAN0_TX           , alt_2_pad_periphs_a_00_pad_mux_sel_CAN0_TX           );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_01_pad_CAN0_RX            (pad_periphs_a_01_pad, alt_2_pad_periphs_a_01_pad_CAN0_RX           , alt_2_pad_periphs_a_01_pad_mux_sel_CAN0_RX           );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_02_pad_CAN1_TX            (pad_periphs_a_02_pad, alt_2_pad_periphs_a_02_pad_CAN1_TX           , alt_2_pad_periphs_a_02_pad_mux_sel_CAN1_TX           );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_03_pad_CAN1_RX            (pad_periphs_a_03_pad, alt_2_pad_periphs_a_03_pad_CAN1_RX           , alt_2_pad_periphs_a_03_pad_mux_sel_CAN1_RX           );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_04_pad_FLL_SOC            (pad_periphs_a_04_pad, alt_2_pad_periphs_a_04_pad_FLL_SOC           , alt_2_pad_periphs_a_04_pad_mux_sel_FLL_SOC           );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_05_pad_IO_USART1_TX       (pad_periphs_a_05_pad, alt_2_pad_periphs_a_05_pad_IO_USART1_TX      , alt_2_pad_periphs_a_05_pad_mux_sel_IO_USART1_TX      );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_06_pad_IO_USART1_RX       (pad_periphs_a_06_pad, alt_2_pad_periphs_a_06_pad_IO_USART1_RX      , alt_2_pad_periphs_a_06_pad_mux_sel_IO_USART1_RX      );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_07_pad_IO_USART1_RTS      (pad_periphs_a_07_pad, alt_2_pad_periphs_a_07_pad_IO_USART1_RTS     , alt_2_pad_periphs_a_07_pad_mux_sel_IO_USART1_RTS     );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_08_pad_IO_USART1_CTS      (pad_periphs_a_08_pad, alt_2_pad_periphs_a_08_pad_IO_USART1_CTS     , alt_2_pad_periphs_a_08_pad_mux_sel_IO_USART1_CTS     );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_09_pad_WIRELESS_SDIO1_D0  (pad_periphs_a_09_pad, alt_2_pad_periphs_a_09_pad_WIRELESS_SDIO1_D0 , alt_2_pad_periphs_a_09_pad_mux_sel_WIRELESS_SDIO1_D0 );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_10_pad_WIRELESS_SDIO1_D1  (pad_periphs_a_10_pad, alt_2_pad_periphs_a_10_pad_WIRELESS_SDIO1_D1 , alt_2_pad_periphs_a_10_pad_mux_sel_WIRELESS_SDIO1_D1 );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_11_pad_WIRELESS_SDIO1_D2  (pad_periphs_a_11_pad, alt_2_pad_periphs_a_11_pad_WIRELESS_SDIO1_D2 , alt_2_pad_periphs_a_11_pad_mux_sel_WIRELESS_SDIO1_D2 );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_12_pad_WIRELESS_SDIO1_D3  (pad_periphs_a_12_pad, alt_2_pad_periphs_a_12_pad_WIRELESS_SDIO1_D3 , alt_2_pad_periphs_a_12_pad_mux_sel_WIRELESS_SDIO1_D3 );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_13_pad_WIRELESS_SDIO1_CLK (pad_periphs_a_13_pad, alt_2_pad_periphs_a_13_pad_WIRELESS_SDIO1_CLK, alt_2_pad_periphs_a_13_pad_mux_sel_WIRELESS_SDIO1_CLK);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_14_pad_WIRELESS_SDIO1_CMD (pad_periphs_a_14_pad, alt_2_pad_periphs_a_14_pad_WIRELESS_SDIO1_CMD, alt_2_pad_periphs_a_14_pad_mux_sel_WIRELESS_SDIO1_CMD);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_15_pad_ETH_RST            (pad_periphs_a_15_pad, alt_2_pad_periphs_a_15_pad_ETH_RST           , alt_2_pad_periphs_a_15_pad_mux_sel_ETH_RST           );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_16_pad_ETH_RXCK           (pad_periphs_a_16_pad, alt_2_pad_periphs_a_16_pad_ETH_RXCK          , alt_2_pad_periphs_a_16_pad_mux_sel_ETH_RXCK          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_17_pad_ETH_RXCTL          (pad_periphs_a_17_pad, alt_2_pad_periphs_a_17_pad_ETH_RXCTL         , alt_2_pad_periphs_a_17_pad_mux_sel_ETH_RXCTL         );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_18_pad_ETH_RXD0           (pad_periphs_a_18_pad, alt_2_pad_periphs_a_18_pad_ETH_RXD0          , alt_2_pad_periphs_a_18_pad_mux_sel_ETH_RXD0          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_19_pad_ETH_RXD1           (pad_periphs_a_19_pad, alt_2_pad_periphs_a_19_pad_ETH_RXD1          , alt_2_pad_periphs_a_19_pad_mux_sel_ETH_RXD1          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_20_pad_ETH_RXD2           (pad_periphs_a_20_pad, alt_2_pad_periphs_a_20_pad_ETH_RXD2          , alt_2_pad_periphs_a_20_pad_mux_sel_ETH_RXD2          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_21_pad_ETH_RXD3           (pad_periphs_a_21_pad, alt_2_pad_periphs_a_21_pad_ETH_RXD3          , alt_2_pad_periphs_a_21_pad_mux_sel_ETH_RXD3          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_22_pad_ETH_TXCK           (pad_periphs_a_22_pad, alt_2_pad_periphs_a_22_pad_ETH_TXCK          , alt_2_pad_periphs_a_22_pad_mux_sel_ETH_TXCK          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_23_pad_ETH_TXCTL          (pad_periphs_a_23_pad, alt_2_pad_periphs_a_23_pad_ETH_TXCTL         , alt_2_pad_periphs_a_23_pad_mux_sel_ETH_TXCTL         );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_24_pad_ETH_TXD0           (pad_periphs_a_24_pad, alt_2_pad_periphs_a_24_pad_ETH_TXD0          , alt_2_pad_periphs_a_24_pad_mux_sel_ETH_TXD0          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_25_pad_ETH_TXD1           (pad_periphs_a_25_pad, alt_2_pad_periphs_a_25_pad_ETH_TXD1          , alt_2_pad_periphs_a_25_pad_mux_sel_ETH_TXD1          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_26_pad_ETH_TXD2           (pad_periphs_a_26_pad, alt_2_pad_periphs_a_26_pad_ETH_TXD2          , alt_2_pad_periphs_a_26_pad_mux_sel_ETH_TXD2          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_27_pad_ETH_TXD3           (pad_periphs_a_27_pad, alt_2_pad_periphs_a_27_pad_ETH_TXD3          , alt_2_pad_periphs_a_27_pad_mux_sel_ETH_TXD3          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_28_pad_ETH_MDIO           (pad_periphs_a_28_pad, alt_2_pad_periphs_a_28_pad_ETH_MDIO          , alt_2_pad_periphs_a_28_pad_mux_sel_ETH_MDIO          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_a_29_pad_ETH_MDC            (pad_periphs_a_29_pad, alt_2_pad_periphs_a_29_pad_ETH_MDC           , alt_2_pad_periphs_a_29_pad_mux_sel_ETH_MDC           );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_00_pad_IO_GPIO00 (pad_periphs_a_00_pad, alt_3_pad_periphs_a_00_pad_IO_GPIO00, alt_3_pad_periphs_a_00_pad_mux_sel_IO_GPIO00);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_01_pad_IO_GPIO01 (pad_periphs_a_01_pad, alt_3_pad_periphs_a_01_pad_IO_GPIO01, alt_3_pad_periphs_a_01_pad_mux_sel_IO_GPIO01);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_02_pad_IO_GPIO02 (pad_periphs_a_02_pad, alt_3_pad_periphs_a_02_pad_IO_GPIO02, alt_3_pad_periphs_a_02_pad_mux_sel_IO_GPIO02);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_03_pad_IO_GPIO03 (pad_periphs_a_03_pad, alt_3_pad_periphs_a_03_pad_IO_GPIO03, alt_3_pad_periphs_a_03_pad_mux_sel_IO_GPIO03);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_04_pad_IO_GPIO04 (pad_periphs_a_04_pad, alt_3_pad_periphs_a_04_pad_IO_GPIO04, alt_3_pad_periphs_a_04_pad_mux_sel_IO_GPIO04);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_05_pad_IO_GPIO05 (pad_periphs_a_05_pad, alt_3_pad_periphs_a_05_pad_IO_GPIO05, alt_3_pad_periphs_a_05_pad_mux_sel_IO_GPIO05);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_06_pad_IO_GPIO06 (pad_periphs_a_06_pad, alt_3_pad_periphs_a_06_pad_IO_GPIO06, alt_3_pad_periphs_a_06_pad_mux_sel_IO_GPIO06);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_07_pad_IO_GPIO07 (pad_periphs_a_07_pad, alt_3_pad_periphs_a_07_pad_IO_GPIO07, alt_3_pad_periphs_a_07_pad_mux_sel_IO_GPIO07);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_08_pad_IO_GPIO08 (pad_periphs_a_08_pad, alt_3_pad_periphs_a_08_pad_IO_GPIO08, alt_3_pad_periphs_a_08_pad_mux_sel_IO_GPIO08);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_09_pad_IO_GPIO09 (pad_periphs_a_09_pad, alt_3_pad_periphs_a_09_pad_IO_GPIO09, alt_3_pad_periphs_a_09_pad_mux_sel_IO_GPIO09);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_10_pad_IO_GPIO10 (pad_periphs_a_10_pad, alt_3_pad_periphs_a_10_pad_IO_GPIO10, alt_3_pad_periphs_a_10_pad_mux_sel_IO_GPIO10);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_11_pad_IO_GPIO11 (pad_periphs_a_11_pad, alt_3_pad_periphs_a_11_pad_IO_GPIO11, alt_3_pad_periphs_a_11_pad_mux_sel_IO_GPIO11);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_12_pad_IO_GPIO12 (pad_periphs_a_12_pad, alt_3_pad_periphs_a_12_pad_IO_GPIO12, alt_3_pad_periphs_a_12_pad_mux_sel_IO_GPIO12);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_13_pad_IO_GPIO13 (pad_periphs_a_13_pad, alt_3_pad_periphs_a_13_pad_IO_GPIO13, alt_3_pad_periphs_a_13_pad_mux_sel_IO_GPIO13);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_14_pad_IO_GPIO14 (pad_periphs_a_14_pad, alt_3_pad_periphs_a_14_pad_IO_GPIO14, alt_3_pad_periphs_a_14_pad_mux_sel_IO_GPIO14);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_15_pad_IO_GPIO15 (pad_periphs_a_15_pad, alt_3_pad_periphs_a_15_pad_IO_GPIO15, alt_3_pad_periphs_a_15_pad_mux_sel_IO_GPIO15);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_16_pad_IO_GPIO16 (pad_periphs_a_16_pad, alt_3_pad_periphs_a_16_pad_IO_GPIO16, alt_3_pad_periphs_a_16_pad_mux_sel_IO_GPIO16);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_17_pad_IO_GPIO17 (pad_periphs_a_17_pad, alt_3_pad_periphs_a_17_pad_IO_GPIO17, alt_3_pad_periphs_a_17_pad_mux_sel_IO_GPIO17);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_18_pad_IO_GPIO18 (pad_periphs_a_18_pad, alt_3_pad_periphs_a_18_pad_IO_GPIO18, alt_3_pad_periphs_a_18_pad_mux_sel_IO_GPIO18);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_19_pad_IO_GPIO19 (pad_periphs_a_19_pad, alt_3_pad_periphs_a_19_pad_IO_GPIO19, alt_3_pad_periphs_a_19_pad_mux_sel_IO_GPIO19);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_20_pad_IO_GPIO20 (pad_periphs_a_20_pad, alt_3_pad_periphs_a_20_pad_IO_GPIO20, alt_3_pad_periphs_a_20_pad_mux_sel_IO_GPIO20);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_21_pad_IO_GPIO21 (pad_periphs_a_21_pad, alt_3_pad_periphs_a_21_pad_IO_GPIO21, alt_3_pad_periphs_a_21_pad_mux_sel_IO_GPIO21);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_22_pad_IO_GPIO22 (pad_periphs_a_22_pad, alt_3_pad_periphs_a_22_pad_IO_GPIO22, alt_3_pad_periphs_a_22_pad_mux_sel_IO_GPIO22);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_23_pad_IO_GPIO23 (pad_periphs_a_23_pad, alt_3_pad_periphs_a_23_pad_IO_GPIO23, alt_3_pad_periphs_a_23_pad_mux_sel_IO_GPIO23);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_24_pad_IO_GPIO24 (pad_periphs_a_24_pad, alt_3_pad_periphs_a_24_pad_IO_GPIO24, alt_3_pad_periphs_a_24_pad_mux_sel_IO_GPIO24);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_25_pad_IO_GPIO25 (pad_periphs_a_25_pad, alt_3_pad_periphs_a_25_pad_IO_GPIO25, alt_3_pad_periphs_a_25_pad_mux_sel_IO_GPIO25);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_26_pad_IO_GPIO26 (pad_periphs_a_26_pad, alt_3_pad_periphs_a_26_pad_IO_GPIO26, alt_3_pad_periphs_a_26_pad_mux_sel_IO_GPIO26);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_27_pad_IO_GPIO27 (pad_periphs_a_27_pad, alt_3_pad_periphs_a_27_pad_IO_GPIO27, alt_3_pad_periphs_a_27_pad_mux_sel_IO_GPIO27);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_28_pad_IO_GPIO28 (pad_periphs_a_28_pad, alt_3_pad_periphs_a_28_pad_IO_GPIO28, alt_3_pad_periphs_a_28_pad_mux_sel_IO_GPIO28);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_a_29_pad_IO_GPIO29 (pad_periphs_a_29_pad, alt_3_pad_periphs_a_29_pad_IO_GPIO29, alt_3_pad_periphs_a_29_pad_mux_sel_IO_GPIO29);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_00_pad_TLM1_USART0_TX  (pad_periphs_b_00_pad, alt_0_pad_periphs_b_00_pad_TLM1_USART0_TX , alt_0_pad_periphs_b_00_pad_mux_sel_TLM1_USART0_TX );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_01_pad_TLM1_USART0_RX  (pad_periphs_b_01_pad, alt_0_pad_periphs_b_01_pad_TLM1_USART0_RX , alt_0_pad_periphs_b_01_pad_mux_sel_TLM1_USART0_RX );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_02_pad_TLM1_USART0_RTS (pad_periphs_b_02_pad, alt_0_pad_periphs_b_02_pad_TLM1_USART0_RTS, alt_0_pad_periphs_b_02_pad_mux_sel_TLM1_USART0_RTS);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_03_pad_TLM1_USART0_CTS (pad_periphs_b_03_pad, alt_0_pad_periphs_b_03_pad_TLM1_USART0_CTS, alt_0_pad_periphs_b_03_pad_mux_sel_TLM1_USART0_CTS);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_04_pad_ADC0_SPI4_SCK   (pad_periphs_b_04_pad, alt_0_pad_periphs_b_04_pad_ADC0_SPI4_SCK  , alt_0_pad_periphs_b_04_pad_mux_sel_ADC0_SPI4_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_05_pad_ADC0_SPI4_CS    (pad_periphs_b_05_pad, alt_0_pad_periphs_b_05_pad_ADC0_SPI4_CS   , alt_0_pad_periphs_b_05_pad_mux_sel_ADC0_SPI4_CS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_06_pad_ADC0_SPI4_MISO  (pad_periphs_b_06_pad, alt_0_pad_periphs_b_06_pad_ADC0_SPI4_MISO , alt_0_pad_periphs_b_06_pad_mux_sel_ADC0_SPI4_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_07_pad_ADC0_SPI4_MOSI  (pad_periphs_b_07_pad, alt_0_pad_periphs_b_07_pad_ADC0_SPI4_MOSI , alt_0_pad_periphs_b_07_pad_mux_sel_ADC0_SPI4_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_08_pad_PMIC_I2C2_SCL   (pad_periphs_b_08_pad, alt_0_pad_periphs_b_08_pad_PMIC_I2C2_SCL  , alt_0_pad_periphs_b_08_pad_mux_sel_PMIC_I2C2_SCL  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_09_pad_PMIC_I2C2_SDA   (pad_periphs_b_09_pad, alt_0_pad_periphs_b_09_pad_PMIC_I2C2_SDA  , alt_0_pad_periphs_b_09_pad_mux_sel_PMIC_I2C2_SDA  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_10_pad_EXT1_SPI7_SCK   (pad_periphs_b_10_pad, alt_0_pad_periphs_b_10_pad_EXT1_SPI7_SCK  , alt_0_pad_periphs_b_10_pad_mux_sel_EXT1_SPI7_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_11_pad_EXT1_SPI7_MISO  (pad_periphs_b_11_pad, alt_0_pad_periphs_b_11_pad_EXT1_SPI7_MISO , alt_0_pad_periphs_b_11_pad_mux_sel_EXT1_SPI7_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_12_pad_EXT1_SPI7_MOSI  (pad_periphs_b_12_pad, alt_0_pad_periphs_b_12_pad_EXT1_SPI7_MOSI , alt_0_pad_periphs_b_12_pad_mux_sel_EXT1_SPI7_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_13_pad_EXT1_SPI7_CS0   (pad_periphs_b_13_pad, alt_0_pad_periphs_b_13_pad_EXT1_SPI7_CS0  , alt_0_pad_periphs_b_13_pad_mux_sel_EXT1_SPI7_CS0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_14_pad_EXT1_SPI7_CS1   (pad_periphs_b_14_pad, alt_0_pad_periphs_b_14_pad_EXT1_SPI7_CS1  , alt_0_pad_periphs_b_14_pad_mux_sel_EXT1_SPI7_CS1  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_15_pad_EXT2_I2C4_SCL   (pad_periphs_b_15_pad, alt_0_pad_periphs_b_15_pad_EXT2_I2C4_SCL  , alt_0_pad_periphs_b_15_pad_mux_sel_EXT2_I2C4_SCL  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_16_pad_EXT2_I2C4_SDA   (pad_periphs_b_16_pad, alt_0_pad_periphs_b_16_pad_EXT2_I2C4_SDA  , alt_0_pad_periphs_b_16_pad_mux_sel_EXT2_I2C4_SDA  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_17_pad_EXT3_UART1_TX   (pad_periphs_b_17_pad, alt_0_pad_periphs_b_17_pad_EXT3_UART1_TX  , alt_0_pad_periphs_b_17_pad_mux_sel_EXT3_UART1_TX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_18_pad_EXT3_UART1_RX   (pad_periphs_b_18_pad, alt_0_pad_periphs_b_18_pad_EXT3_UART1_RX  , alt_0_pad_periphs_b_18_pad_mux_sel_EXT3_UART1_RX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_19_pad_IO_USART1_TX    (pad_periphs_b_19_pad, alt_0_pad_periphs_b_19_pad_IO_USART1_TX   , alt_0_pad_periphs_b_19_pad_mux_sel_IO_USART1_TX   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_20_pad_IO_USART1_RX    (pad_periphs_b_20_pad, alt_0_pad_periphs_b_20_pad_IO_USART1_RX   , alt_0_pad_periphs_b_20_pad_mux_sel_IO_USART1_RX   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_21_pad_IO_USART1_RTS   (pad_periphs_b_21_pad, alt_0_pad_periphs_b_21_pad_IO_USART1_RTS  , alt_0_pad_periphs_b_21_pad_mux_sel_IO_USART1_RTS  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_22_pad_IO_USART1_CTS   (pad_periphs_b_22_pad, alt_0_pad_periphs_b_22_pad_IO_USART1_CTS  , alt_0_pad_periphs_b_22_pad_mux_sel_IO_USART1_CTS  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_23_pad_ETH_RST         (pad_periphs_b_23_pad, alt_0_pad_periphs_b_23_pad_ETH_RST        , alt_0_pad_periphs_b_23_pad_mux_sel_ETH_RST        );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_24_pad_ETH_RXCK        (pad_periphs_b_24_pad, alt_0_pad_periphs_b_24_pad_ETH_RXCK       , alt_0_pad_periphs_b_24_pad_mux_sel_ETH_RXCK       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_25_pad_ETH_RXCTL       (pad_periphs_b_25_pad, alt_0_pad_periphs_b_25_pad_ETH_RXCTL      , alt_0_pad_periphs_b_25_pad_mux_sel_ETH_RXCTL      );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_26_pad_ETH_RXD0        (pad_periphs_b_26_pad, alt_0_pad_periphs_b_26_pad_ETH_RXD0       , alt_0_pad_periphs_b_26_pad_mux_sel_ETH_RXD0       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_27_pad_ETH_RXD1        (pad_periphs_b_27_pad, alt_0_pad_periphs_b_27_pad_ETH_RXD1       , alt_0_pad_periphs_b_27_pad_mux_sel_ETH_RXD1       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_28_pad_ETH_RXD2        (pad_periphs_b_28_pad, alt_0_pad_periphs_b_28_pad_ETH_RXD2       , alt_0_pad_periphs_b_28_pad_mux_sel_ETH_RXD2       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_29_pad_ETH_RXD3        (pad_periphs_b_29_pad, alt_0_pad_periphs_b_29_pad_ETH_RXD3       , alt_0_pad_periphs_b_29_pad_mux_sel_ETH_RXD3       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_30_pad_ETH_TXCK        (pad_periphs_b_30_pad, alt_0_pad_periphs_b_30_pad_ETH_TXCK       , alt_0_pad_periphs_b_30_pad_mux_sel_ETH_TXCK       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_31_pad_ETH_TXCTL       (pad_periphs_b_31_pad, alt_0_pad_periphs_b_31_pad_ETH_TXCTL      , alt_0_pad_periphs_b_31_pad_mux_sel_ETH_TXCTL      );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_32_pad_ETH_TXD0        (pad_periphs_b_32_pad, alt_0_pad_periphs_b_32_pad_ETH_TXD0       , alt_0_pad_periphs_b_32_pad_mux_sel_ETH_TXD0       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_33_pad_ETH_TXD1        (pad_periphs_b_33_pad, alt_0_pad_periphs_b_33_pad_ETH_TXD1       , alt_0_pad_periphs_b_33_pad_mux_sel_ETH_TXD1       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_34_pad_ETH_TXD2        (pad_periphs_b_34_pad, alt_0_pad_periphs_b_34_pad_ETH_TXD2       , alt_0_pad_periphs_b_34_pad_mux_sel_ETH_TXD2       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_35_pad_ETH_TXD3        (pad_periphs_b_35_pad, alt_0_pad_periphs_b_35_pad_ETH_TXD3       , alt_0_pad_periphs_b_35_pad_mux_sel_ETH_TXD3       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_36_pad_ETH_MDIO        (pad_periphs_b_36_pad, alt_0_pad_periphs_b_36_pad_ETH_MDIO       , alt_0_pad_periphs_b_36_pad_mux_sel_ETH_MDIO       );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_37_pad_ETH_MDC         (pad_periphs_b_37_pad, alt_0_pad_periphs_b_37_pad_ETH_MDC        , alt_0_pad_periphs_b_37_pad_mux_sel_ETH_MDC        );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_38_pad_USB1_SPI10_SCK  (pad_periphs_b_38_pad, alt_0_pad_periphs_b_38_pad_USB1_SPI10_SCK , alt_0_pad_periphs_b_38_pad_mux_sel_USB1_SPI10_SCK );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_39_pad_USB1_SPI10_CS   (pad_periphs_b_39_pad, alt_0_pad_periphs_b_39_pad_USB1_SPI10_CS  , alt_0_pad_periphs_b_39_pad_mux_sel_USB1_SPI10_CS  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_40_pad_USB1_SPI10_MISO (pad_periphs_b_40_pad, alt_0_pad_periphs_b_40_pad_USB1_SPI10_MISO, alt_0_pad_periphs_b_40_pad_mux_sel_USB1_SPI10_MISO);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_41_pad_USB1_SPI10_MOSI (pad_periphs_b_41_pad, alt_0_pad_periphs_b_41_pad_USB1_SPI10_MOSI, alt_0_pad_periphs_b_41_pad_mux_sel_USB1_SPI10_MOSI);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_42_pad_CAN0_TX         (pad_periphs_b_42_pad, alt_0_pad_periphs_b_42_pad_CAN0_TX        , alt_0_pad_periphs_b_42_pad_mux_sel_CAN0_TX        );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_43_pad_CAN0_RX         (pad_periphs_b_43_pad, alt_0_pad_periphs_b_43_pad_CAN0_RX        , alt_0_pad_periphs_b_43_pad_mux_sel_CAN0_RX        );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_44_pad_PWM0_CHANNEL1   (pad_periphs_b_44_pad, alt_0_pad_periphs_b_44_pad_PWM0_CHANNEL1  , alt_0_pad_periphs_b_44_pad_mux_sel_PWM0_CHANNEL1  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_45_pad_PWM1_CHANNEL1   (pad_periphs_b_45_pad, alt_0_pad_periphs_b_45_pad_PWM1_CHANNEL1  , alt_0_pad_periphs_b_45_pad_mux_sel_PWM1_CHANNEL1  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_46_pad_PWM2_CHANNEL1   (pad_periphs_b_46_pad, alt_0_pad_periphs_b_46_pad_PWM2_CHANNEL1  , alt_0_pad_periphs_b_46_pad_mux_sel_PWM2_CHANNEL1  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_b_47_pad_PWM3_CHANNEL1   (pad_periphs_b_47_pad, alt_0_pad_periphs_b_47_pad_PWM3_CHANNEL1  , alt_0_pad_periphs_b_47_pad_mux_sel_PWM3_CHANNEL1  );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_00_pad_WIRELESS_SDIO1_D0  (pad_periphs_b_00_pad, alt_1_pad_periphs_b_00_pad_WIRELESS_SDIO1_D0 , alt_1_pad_periphs_b_00_pad_mux_sel_WIRELESS_SDIO1_D0 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_01_pad_WIRELESS_SDIO1_D1  (pad_periphs_b_01_pad, alt_1_pad_periphs_b_01_pad_WIRELESS_SDIO1_D1 , alt_1_pad_periphs_b_01_pad_mux_sel_WIRELESS_SDIO1_D1 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_02_pad_WIRELESS_SDIO1_D2  (pad_periphs_b_02_pad, alt_1_pad_periphs_b_02_pad_WIRELESS_SDIO1_D2 , alt_1_pad_periphs_b_02_pad_mux_sel_WIRELESS_SDIO1_D2 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_03_pad_WIRELESS_SDIO1_D3  (pad_periphs_b_03_pad, alt_1_pad_periphs_b_03_pad_WIRELESS_SDIO1_D3 , alt_1_pad_periphs_b_03_pad_mux_sel_WIRELESS_SDIO1_D3 );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_04_pad_WIRELESS_SDIO1_CLK (pad_periphs_b_04_pad, alt_1_pad_periphs_b_04_pad_WIRELESS_SDIO1_CLK, alt_1_pad_periphs_b_04_pad_mux_sel_WIRELESS_SDIO1_CLK);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_05_pad_WIRELESS_SDIO1_CMD (pad_periphs_b_05_pad, alt_1_pad_periphs_b_05_pad_WIRELESS_SDIO1_CMD, alt_1_pad_periphs_b_05_pad_mux_sel_WIRELESS_SDIO1_CMD);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_06_pad_IMU1_SPI0_SCK      (pad_periphs_b_06_pad, alt_1_pad_periphs_b_06_pad_IMU1_SPI0_SCK     , alt_1_pad_periphs_b_06_pad_mux_sel_IMU1_SPI0_SCK     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_07_pad_IMU1_SPI0_CS       (pad_periphs_b_07_pad, alt_1_pad_periphs_b_07_pad_IMU1_SPI0_CS      , alt_1_pad_periphs_b_07_pad_mux_sel_IMU1_SPI0_CS      );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_08_pad_IMU1_SPI0_MISO     (pad_periphs_b_08_pad, alt_1_pad_periphs_b_08_pad_IMU1_SPI0_MISO    , alt_1_pad_periphs_b_08_pad_mux_sel_IMU1_SPI0_MISO    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_09_pad_IMU1_SPI0_MOSI     (pad_periphs_b_09_pad, alt_1_pad_periphs_b_09_pad_IMU1_SPI0_MOSI    , alt_1_pad_periphs_b_09_pad_mux_sel_IMU1_SPI0_MOSI    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_10_pad_TLM1_USART0_TX     (pad_periphs_b_10_pad, alt_1_pad_periphs_b_10_pad_TLM1_USART0_TX    , alt_1_pad_periphs_b_10_pad_mux_sel_TLM1_USART0_TX    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_11_pad_TLM1_USART0_RX     (pad_periphs_b_11_pad, alt_1_pad_periphs_b_11_pad_TLM1_USART0_RX    , alt_1_pad_periphs_b_11_pad_mux_sel_TLM1_USART0_RX    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_12_pad_TLM1_USART0_RTS    (pad_periphs_b_12_pad, alt_1_pad_periphs_b_12_pad_TLM1_USART0_RTS   , alt_1_pad_periphs_b_12_pad_mux_sel_TLM1_USART0_RTS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_13_pad_TLM1_USART0_CTS    (pad_periphs_b_13_pad, alt_1_pad_periphs_b_13_pad_TLM1_USART0_CTS   , alt_1_pad_periphs_b_13_pad_mux_sel_TLM1_USART0_CTS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_14_pad_ADC0_SPI4_SCK      (pad_periphs_b_14_pad, alt_1_pad_periphs_b_14_pad_ADC0_SPI4_SCK     , alt_1_pad_periphs_b_14_pad_mux_sel_ADC0_SPI4_SCK     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_15_pad_ADC0_SPI4_CS       (pad_periphs_b_15_pad, alt_1_pad_periphs_b_15_pad_ADC0_SPI4_CS      , alt_1_pad_periphs_b_15_pad_mux_sel_ADC0_SPI4_CS      );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_16_pad_ADC0_SPI4_MISO     (pad_periphs_b_16_pad, alt_1_pad_periphs_b_16_pad_ADC0_SPI4_MISO    , alt_1_pad_periphs_b_16_pad_mux_sel_ADC0_SPI4_MISO    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_17_pad_ADC0_SPI4_MOSI     (pad_periphs_b_17_pad, alt_1_pad_periphs_b_17_pad_ADC0_SPI4_MOSI    , alt_1_pad_periphs_b_17_pad_mux_sel_ADC0_SPI4_MOSI    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_18_pad_FRAM_SPI2_SCK      (pad_periphs_b_18_pad, alt_1_pad_periphs_b_18_pad_FRAM_SPI2_SCK     , alt_1_pad_periphs_b_18_pad_mux_sel_FRAM_SPI2_SCK     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_19_pad_FRAM_SPI2_CS       (pad_periphs_b_19_pad, alt_1_pad_periphs_b_19_pad_FRAM_SPI2_CS      , alt_1_pad_periphs_b_19_pad_mux_sel_FRAM_SPI2_CS      );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_20_pad_FRAM_SPI2_MISO     (pad_periphs_b_20_pad, alt_1_pad_periphs_b_20_pad_FRAM_SPI2_MISO    , alt_1_pad_periphs_b_20_pad_mux_sel_FRAM_SPI2_MISO    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_21_pad_FRAM_SPI2_MOSI     (pad_periphs_b_21_pad, alt_1_pad_periphs_b_21_pad_FRAM_SPI2_MOSI    , alt_1_pad_periphs_b_21_pad_mux_sel_FRAM_SPI2_MOSI    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_22_pad_ADIO1_SPI3_SCK     (pad_periphs_b_22_pad, alt_1_pad_periphs_b_22_pad_ADIO1_SPI3_SCK    , alt_1_pad_periphs_b_22_pad_mux_sel_ADIO1_SPI3_SCK    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_23_pad_ADIO1_SPI3_CS      (pad_periphs_b_23_pad, alt_1_pad_periphs_b_23_pad_ADIO1_SPI3_CS     , alt_1_pad_periphs_b_23_pad_mux_sel_ADIO1_SPI3_CS     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_24_pad_ADIO1_SPI3_MISO    (pad_periphs_b_24_pad, alt_1_pad_periphs_b_24_pad_ADIO1_SPI3_MISO   , alt_1_pad_periphs_b_24_pad_mux_sel_ADIO1_SPI3_MISO   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_25_pad_ADIO1_SPI3_MOSI    (pad_periphs_b_25_pad, alt_1_pad_periphs_b_25_pad_ADIO1_SPI3_MOSI   , alt_1_pad_periphs_b_25_pad_mux_sel_ADIO1_SPI3_MOSI   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_26_pad_MAG_SPI1_SCK       (pad_periphs_b_26_pad, alt_1_pad_periphs_b_26_pad_MAG_SPI1_SCK      , alt_1_pad_periphs_b_26_pad_mux_sel_MAG_SPI1_SCK      );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_27_pad_MAG_SPI1_CS        (pad_periphs_b_27_pad, alt_1_pad_periphs_b_27_pad_MAG_SPI1_CS       , alt_1_pad_periphs_b_27_pad_mux_sel_MAG_SPI1_CS       );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_28_pad_MAG_SPI1_MISO      (pad_periphs_b_28_pad, alt_1_pad_periphs_b_28_pad_MAG_SPI1_MISO     , alt_1_pad_periphs_b_28_pad_mux_sel_MAG_SPI1_MISO     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_29_pad_MAG_SPI1_MOSI      (pad_periphs_b_29_pad, alt_1_pad_periphs_b_29_pad_MAG_SPI1_MOSI     , alt_1_pad_periphs_b_29_pad_mux_sel_MAG_SPI1_MOSI     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_30_pad_CAN1_TX            (pad_periphs_b_30_pad, alt_1_pad_periphs_b_30_pad_CAN1_TX           , alt_1_pad_periphs_b_30_pad_mux_sel_CAN1_TX           );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_31_pad_CAN1_RX            (pad_periphs_b_31_pad, alt_1_pad_periphs_b_31_pad_CAN1_RX           , alt_1_pad_periphs_b_31_pad_mux_sel_CAN1_RX           );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_32_pad_PWM0_CHANNEL1      (pad_periphs_b_32_pad, alt_1_pad_periphs_b_32_pad_PWM0_CHANNEL1     , alt_1_pad_periphs_b_32_pad_mux_sel_PWM0_CHANNEL1     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_33_pad_PWM1_CHANNEL1      (pad_periphs_b_33_pad, alt_1_pad_periphs_b_33_pad_PWM1_CHANNEL1     , alt_1_pad_periphs_b_33_pad_mux_sel_PWM1_CHANNEL1     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_34_pad_PWM2_CHANNEL1      (pad_periphs_b_34_pad, alt_1_pad_periphs_b_34_pad_PWM2_CHANNEL1     , alt_1_pad_periphs_b_34_pad_mux_sel_PWM2_CHANNEL1     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_35_pad_PWM3_CHANNEL1      (pad_periphs_b_35_pad, alt_1_pad_periphs_b_35_pad_PWM3_CHANNEL1     , alt_1_pad_periphs_b_35_pad_mux_sel_PWM3_CHANNEL1     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_36_pad_CAM1_CPI1_CLK      (pad_periphs_b_36_pad, alt_1_pad_periphs_b_36_pad_CAM1_CPI1_CLK     , alt_1_pad_periphs_b_36_pad_mux_sel_CAM1_CPI1_CLK     );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_37_pad_CAM1_CPI1_VSYNC    (pad_periphs_b_37_pad, alt_1_pad_periphs_b_37_pad_CAM1_CPI1_VSYNC   , alt_1_pad_periphs_b_37_pad_mux_sel_CAM1_CPI1_VSYNC   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_38_pad_CAM1_CPI1_HSYNC    (pad_periphs_b_38_pad, alt_1_pad_periphs_b_38_pad_CAM1_CPI1_HSYNC   , alt_1_pad_periphs_b_38_pad_mux_sel_CAM1_CPI1_HSYNC   );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_39_pad_CAM1_CPI1_DAT0     (pad_periphs_b_39_pad, alt_1_pad_periphs_b_39_pad_CAM1_CPI1_DAT0    , alt_1_pad_periphs_b_39_pad_mux_sel_CAM1_CPI1_DAT0    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_40_pad_CAM1_CPI1_DAT1     (pad_periphs_b_40_pad, alt_1_pad_periphs_b_40_pad_CAM1_CPI1_DAT1    , alt_1_pad_periphs_b_40_pad_mux_sel_CAM1_CPI1_DAT1    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_41_pad_CAM1_CPI1_DAT2     (pad_periphs_b_41_pad, alt_1_pad_periphs_b_41_pad_CAM1_CPI1_DAT2    , alt_1_pad_periphs_b_41_pad_mux_sel_CAM1_CPI1_DAT2    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_42_pad_CAM1_CPI1_DAT3     (pad_periphs_b_42_pad, alt_1_pad_periphs_b_42_pad_CAM1_CPI1_DAT3    , alt_1_pad_periphs_b_42_pad_mux_sel_CAM1_CPI1_DAT3    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_43_pad_CAM1_CPI1_DAT4     (pad_periphs_b_43_pad, alt_1_pad_periphs_b_43_pad_CAM1_CPI1_DAT4    , alt_1_pad_periphs_b_43_pad_mux_sel_CAM1_CPI1_DAT4    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_44_pad_CAM1_CPI1_DAT5     (pad_periphs_b_44_pad, alt_1_pad_periphs_b_44_pad_CAM1_CPI1_DAT5    , alt_1_pad_periphs_b_44_pad_mux_sel_CAM1_CPI1_DAT5    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_45_pad_CAM1_CPI1_DAT6     (pad_periphs_b_45_pad, alt_1_pad_periphs_b_45_pad_CAM1_CPI1_DAT6    , alt_1_pad_periphs_b_45_pad_mux_sel_CAM1_CPI1_DAT6    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_46_pad_CAM1_CPI1_DAT7     (pad_periphs_b_46_pad, alt_1_pad_periphs_b_46_pad_CAM1_CPI1_DAT7    , alt_1_pad_periphs_b_46_pad_mux_sel_CAM1_CPI1_DAT7    );
+        // xsim: tran primitive unsupported -- tranif1 alt_1_b_47_pad_FLL_CVA6           (pad_periphs_b_47_pad, alt_1_pad_periphs_b_47_pad_FLL_CVA6          , alt_1_pad_periphs_b_47_pad_mux_sel_FLL_CVA6          );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_00_pad_IO_GPIO00 (pad_periphs_b_00_pad, alt_2_pad_periphs_b_00_pad_IO_GPIO00, alt_2_pad_periphs_b_00_pad_mux_sel_IO_GPIO00);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_01_pad_IO_GPIO01 (pad_periphs_b_01_pad, alt_2_pad_periphs_b_01_pad_IO_GPIO01, alt_2_pad_periphs_b_01_pad_mux_sel_IO_GPIO01);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_02_pad_IO_GPIO02 (pad_periphs_b_02_pad, alt_2_pad_periphs_b_02_pad_IO_GPIO02, alt_2_pad_periphs_b_02_pad_mux_sel_IO_GPIO02);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_03_pad_IO_GPIO03 (pad_periphs_b_03_pad, alt_2_pad_periphs_b_03_pad_IO_GPIO03, alt_2_pad_periphs_b_03_pad_mux_sel_IO_GPIO03);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_04_pad_IO_GPIO04 (pad_periphs_b_04_pad, alt_2_pad_periphs_b_04_pad_IO_GPIO04, alt_2_pad_periphs_b_04_pad_mux_sel_IO_GPIO04);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_05_pad_IO_GPIO05 (pad_periphs_b_05_pad, alt_2_pad_periphs_b_05_pad_IO_GPIO05, alt_2_pad_periphs_b_05_pad_mux_sel_IO_GPIO05);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_06_pad_IO_GPIO06 (pad_periphs_b_06_pad, alt_2_pad_periphs_b_06_pad_IO_GPIO06, alt_2_pad_periphs_b_06_pad_mux_sel_IO_GPIO06);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_07_pad_IO_GPIO07 (pad_periphs_b_07_pad, alt_2_pad_periphs_b_07_pad_IO_GPIO07, alt_2_pad_periphs_b_07_pad_mux_sel_IO_GPIO07);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_08_pad_IO_GPIO08 (pad_periphs_b_08_pad, alt_2_pad_periphs_b_08_pad_IO_GPIO08, alt_2_pad_periphs_b_08_pad_mux_sel_IO_GPIO08);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_09_pad_IO_GPIO09 (pad_periphs_b_09_pad, alt_2_pad_periphs_b_09_pad_IO_GPIO09, alt_2_pad_periphs_b_09_pad_mux_sel_IO_GPIO09);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_10_pad_IO_GPIO10 (pad_periphs_b_10_pad, alt_2_pad_periphs_b_10_pad_IO_GPIO10, alt_2_pad_periphs_b_10_pad_mux_sel_IO_GPIO10);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_11_pad_IO_GPIO11 (pad_periphs_b_11_pad, alt_2_pad_periphs_b_11_pad_IO_GPIO11, alt_2_pad_periphs_b_11_pad_mux_sel_IO_GPIO11);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_12_pad_IO_GPIO12 (pad_periphs_b_12_pad, alt_2_pad_periphs_b_12_pad_IO_GPIO12, alt_2_pad_periphs_b_12_pad_mux_sel_IO_GPIO12);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_13_pad_IO_GPIO13 (pad_periphs_b_13_pad, alt_2_pad_periphs_b_13_pad_IO_GPIO13, alt_2_pad_periphs_b_13_pad_mux_sel_IO_GPIO13);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_14_pad_IO_GPIO14 (pad_periphs_b_14_pad, alt_2_pad_periphs_b_14_pad_IO_GPIO14, alt_2_pad_periphs_b_14_pad_mux_sel_IO_GPIO14);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_15_pad_IO_GPIO15 (pad_periphs_b_15_pad, alt_2_pad_periphs_b_15_pad_IO_GPIO15, alt_2_pad_periphs_b_15_pad_mux_sel_IO_GPIO15);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_16_pad_IO_GPIO16 (pad_periphs_b_16_pad, alt_2_pad_periphs_b_16_pad_IO_GPIO16, alt_2_pad_periphs_b_16_pad_mux_sel_IO_GPIO16);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_17_pad_IO_GPIO17 (pad_periphs_b_17_pad, alt_2_pad_periphs_b_17_pad_IO_GPIO17, alt_2_pad_periphs_b_17_pad_mux_sel_IO_GPIO17);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_18_pad_IO_GPIO18 (pad_periphs_b_18_pad, alt_2_pad_periphs_b_18_pad_IO_GPIO18, alt_2_pad_periphs_b_18_pad_mux_sel_IO_GPIO18);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_19_pad_IO_GPIO19 (pad_periphs_b_19_pad, alt_2_pad_periphs_b_19_pad_IO_GPIO19, alt_2_pad_periphs_b_19_pad_mux_sel_IO_GPIO19);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_20_pad_IO_GPIO20 (pad_periphs_b_20_pad, alt_2_pad_periphs_b_20_pad_IO_GPIO20, alt_2_pad_periphs_b_20_pad_mux_sel_IO_GPIO20);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_21_pad_IO_GPIO21 (pad_periphs_b_21_pad, alt_2_pad_periphs_b_21_pad_IO_GPIO21, alt_2_pad_periphs_b_21_pad_mux_sel_IO_GPIO21);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_22_pad_IO_GPIO22 (pad_periphs_b_22_pad, alt_2_pad_periphs_b_22_pad_IO_GPIO22, alt_2_pad_periphs_b_22_pad_mux_sel_IO_GPIO22);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_23_pad_IO_GPIO23 (pad_periphs_b_23_pad, alt_2_pad_periphs_b_23_pad_IO_GPIO23, alt_2_pad_periphs_b_23_pad_mux_sel_IO_GPIO23);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_24_pad_IO_GPIO24 (pad_periphs_b_24_pad, alt_2_pad_periphs_b_24_pad_IO_GPIO24, alt_2_pad_periphs_b_24_pad_mux_sel_IO_GPIO24);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_25_pad_IO_GPIO25 (pad_periphs_b_25_pad, alt_2_pad_periphs_b_25_pad_IO_GPIO25, alt_2_pad_periphs_b_25_pad_mux_sel_IO_GPIO25);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_26_pad_IO_GPIO26 (pad_periphs_b_26_pad, alt_2_pad_periphs_b_26_pad_IO_GPIO26, alt_2_pad_periphs_b_26_pad_mux_sel_IO_GPIO26);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_27_pad_IO_GPIO27 (pad_periphs_b_27_pad, alt_2_pad_periphs_b_27_pad_IO_GPIO27, alt_2_pad_periphs_b_27_pad_mux_sel_IO_GPIO27);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_28_pad_IO_GPIO28 (pad_periphs_b_28_pad, alt_2_pad_periphs_b_28_pad_IO_GPIO28, alt_2_pad_periphs_b_28_pad_mux_sel_IO_GPIO28);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_29_pad_IO_GPIO29 (pad_periphs_b_29_pad, alt_2_pad_periphs_b_29_pad_IO_GPIO29, alt_2_pad_periphs_b_29_pad_mux_sel_IO_GPIO29);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_30_pad_IO_GPIO30 (pad_periphs_b_30_pad, alt_2_pad_periphs_b_30_pad_IO_GPIO30, alt_2_pad_periphs_b_30_pad_mux_sel_IO_GPIO30);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_31_pad_IO_GPIO31 (pad_periphs_b_31_pad, alt_2_pad_periphs_b_31_pad_IO_GPIO31, alt_2_pad_periphs_b_31_pad_mux_sel_IO_GPIO31);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_32_pad_IO_GPIO32 (pad_periphs_b_32_pad, alt_2_pad_periphs_b_32_pad_IO_GPIO32, alt_2_pad_periphs_b_32_pad_mux_sel_IO_GPIO32);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_33_pad_IO_GPIO33 (pad_periphs_b_33_pad, alt_2_pad_periphs_b_33_pad_IO_GPIO33, alt_2_pad_periphs_b_33_pad_mux_sel_IO_GPIO33);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_34_pad_IO_GPIO34 (pad_periphs_b_34_pad, alt_2_pad_periphs_b_34_pad_IO_GPIO34, alt_2_pad_periphs_b_34_pad_mux_sel_IO_GPIO34);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_35_pad_IO_GPIO35 (pad_periphs_b_35_pad, alt_2_pad_periphs_b_35_pad_IO_GPIO35, alt_2_pad_periphs_b_35_pad_mux_sel_IO_GPIO35);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_36_pad_IO_GPIO36 (pad_periphs_b_36_pad, alt_2_pad_periphs_b_36_pad_IO_GPIO36, alt_2_pad_periphs_b_36_pad_mux_sel_IO_GPIO36);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_37_pad_IO_GPIO37 (pad_periphs_b_37_pad, alt_2_pad_periphs_b_37_pad_IO_GPIO37, alt_2_pad_periphs_b_37_pad_mux_sel_IO_GPIO37);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_38_pad_IO_GPIO38 (pad_periphs_b_38_pad, alt_2_pad_periphs_b_38_pad_IO_GPIO38, alt_2_pad_periphs_b_38_pad_mux_sel_IO_GPIO38);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_39_pad_IO_GPIO39 (pad_periphs_b_39_pad, alt_2_pad_periphs_b_39_pad_IO_GPIO39, alt_2_pad_periphs_b_39_pad_mux_sel_IO_GPIO39);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_40_pad_IO_GPIO40 (pad_periphs_b_40_pad, alt_2_pad_periphs_b_40_pad_IO_GPIO40, alt_2_pad_periphs_b_40_pad_mux_sel_IO_GPIO40);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_41_pad_IO_GPIO41 (pad_periphs_b_41_pad, alt_2_pad_periphs_b_41_pad_IO_GPIO41, alt_2_pad_periphs_b_41_pad_mux_sel_IO_GPIO41);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_42_pad_IO_GPIO42 (pad_periphs_b_42_pad, alt_2_pad_periphs_b_42_pad_IO_GPIO42, alt_2_pad_periphs_b_42_pad_mux_sel_IO_GPIO42);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_43_pad_IO_GPIO43 (pad_periphs_b_43_pad, alt_2_pad_periphs_b_43_pad_IO_GPIO43, alt_2_pad_periphs_b_43_pad_mux_sel_IO_GPIO43);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_44_pad_IO_GPIO44 (pad_periphs_b_44_pad, alt_2_pad_periphs_b_44_pad_IO_GPIO44, alt_2_pad_periphs_b_44_pad_mux_sel_IO_GPIO44);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_45_pad_IO_GPIO45 (pad_periphs_b_45_pad, alt_2_pad_periphs_b_45_pad_IO_GPIO45, alt_2_pad_periphs_b_45_pad_mux_sel_IO_GPIO45);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_46_pad_IO_GPIO46 (pad_periphs_b_46_pad, alt_2_pad_periphs_b_46_pad_IO_GPIO46, alt_2_pad_periphs_b_46_pad_mux_sel_IO_GPIO46);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_b_47_pad_IO_GPIO47 (pad_periphs_b_47_pad, alt_2_pad_periphs_b_47_pad_IO_GPIO47, alt_2_pad_periphs_b_47_pad_mux_sel_IO_GPIO47);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_00_pad_GPS2_UART0_TX   (pad_periphs_b_00_pad, alt_3_pad_periphs_b_00_pad_GPS2_UART0_TX  , alt_3_pad_periphs_b_00_pad_mux_sel_GPS2_UART0_TX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_01_pad_GPS2_UART0_RX   (pad_periphs_b_01_pad, alt_3_pad_periphs_b_01_pad_GPS2_UART0_RX  , alt_3_pad_periphs_b_01_pad_mux_sel_GPS2_UART0_RX  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_02_pad_GPS2_I2C1_SCL   (pad_periphs_b_02_pad, alt_3_pad_periphs_b_02_pad_GPS2_I2C1_SCL  , alt_3_pad_periphs_b_02_pad_mux_sel_GPS2_I2C1_SCL  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_03_pad_GPS2_I2C1_SDA   (pad_periphs_b_03_pad, alt_3_pad_periphs_b_03_pad_GPS2_I2C1_SDA  , alt_3_pad_periphs_b_03_pad_mux_sel_GPS2_I2C1_SDA  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_04_pad_IMU2_SPI5_SCK   (pad_periphs_b_04_pad, alt_3_pad_periphs_b_04_pad_IMU2_SPI5_SCK  , alt_3_pad_periphs_b_04_pad_mux_sel_IMU2_SPI5_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_05_pad_IMU2_SPI5_CS    (pad_periphs_b_05_pad, alt_3_pad_periphs_b_05_pad_IMU2_SPI5_CS   , alt_3_pad_periphs_b_05_pad_mux_sel_IMU2_SPI5_CS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_06_pad_IMU2_SPI5_MISO  (pad_periphs_b_06_pad, alt_3_pad_periphs_b_06_pad_IMU2_SPI5_MISO , alt_3_pad_periphs_b_06_pad_mux_sel_IMU2_SPI5_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_07_pad_IMU2_SPI5_MOSI  (pad_periphs_b_07_pad, alt_3_pad_periphs_b_07_pad_IMU2_SPI5_MOSI , alt_3_pad_periphs_b_07_pad_mux_sel_IMU2_SPI5_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_08_pad_BARO2_I2C3_SCL  (pad_periphs_b_08_pad, alt_3_pad_periphs_b_08_pad_BARO2_I2C3_SCL , alt_3_pad_periphs_b_08_pad_mux_sel_BARO2_I2C3_SCL );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_09_pad_BARO2_I2C3_SDA  (pad_periphs_b_09_pad, alt_3_pad_periphs_b_09_pad_BARO2_I2C3_SDA , alt_3_pad_periphs_b_09_pad_mux_sel_BARO2_I2C3_SDA );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_10_pad_IMU3_SPI6_SCK   (pad_periphs_b_10_pad, alt_3_pad_periphs_b_10_pad_IMU3_SPI6_SCK  , alt_3_pad_periphs_b_10_pad_mux_sel_IMU3_SPI6_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_11_pad_IMU3_SPI6_CS    (pad_periphs_b_11_pad, alt_3_pad_periphs_b_11_pad_IMU3_SPI6_CS   , alt_3_pad_periphs_b_11_pad_mux_sel_IMU3_SPI6_CS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_12_pad_IMU3_SPI6_MISO  (pad_periphs_b_12_pad, alt_3_pad_periphs_b_12_pad_IMU3_SPI6_MISO , alt_3_pad_periphs_b_12_pad_mux_sel_IMU3_SPI6_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_13_pad_IMU3_SPI6_MOSI  (pad_periphs_b_13_pad, alt_3_pad_periphs_b_13_pad_IMU3_SPI6_MOSI , alt_3_pad_periphs_b_13_pad_mux_sel_IMU3_SPI6_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_14_pad_TLM2_USART2_TX  (pad_periphs_b_14_pad, alt_3_pad_periphs_b_14_pad_TLM2_USART2_TX , alt_3_pad_periphs_b_14_pad_mux_sel_TLM2_USART2_TX );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_15_pad_TLM2_USART2_RX  (pad_periphs_b_15_pad, alt_3_pad_periphs_b_15_pad_TLM2_USART2_RX , alt_3_pad_periphs_b_15_pad_mux_sel_TLM2_USART2_RX );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_16_pad_TLM2_USART2_RTS (pad_periphs_b_16_pad, alt_3_pad_periphs_b_16_pad_TLM2_USART2_RTS, alt_3_pad_periphs_b_16_pad_mux_sel_TLM2_USART2_RTS);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_17_pad_TLM2_USART2_CTS (pad_periphs_b_17_pad, alt_3_pad_periphs_b_17_pad_TLM2_USART2_CTS, alt_3_pad_periphs_b_17_pad_mux_sel_TLM2_USART2_CTS);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_18_pad_TLM3_USART3_TX  (pad_periphs_b_18_pad, alt_3_pad_periphs_b_18_pad_TLM3_USART3_TX , alt_3_pad_periphs_b_18_pad_mux_sel_TLM3_USART3_TX );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_19_pad_TLM3_USART3_RX  (pad_periphs_b_19_pad, alt_3_pad_periphs_b_19_pad_TLM3_USART3_RX , alt_3_pad_periphs_b_19_pad_mux_sel_TLM3_USART3_RX );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_20_pad_TLM3_USART3_RTS (pad_periphs_b_20_pad, alt_3_pad_periphs_b_20_pad_TLM3_USART3_RTS, alt_3_pad_periphs_b_20_pad_mux_sel_TLM3_USART3_RTS);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_21_pad_TLM3_USART3_CTS (pad_periphs_b_21_pad, alt_3_pad_periphs_b_21_pad_TLM3_USART3_CTS, alt_3_pad_periphs_b_21_pad_mux_sel_TLM3_USART3_CTS);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_22_pad_CAN0_SPI8_SCK   (pad_periphs_b_22_pad, alt_3_pad_periphs_b_22_pad_CAN0_SPI8_SCK  , alt_3_pad_periphs_b_22_pad_mux_sel_CAN0_SPI8_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_23_pad_CAN0_SPI8_CS    (pad_periphs_b_23_pad, alt_3_pad_periphs_b_23_pad_CAN0_SPI8_CS   , alt_3_pad_periphs_b_23_pad_mux_sel_CAN0_SPI8_CS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_24_pad_CAN0_SPI8_MISO  (pad_periphs_b_24_pad, alt_3_pad_periphs_b_24_pad_CAN0_SPI8_MISO , alt_3_pad_periphs_b_24_pad_mux_sel_CAN0_SPI8_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_25_pad_CAN0_SPI8_MOSI  (pad_periphs_b_25_pad, alt_3_pad_periphs_b_25_pad_CAN0_SPI8_MOSI , alt_3_pad_periphs_b_25_pad_mux_sel_CAN0_SPI8_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_26_pad_CAN1_SPI9_SCK   (pad_periphs_b_26_pad, alt_3_pad_periphs_b_26_pad_CAN1_SPI9_SCK  , alt_3_pad_periphs_b_26_pad_mux_sel_CAN1_SPI9_SCK  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_27_pad_CAN1_SPI9_CS    (pad_periphs_b_27_pad, alt_3_pad_periphs_b_27_pad_CAN1_SPI9_CS   , alt_3_pad_periphs_b_27_pad_mux_sel_CAN1_SPI9_CS   );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_28_pad_CAN1_SPI9_MISO  (pad_periphs_b_28_pad, alt_3_pad_periphs_b_28_pad_CAN1_SPI9_MISO , alt_3_pad_periphs_b_28_pad_mux_sel_CAN1_SPI9_MISO );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_29_pad_CAN1_SPI9_MOSI  (pad_periphs_b_29_pad, alt_3_pad_periphs_b_29_pad_CAN1_SPI9_MOSI , alt_3_pad_periphs_b_29_pad_mux_sel_CAN1_SPI9_MOSI );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_30_pad_USB1_SPI10_SCK  (pad_periphs_b_30_pad, alt_3_pad_periphs_b_30_pad_USB1_SPI10_SCK , alt_3_pad_periphs_b_30_pad_mux_sel_USB1_SPI10_SCK );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_31_pad_USB1_SPI10_CS   (pad_periphs_b_31_pad, alt_3_pad_periphs_b_31_pad_USB1_SPI10_CS  , alt_3_pad_periphs_b_31_pad_mux_sel_USB1_SPI10_CS  );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_32_pad_USB1_SPI10_MISO (pad_periphs_b_32_pad, alt_3_pad_periphs_b_32_pad_USB1_SPI10_MISO, alt_3_pad_periphs_b_32_pad_mux_sel_USB1_SPI10_MISO);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_33_pad_USB1_SPI10_MOSI (pad_periphs_b_33_pad, alt_3_pad_periphs_b_33_pad_USB1_SPI10_MOSI, alt_3_pad_periphs_b_33_pad_mux_sel_USB1_SPI10_MOSI);
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_34_pad_IO_GPIO34       (pad_periphs_b_34_pad, alt_3_pad_periphs_b_34_pad_IO_GPIO34      , alt_3_pad_periphs_b_34_pad_mux_sel_IO_GPIO34      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_35_pad_IO_GPIO35       (pad_periphs_b_35_pad, alt_3_pad_periphs_b_35_pad_IO_GPIO35      , alt_3_pad_periphs_b_35_pad_mux_sel_IO_GPIO35      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_36_pad_IO_GPIO36       (pad_periphs_b_36_pad, alt_3_pad_periphs_b_36_pad_IO_GPIO36      , alt_3_pad_periphs_b_36_pad_mux_sel_IO_GPIO36      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_37_pad_IO_GPIO37       (pad_periphs_b_37_pad, alt_3_pad_periphs_b_37_pad_IO_GPIO37      , alt_3_pad_periphs_b_37_pad_mux_sel_IO_GPIO37      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_38_pad_IO_GPIO38       (pad_periphs_b_38_pad, alt_3_pad_periphs_b_38_pad_IO_GPIO38      , alt_3_pad_periphs_b_38_pad_mux_sel_IO_GPIO38      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_39_pad_IO_GPIO39       (pad_periphs_b_39_pad, alt_3_pad_periphs_b_39_pad_IO_GPIO39      , alt_3_pad_periphs_b_39_pad_mux_sel_IO_GPIO39      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_40_pad_IO_GPIO40       (pad_periphs_b_40_pad, alt_3_pad_periphs_b_40_pad_IO_GPIO40      , alt_3_pad_periphs_b_40_pad_mux_sel_IO_GPIO40      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_41_pad_IO_GPIO41       (pad_periphs_b_41_pad, alt_3_pad_periphs_b_41_pad_IO_GPIO41      , alt_3_pad_periphs_b_41_pad_mux_sel_IO_GPIO41      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_42_pad_IO_GPIO42       (pad_periphs_b_42_pad, alt_3_pad_periphs_b_42_pad_IO_GPIO42      , alt_3_pad_periphs_b_42_pad_mux_sel_IO_GPIO42      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_43_pad_IO_GPIO43       (pad_periphs_b_43_pad, alt_3_pad_periphs_b_43_pad_IO_GPIO43      , alt_3_pad_periphs_b_43_pad_mux_sel_IO_GPIO43      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_44_pad_IO_GPIO44       (pad_periphs_b_44_pad, alt_3_pad_periphs_b_44_pad_IO_GPIO44      , alt_3_pad_periphs_b_44_pad_mux_sel_IO_GPIO44      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_45_pad_IO_GPIO45       (pad_periphs_b_45_pad, alt_3_pad_periphs_b_45_pad_IO_GPIO45      , alt_3_pad_periphs_b_45_pad_mux_sel_IO_GPIO45      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_46_pad_IO_GPIO46       (pad_periphs_b_46_pad, alt_3_pad_periphs_b_46_pad_IO_GPIO46      , alt_3_pad_periphs_b_46_pad_mux_sel_IO_GPIO46      );
+        // xsim: tran primitive unsupported -- tranif1 alt_3_b_47_pad_IO_GPIO47       (pad_periphs_b_47_pad, alt_3_pad_periphs_b_47_pad_IO_GPIO47      , alt_3_pad_periphs_b_47_pad_mux_sel_IO_GPIO47      );
       `else // !`ifndef SIMPLE_PADFRAME
-        tranif1 alt_0_simple_pad_00_spi0_cs   (pad_periphs_a_00_pad, alt_0_simple_pad_periphs_00_spi0_cs  , alt_0_simple_pad_periphs_00_mux_sel_spi0_cs  );
-        tranif1 alt_0_simple_pad_01_spi0_ck   (pad_periphs_a_01_pad, alt_0_simple_pad_periphs_01_spi0_ck  , alt_0_simple_pad_periphs_01_mux_sel_spi0_ck  );
-        tranif1 alt_0_simple_pad_02_spi0_so   (pad_periphs_a_02_pad, alt_0_simple_pad_periphs_02_spi0_so  , alt_0_simple_pad_periphs_02_mux_sel_spi0_so  );
-        tranif1 alt_0_simple_pad_03_spi0_si   (pad_periphs_a_03_pad, alt_0_simple_pad_periphs_03_spi0_si  , alt_0_simple_pad_periphs_03_mux_sel_spi0_si  );
-        tranif1 alt_0_simple_pad_04_i2c0_scl  (pad_periphs_a_04_pad, alt_0_simple_pad_periphs_04_i2c0_scl , alt_0_simple_pad_periphs_04_mux_sel_i2c0_scl );
-        tranif1 alt_0_simple_pad_05_i2c0_sda  (pad_periphs_a_05_pad, alt_0_simple_pad_periphs_05_i2c0_sda , alt_0_simple_pad_periphs_05_mux_sel_i2c0_sda );
-        tranif1 alt_0_simple_pad_06_uart0_tx  (pad_periphs_a_06_pad, alt_0_simple_pad_periphs_06_uart0_tx , alt_0_simple_pad_periphs_06_mux_sel_uart0_tx );
-        tranif1 alt_0_simple_pad_07_uart0_rx  (pad_periphs_a_07_pad, alt_0_simple_pad_periphs_07_uart0_rx , alt_0_simple_pad_periphs_07_mux_sel_uart0_rx );
-        tranif1 alt_0_simple_pad_08_sdio0_d1  (pad_periphs_a_08_pad, alt_0_simple_pad_periphs_08_sdio0_d1 , alt_0_simple_pad_periphs_08_mux_sel_sdio0_d1 );
-        tranif1 alt_0_simple_pad_09_sdio0_d2  (pad_periphs_a_09_pad, alt_0_simple_pad_periphs_09_sdio0_d2 , alt_0_simple_pad_periphs_09_mux_sel_sdio0_d2 );
-        tranif1 alt_0_simple_pad_10_sdio0_d3  (pad_periphs_a_10_pad, alt_0_simple_pad_periphs_10_sdio0_d3 , alt_0_simple_pad_periphs_10_mux_sel_sdio0_d3 );
-        tranif1 alt_0_simple_pad_11_sdio0_d4  (pad_periphs_a_11_pad, alt_0_simple_pad_periphs_11_sdio0_d4 , alt_0_simple_pad_periphs_11_mux_sel_sdio0_d4 );
-        tranif1 alt_0_simple_pad_12_sdio0_clk (pad_periphs_a_12_pad, alt_0_simple_pad_periphs_12_sdio0_clk, alt_0_simple_pad_periphs_12_mux_sel_sdio0_clk);
-        tranif1 alt_0_simple_pad_13_sdio0_cmd (pad_periphs_a_13_pad, alt_0_simple_pad_periphs_13_sdio0_cmd, alt_0_simple_pad_periphs_13_mux_sel_sdio0_cmd);
-        tranif1 alt_1_simple_pad_00_gpio00 (pad_periphs_a_00_pad, alt_1_simple_pad_periphs_00_gpio00, alt_1_simple_pad_periphs_00_mux_sel_gpio00);
-        tranif1 alt_1_simple_pad_01_gpio01 (pad_periphs_a_01_pad, alt_1_simple_pad_periphs_01_gpio01, alt_1_simple_pad_periphs_01_mux_sel_gpio01);
-        tranif1 alt_1_simple_pad_02_gpio02 (pad_periphs_a_02_pad, alt_1_simple_pad_periphs_02_gpio02, alt_1_simple_pad_periphs_02_mux_sel_gpio02);
-        tranif1 alt_1_simple_pad_03_gpio03 (pad_periphs_a_03_pad, alt_1_simple_pad_periphs_03_gpio03, alt_1_simple_pad_periphs_03_mux_sel_gpio03);
-        tranif1 alt_1_simple_pad_04_gpio04 (pad_periphs_a_04_pad, alt_1_simple_pad_periphs_04_gpio04, alt_1_simple_pad_periphs_04_mux_sel_gpio04);
-        tranif1 alt_1_simple_pad_05_gpio05 (pad_periphs_a_05_pad, alt_1_simple_pad_periphs_05_gpio05, alt_1_simple_pad_periphs_05_mux_sel_gpio05);
-        tranif1 alt_1_simple_pad_06_gpio06 (pad_periphs_a_06_pad, alt_1_simple_pad_periphs_06_gpio06, alt_1_simple_pad_periphs_06_mux_sel_gpio06);
-        tranif1 alt_1_simple_pad_07_gpio07 (pad_periphs_a_07_pad, alt_1_simple_pad_periphs_07_gpio07, alt_1_simple_pad_periphs_07_mux_sel_gpio07);
-        tranif1 alt_1_simple_pad_08_gpio08 (pad_periphs_a_08_pad, alt_1_simple_pad_periphs_08_gpio08, alt_1_simple_pad_periphs_08_mux_sel_gpio08);
-        tranif1 alt_1_simple_pad_09_gpio09 (pad_periphs_a_09_pad, alt_1_simple_pad_periphs_09_gpio09, alt_1_simple_pad_periphs_09_mux_sel_gpio09);
-        tranif1 alt_1_simple_pad_10_gpio10 (pad_periphs_a_10_pad, alt_1_simple_pad_periphs_10_gpio10, alt_1_simple_pad_periphs_10_mux_sel_gpio10);
-        tranif1 alt_1_simple_pad_11_gpio11 (pad_periphs_a_11_pad, alt_1_simple_pad_periphs_11_gpio11, alt_1_simple_pad_periphs_11_mux_sel_gpio11);
-        tranif1 alt_1_simple_pad_12_gpio12 (pad_periphs_a_12_pad, alt_1_simple_pad_periphs_12_gpio12, alt_1_simple_pad_periphs_12_mux_sel_gpio12);
-        tranif1 alt_1_simple_pad_13_gpio13 (pad_periphs_a_13_pad, alt_1_simple_pad_periphs_13_gpio13, alt_1_simple_pad_periphs_13_mux_sel_gpio13);
-        tranif1 alt_2_simple_pad_00_pad_eth_rst   (pad_periphs_a_00_pad, alt_2_simple_pad_periphs_00_eth_rst  , alt_2_simple_pad_periphs_00_mux_sel_eth_rst   );
-        tranif1 alt_2_simple_pad_01_pad_eth_rxck  (pad_periphs_a_01_pad, alt_2_simple_pad_periphs_01_eth_rxck , alt_2_simple_pad_periphs_01_mux_sel_eth_rxck  );
-        tranif1 alt_2_simple_pad_02_pad_eth_rxctl (pad_periphs_a_02_pad, alt_2_simple_pad_periphs_02_eth_rxctl, alt_2_simple_pad_periphs_02_mux_sel_eth_rxctl );
-        tranif1 alt_2_simple_pad_03_pad_eth_rxd0  (pad_periphs_a_03_pad, alt_2_simple_pad_periphs_03_eth_rxd0 , alt_2_simple_pad_periphs_03_mux_sel_eth_rxd0  );
-        tranif1 alt_2_simple_pad_04_pad_eth_rxd1  (pad_periphs_a_04_pad, alt_2_simple_pad_periphs_04_eth_rxd1 , alt_2_simple_pad_periphs_04_mux_sel_eth_rxd1  );
-        tranif1 alt_2_simple_pad_05_pad_eth_rxd2  (pad_periphs_a_05_pad, alt_2_simple_pad_periphs_05_eth_rxd2 , alt_2_simple_pad_periphs_05_mux_sel_eth_rxd2  );
-        tranif1 alt_2_simple_pad_06_pad_eth_rxd3  (pad_periphs_a_06_pad, alt_2_simple_pad_periphs_06_eth_rxd3 , alt_2_simple_pad_periphs_06_mux_sel_eth_rxd3  );
-        tranif1 alt_2_simple_pad_07_pad_eth_txck  (pad_periphs_a_07_pad, alt_2_simple_pad_periphs_07_eth_txck , alt_2_simple_pad_periphs_07_mux_sel_eth_txck  );
-        tranif1 alt_2_simple_pad_08_pad_eth_txctl (pad_periphs_a_08_pad, alt_2_simple_pad_periphs_08_eth_txctl, alt_2_simple_pad_periphs_08_mux_sel_eth_txctl );
-        tranif1 alt_2_simple_pad_09_pad_eth_txd0  (pad_periphs_a_09_pad, alt_2_simple_pad_periphs_09_eth_txd0 , alt_2_simple_pad_periphs_09_mux_sel_eth_txd0  );
-        tranif1 alt_2_simple_pad_10_pad_eth_txd1  (pad_periphs_a_10_pad, alt_2_simple_pad_periphs_10_eth_txd1 , alt_2_simple_pad_periphs_10_mux_sel_eth_txd1  );
-        tranif1 alt_2_simple_pad_11_pad_eth_txd2  (pad_periphs_a_11_pad, alt_2_simple_pad_periphs_11_eth_txd2 , alt_2_simple_pad_periphs_11_mux_sel_eth_txd2  );
-        tranif1 alt_2_simple_pad_12_pad_eth_txd3  (pad_periphs_a_12_pad, alt_2_simple_pad_periphs_12_eth_txd3 , alt_2_simple_pad_periphs_12_mux_sel_eth_txd3  );
-        tranif1 alt_2_simple_pad_13_pad_eth_mdio  (pad_periphs_a_13_pad, alt_2_simple_pad_periphs_13_eth_mdio , alt_2_simple_pad_periphs_13_mux_sel_eth_mdio  );
-        tranif1 alt_2_simple_pad_14_pad_eth_mdc   (pad_periphs_a_14_pad, alt_2_simple_pad_periphs_14_eth_mdc  , alt_2_simple_pad_periphs_14_mux_sel_eth_mdc   );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_00_spi0_cs   (pad_periphs_a_00_pad, alt_0_simple_pad_periphs_00_spi0_cs  , alt_0_simple_pad_periphs_00_mux_sel_spi0_cs  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_01_spi0_ck   (pad_periphs_a_01_pad, alt_0_simple_pad_periphs_01_spi0_ck  , alt_0_simple_pad_periphs_01_mux_sel_spi0_ck  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_02_spi0_so   (pad_periphs_a_02_pad, alt_0_simple_pad_periphs_02_spi0_so  , alt_0_simple_pad_periphs_02_mux_sel_spi0_so  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_03_spi0_si   (pad_periphs_a_03_pad, alt_0_simple_pad_periphs_03_spi0_si  , alt_0_simple_pad_periphs_03_mux_sel_spi0_si  );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_04_i2c0_scl  (pad_periphs_a_04_pad, alt_0_simple_pad_periphs_04_i2c0_scl , alt_0_simple_pad_periphs_04_mux_sel_i2c0_scl );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_05_i2c0_sda  (pad_periphs_a_05_pad, alt_0_simple_pad_periphs_05_i2c0_sda , alt_0_simple_pad_periphs_05_mux_sel_i2c0_sda );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_06_uart0_tx  (pad_periphs_a_06_pad, alt_0_simple_pad_periphs_06_uart0_tx , alt_0_simple_pad_periphs_06_mux_sel_uart0_tx );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_07_uart0_rx  (pad_periphs_a_07_pad, alt_0_simple_pad_periphs_07_uart0_rx , alt_0_simple_pad_periphs_07_mux_sel_uart0_rx );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_08_sdio0_d1  (pad_periphs_a_08_pad, alt_0_simple_pad_periphs_08_sdio0_d1 , alt_0_simple_pad_periphs_08_mux_sel_sdio0_d1 );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_09_sdio0_d2  (pad_periphs_a_09_pad, alt_0_simple_pad_periphs_09_sdio0_d2 , alt_0_simple_pad_periphs_09_mux_sel_sdio0_d2 );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_10_sdio0_d3  (pad_periphs_a_10_pad, alt_0_simple_pad_periphs_10_sdio0_d3 , alt_0_simple_pad_periphs_10_mux_sel_sdio0_d3 );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_11_sdio0_d4  (pad_periphs_a_11_pad, alt_0_simple_pad_periphs_11_sdio0_d4 , alt_0_simple_pad_periphs_11_mux_sel_sdio0_d4 );
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_12_sdio0_clk (pad_periphs_a_12_pad, alt_0_simple_pad_periphs_12_sdio0_clk, alt_0_simple_pad_periphs_12_mux_sel_sdio0_clk);
+        // xsim: tran primitive unsupported -- tranif1 alt_0_simple_pad_13_sdio0_cmd (pad_periphs_a_13_pad, alt_0_simple_pad_periphs_13_sdio0_cmd, alt_0_simple_pad_periphs_13_mux_sel_sdio0_cmd);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_00_gpio00 (pad_periphs_a_00_pad, alt_1_simple_pad_periphs_00_gpio00, alt_1_simple_pad_periphs_00_mux_sel_gpio00);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_01_gpio01 (pad_periphs_a_01_pad, alt_1_simple_pad_periphs_01_gpio01, alt_1_simple_pad_periphs_01_mux_sel_gpio01);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_02_gpio02 (pad_periphs_a_02_pad, alt_1_simple_pad_periphs_02_gpio02, alt_1_simple_pad_periphs_02_mux_sel_gpio02);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_03_gpio03 (pad_periphs_a_03_pad, alt_1_simple_pad_periphs_03_gpio03, alt_1_simple_pad_periphs_03_mux_sel_gpio03);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_04_gpio04 (pad_periphs_a_04_pad, alt_1_simple_pad_periphs_04_gpio04, alt_1_simple_pad_periphs_04_mux_sel_gpio04);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_05_gpio05 (pad_periphs_a_05_pad, alt_1_simple_pad_periphs_05_gpio05, alt_1_simple_pad_periphs_05_mux_sel_gpio05);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_06_gpio06 (pad_periphs_a_06_pad, alt_1_simple_pad_periphs_06_gpio06, alt_1_simple_pad_periphs_06_mux_sel_gpio06);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_07_gpio07 (pad_periphs_a_07_pad, alt_1_simple_pad_periphs_07_gpio07, alt_1_simple_pad_periphs_07_mux_sel_gpio07);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_08_gpio08 (pad_periphs_a_08_pad, alt_1_simple_pad_periphs_08_gpio08, alt_1_simple_pad_periphs_08_mux_sel_gpio08);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_09_gpio09 (pad_periphs_a_09_pad, alt_1_simple_pad_periphs_09_gpio09, alt_1_simple_pad_periphs_09_mux_sel_gpio09);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_10_gpio10 (pad_periphs_a_10_pad, alt_1_simple_pad_periphs_10_gpio10, alt_1_simple_pad_periphs_10_mux_sel_gpio10);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_11_gpio11 (pad_periphs_a_11_pad, alt_1_simple_pad_periphs_11_gpio11, alt_1_simple_pad_periphs_11_mux_sel_gpio11);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_12_gpio12 (pad_periphs_a_12_pad, alt_1_simple_pad_periphs_12_gpio12, alt_1_simple_pad_periphs_12_mux_sel_gpio12);
+        // xsim: tran primitive unsupported -- tranif1 alt_1_simple_pad_13_gpio13 (pad_periphs_a_13_pad, alt_1_simple_pad_periphs_13_gpio13, alt_1_simple_pad_periphs_13_mux_sel_gpio13);
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_00_pad_eth_rst   (pad_periphs_a_00_pad, alt_2_simple_pad_periphs_00_eth_rst  , alt_2_simple_pad_periphs_00_mux_sel_eth_rst   );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_01_pad_eth_rxck  (pad_periphs_a_01_pad, alt_2_simple_pad_periphs_01_eth_rxck , alt_2_simple_pad_periphs_01_mux_sel_eth_rxck  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_02_pad_eth_rxctl (pad_periphs_a_02_pad, alt_2_simple_pad_periphs_02_eth_rxctl, alt_2_simple_pad_periphs_02_mux_sel_eth_rxctl );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_03_pad_eth_rxd0  (pad_periphs_a_03_pad, alt_2_simple_pad_periphs_03_eth_rxd0 , alt_2_simple_pad_periphs_03_mux_sel_eth_rxd0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_04_pad_eth_rxd1  (pad_periphs_a_04_pad, alt_2_simple_pad_periphs_04_eth_rxd1 , alt_2_simple_pad_periphs_04_mux_sel_eth_rxd1  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_05_pad_eth_rxd2  (pad_periphs_a_05_pad, alt_2_simple_pad_periphs_05_eth_rxd2 , alt_2_simple_pad_periphs_05_mux_sel_eth_rxd2  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_06_pad_eth_rxd3  (pad_periphs_a_06_pad, alt_2_simple_pad_periphs_06_eth_rxd3 , alt_2_simple_pad_periphs_06_mux_sel_eth_rxd3  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_07_pad_eth_txck  (pad_periphs_a_07_pad, alt_2_simple_pad_periphs_07_eth_txck , alt_2_simple_pad_periphs_07_mux_sel_eth_txck  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_08_pad_eth_txctl (pad_periphs_a_08_pad, alt_2_simple_pad_periphs_08_eth_txctl, alt_2_simple_pad_periphs_08_mux_sel_eth_txctl );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_09_pad_eth_txd0  (pad_periphs_a_09_pad, alt_2_simple_pad_periphs_09_eth_txd0 , alt_2_simple_pad_periphs_09_mux_sel_eth_txd0  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_10_pad_eth_txd1  (pad_periphs_a_10_pad, alt_2_simple_pad_periphs_10_eth_txd1 , alt_2_simple_pad_periphs_10_mux_sel_eth_txd1  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_11_pad_eth_txd2  (pad_periphs_a_11_pad, alt_2_simple_pad_periphs_11_eth_txd2 , alt_2_simple_pad_periphs_11_mux_sel_eth_txd2  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_12_pad_eth_txd3  (pad_periphs_a_12_pad, alt_2_simple_pad_periphs_12_eth_txd3 , alt_2_simple_pad_periphs_12_mux_sel_eth_txd3  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_13_pad_eth_mdio  (pad_periphs_a_13_pad, alt_2_simple_pad_periphs_13_eth_mdio , alt_2_simple_pad_periphs_13_mux_sel_eth_mdio  );
+        // xsim: tran primitive unsupported -- tranif1 alt_2_simple_pad_14_pad_eth_mdc   (pad_periphs_a_14_pad, alt_2_simple_pad_periphs_14_eth_mdc  , alt_2_simple_pad_periphs_14_mux_sel_eth_mdc   );
       `endif
     `endif
   `endif
@@ -3320,8 +3333,8 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
   // JTAG Definition
   typedef jtag_test::riscv_dbg #(
       .IrLength       (5                 ),
-      .TA             (REFClockPeriod*0.1),
-      .TT             (REFClockPeriod*0.9)
+      .TA             (100ns), // xsim: time literal (xsim mis-scales an integer override of a `time` parameter)
+      .TT             (900ns)
   ) riscv_dbg_t;
 
   // JTAG driver
@@ -3360,8 +3373,8 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
 
     typedef jtag_ot_test::riscv_dbg #(
       .IrLength       (5                 ),
-      .TA             (REFClockPeriodOt*0.1),
-      .TT             (REFClockPeriodOt*0.9)
+      .TA             (2.5ns),
+      .TT             (22.5ns)
     ) riscv_dbg_ot_t;
 
     JTAG_DV jtag_ibex_mst (s_ot_tck);
@@ -3469,6 +3482,9 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
 
     // Wait the FLL to generate the clock
     $display("Waiting the FLL clock before initiating the debug module...");
+`ifdef XSIM_NO_JTAG_DRV
+    $display("xsim: JTAG driver disabled for bisection"); wait(0);
+`endif
     repeat(10)
       @(posedge clk_i);
 
@@ -3481,7 +3497,11 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
       if(binary!="none") begin
         $display("Load binary...");
         // Load host code
+`ifdef XSIM_L2_PRELOAD
+        xsim_l2_elf_load(binary, binary_entry, cid);
+`else
         jtag_elf_load(binary, binary_entry, cid);
+`endif
    `ifdef ONE_PHY
         $display("Configuration QFN100!");
         jtag_config_llc_spm();
@@ -3677,6 +3697,66 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
   endtask
 
   // Load a binary
+
+`ifdef XSIM_L2_PRELOAD
+  // xsim: bit-banging the ELF through JTAG SBA at 1 MHz TCK would take ~0.5 s of simulated time;
+  // write the sections straight into the four word-interleaved L2 banks instead (same end state).
+  task automatic xsim_l2_elf_load(input string binary, output doub_bt binary_entry, input bit cid);
+    dm::dmstatus_t status;
+    longint sec_addr, sec_len, w, waddr, bank, row;
+    logic [31:0] word;
+    $display("[XSIM-L2] t=%0t requesting halt of hart %0d", $time, cid);
+`ifdef XSIM_POLL_NOHALT
+    $display("[XSIM-L2] variant: no halt request, polling DMStatus 20 times");
+    for (int k = 0; k < 20; k++) begin jtag_dbg.read_dmi_exp_backoff(dm::DMStatus, status); $display("[XSIM-L2] t=%0t poll %0d status=%h", $time, k, status); end
+    $finish;
+`elsif XSIM_HALT_NOPOLL
+    jtag_write(dm::DMControl, dm::dmcontrol_t'{haltreq: 1, hartsello:cid, dmactive: 1, default: '0});
+    $display("[XSIM-L2] variant: haltreq written, idling 3 ms without DMI traffic");
+    #3ms; $display("[XSIM-L2] t=%0t idle done", $time); $finish;
+`else
+    jtag_write(dm::DMControl, dm::dmcontrol_t'{haltreq: 1, hartsello:cid, dmactive: 1, default: '0});
+    $display("[XSIM-L2] t=%0t haltreq written, polling DMStatus", $time);
+    do jtag_dbg.read_dmi_exp_backoff(dm::DMStatus, status);
+    while (~status.allhalted);
+`endif
+    $display("[JTAG] Halted hart %d", cid);
+    $display("[XSIM-L2] Preloading ELF binary into L2: %s", binary);
+    if (read_elf(binary)) $fatal(1, "[XSIM-L2] Failed to load ELF!");
+    while (get_section(sec_addr, sec_len)) begin
+      byte bf[] = new [sec_len];
+      if (read_section(sec_addr, bf, sec_len)) $fatal(1, "[XSIM-L2] Failed to read ELF section!");
+`ifdef XSIM_L3_FLOW
+      if (sec_addr >= 64'h8000_0000 && sec_addr + sec_len <= 64'hA000_0000) begin
+        // L3 section: write straight into the simulation DRAM behind the LLC (byte-addressed)
+        $display("[XSIM-L3] section at 0x%h (%0d bytes) -> sim DRAM", sec_addr, sec_len);
+        for (longint i = 0; i < sec_len; i++) dut.i_host_domain.i_xsim_sim_dram.mem[sec_addr + i] = bf[i];
+        continue;
+      end
+`endif
+      if (sec_addr < 64'h1C00_0000 || sec_addr + sec_len > 64'h1C00_8000)
+        $fatal(1, "[XSIM-L2] section at 0x%h (%0d bytes) is not inside the L2 region", sec_addr, sec_len);
+      $display("[XSIM-L2] section at 0x%h (%0d bytes)", sec_addr, sec_len);
+      for (longint i = 0; i < sec_len; i += 4) begin
+        word = '0;
+        for (int b = 0; b < 4; b++) if (i + b < sec_len) word[8*b +: 8] = bf[i+b];
+        waddr = (sec_addr + i - 64'h1C00_0000) >> 2; bank = waddr % 8; row = waddr / 8; // 8 word-interleaved banks of 1024 words
+        case (bank)
+          0: dut.i_host_domain.i_l2_subsystem.CUTS[0].bank_i.sram[row] = word;
+          1: dut.i_host_domain.i_l2_subsystem.CUTS[1].bank_i.sram[row] = word;
+          2: dut.i_host_domain.i_l2_subsystem.CUTS[2].bank_i.sram[row] = word;
+          3: dut.i_host_domain.i_l2_subsystem.CUTS[3].bank_i.sram[row] = word;
+          4: dut.i_host_domain.i_l2_subsystem.CUTS[4].bank_i.sram[row] = word;
+          5: dut.i_host_domain.i_l2_subsystem.CUTS[5].bank_i.sram[row] = word;
+          6: dut.i_host_domain.i_l2_subsystem.CUTS[6].bank_i.sram[row] = word;
+          7: dut.i_host_domain.i_l2_subsystem.CUTS[7].bank_i.sram[row] = word;
+        endcase
+      end
+    end
+    void'(get_entry(binary_entry));
+    $display("[XSIM-L2] Preload complete, entry 0x%h", binary_entry);
+  endtask
+`endif
   task automatic jtag_elf_load(input string binary, output doub_bt binary_entry, input bit cid );
     dm::dmstatus_t status;
     // Halt hart i
@@ -4000,11 +4080,11 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
 
   task automatic spih_norflash_ot_preload(string image);
     // We overlay the entire memory with an alternating pattern
-    for (int k = 0; k < $size(opentitan_spi_flash.i_ot_qspi_flash_csn0.Mem); ++k)
-        opentitan_spi_flash.i_ot_qspi_flash_csn0.Mem[k] = 'h9a;
+    // xsim-lite: flash model removed -- for (int k = 0; k < $size(opentitan_spi_flash.i_ot_qspi_flash_csn0.Mem); ++k)
+        // xsim-lite: flash model removed -- opentitan_spi_flash.i_ot_qspi_flash_csn0.Mem[k] = 'h9a;
     // We load an image into chip 0 only if it exists
-    if (image != "")
-      $readmemh(image, opentitan_spi_flash.i_ot_qspi_flash_csn0.Mem);
+    if (image != "") $display("xsim-lite: OT flash preload skipped (model removed)");
+      // xsim-lite: flash model removed -- $readmemh(image, opentitan_spi_flash.i_ot_qspi_flash_csn0.Mem);
   endtask
 
   task jtag_secd_wait_eoc;
@@ -4044,4 +4124,31 @@ uart_bus #(.BAUD_RATE(115200), .PARITY_EN(0)) i_uart0_bus (.rx(pad_periphs_a_00_
 
   endtask // jtag_read_eoc
 
+`ifdef XSIM_FORCE_REGS
+  // xsim: hold the LLC BIST-handshake state registers at their reset values until the synchronised reset has propagated
+  initial begin
+    force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.init_q = 1'b0; force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.busy_q = 1'b0; force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.desc_q = '0;
+    force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.busy_q = 1'b0; force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.req_q = '0; force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.ram_rvalid_q = '0;
+    force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_tag_pattern_gen.busy_q = 1'b0; force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_tag_pattern_gen.bist_q = '0; force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_tag_pattern_gen.bist_res_q = '0;
+    force dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_evict_box.gen_plru.i_plru_gen.ram_rvalid_q = 1'b0;
+    #1us;
+    release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.init_q; release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.busy_q; release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.desc_q;
+    release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.busy_q; release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.req_q; release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.ram_rvalid_q;
+    release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_tag_pattern_gen.busy_q; release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_tag_pattern_gen.bist_q; release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_tag_pattern_gen.bist_res_q;
+    release dut.i_host_domain.i_axi_llc.i_hit_miss_unit.i_tag_store.i_evict_box.gen_plru.i_plru_gen.ram_rvalid_q;
+    $display("xsim: LLC register forces released at %0t", $time);
+  end
+`endif
+`ifdef XSIM_FORCE_RESET
+  // xsim: assert the synchronised internal resets from time 0 so no combinational ready/valid ring evaluates on X
+  initial begin
+    force dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_soc_sync_o = 1'b0; force dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_cva6_sync_o = 1'b0; force dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_global_sync_o = 1'b0; force dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_cluster_sync_o = 1'b0;
+    #100us;
+    release dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_soc_sync_o; release dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_cva6_sync_o; release dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_global_sync_o; release dut.i_host_domain.i_apb_subsystem.i_alsaqr_clk_rst_gen.rstn_cluster_sync_o;
+    $display("xsim: internal reset forces released at %0t", $time);
+  end
+`endif
+`ifdef XSIM_TICK
+  always #10us $display("TICK %0t", $time);
+`endif
 endmodule // ariane_tb
