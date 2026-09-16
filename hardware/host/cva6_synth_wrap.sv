@@ -615,7 +615,7 @@ module cva6_synth_wrap
     MaxMstTrans: 2, // Probably requires update
     MaxSlvTrans: 2, // Probably requires update
     FallThrough: 1'b0,
-    LatencyMode: ace_pkg::NO_LATENCY,
+    LatencyMode: ace_pkg::CUT_ALL_PORTS, // FPGA timing at 50 MHz: spill registers on all CCU ports (original: NO_LATENCY)
     AxiIdWidthSlvPorts:CVA6AXiIdWidth,
     AxiIdUsedSlvPorts: CVA6AXiIdWidth,
     UniqueIds: 1'b1,

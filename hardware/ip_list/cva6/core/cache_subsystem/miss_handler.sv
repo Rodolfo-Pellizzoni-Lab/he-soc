@@ -736,9 +736,12 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
             bpr[id].acetype = ace_pkg::READ_ONCE;
           end else begin
             bpr[id].acetype = ace_pkg::READ_NO_SNOOP;
-        bypass_ports_req = bpr;
-    end
+          end
         end
+        // Assign the port array once, unconditionally, at the end of the block. (An earlier revision of this xsim
+        // rewrite had this line inside the innermost else branch, which made bypass_ports_req a latch: atomics/SC and
+        // LR to shareable memory then reached the arbiter only through a data-vs-enable race in the FPGA netlist.)
+        bypass_ports_req = bpr;
 
         amo_bypass_rsp = bypass_ports_rsp[id];
     end

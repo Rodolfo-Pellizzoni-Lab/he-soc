@@ -1,6 +1,8 @@
 set outputDir reports
 file mkdir $outputDir
+set boardName  $::env(XILINX_BOARD)
 create_project alsaqr $::env(PROJECT_HOME) -part $::env(XILINX_PART)
+set_property board_part $boardName [current_project]
 source ./alsaqr/tcl/generated/compile.tcl
 set_property top alsaqr_xilinx [current_fileset]
 read_ip ./alsaqr/tcl/ips/boot_rom/ip/xilinx_rom_bank_1024x64.xci
@@ -14,7 +16,7 @@ if {$::env(MAIN_MEM)=="HYPER"} {
     set SRC_CLK_PERIOD 100
 } elseif {$::env(MAIN_MEM)=="DDR4"} {
     if {$::env(NUM_CORES)==4} {
-        set SRC_CLK_PERIOD 50
+        set SRC_CLK_PERIOD 20.0
     } elseif {$::env(USE_OT)=="1"} {
         set SRC_CLK_PERIOD 40
     } else {
@@ -37,10 +39,12 @@ if {$::env(MAIN_MEM)=="HYPER"} {
 update_compile_order -fileset sources_1
 auto_detect_xpm
 read_xdc ./timing_constr.xdc
-synth_design
+launch_runs synth_1 -jobs 16
+wait_on_run synth_1
+open_run synth_1 -name synth_1
 update_compile_order -fileset sources_1
 opt_design
-place_design
+place_design -directive AltSpreadLogic_high
 report_clock_utilization -file $outputDir/clock_util.rpt
 write_checkpoint -force $outputDir/post_place.dcp
 report_utilization -file $outputDir/post_place_util.rpt
