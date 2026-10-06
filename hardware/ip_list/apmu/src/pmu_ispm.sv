@@ -177,7 +177,7 @@ module pmu_ispm #(
             };
 
             // PMU core signals
-            pmc_instr_gnt_o    = 1'b1;
+            pmc_instr_gnt_o    = 1'b0;
             pmc_instr_rdata_o  = '0;
             pmc_instr_rvalid_o = 1'b0;
             pmc_instr_err_o    = 1'b0;
@@ -221,6 +221,7 @@ module pmu_ispm #(
                 end
             end else if (pmc_instr_req_i) begin
                 req                = pmc_dec_valid;
+                pmc_instr_gnt_o    = 1'b1;
                 pmc_instr_rvalid_o = pmc_instr_req_i;
                 pmc_instr_err_o    = !pmc_dec_valid;
                 pmc_instr_rdata_o  = r_data_sout;
@@ -259,7 +260,7 @@ module pmu_ispm #(
             };
 
             // PMU core signals
-            pmc_instr_gnt_o    = 1'b1;
+            pmc_instr_gnt_o    = 1'b0;
             pmc_instr_rdata_o  = '0;
             pmc_instr_rvalid_o = 1'b0;
             pmc_instr_err_o    = 1'b0;
@@ -315,6 +316,7 @@ module pmu_ispm #(
                         read_failed_d    = !pmc_dec_valid;
                         req              = pmc_dec_valid;
                         latency[0]       = 1'b1;
+                        pmc_instr_gnt_o  = 1'b1;
                     end    
                 end
 
@@ -348,8 +350,6 @@ module pmu_ispm #(
                                     read_fsm_ns = AWAIT_MRDY;
                                 // If requestor is PMU core.
                                 end else if (read_requestor_q == PMU_CORE) begin                                    
-                                    // To Do: Try and understand why this even matters?
-                                    pmc_instr_gnt_o    = 1'b1;          // Set `core_gnt_i` so that the new request is available in the next clock cycle.
                                     pmc_instr_rvalid_o = 1'b1;
                                     pmc_instr_err_o    = read_failed_q;
                                     axi_fsm_ns         = IDLE;
