@@ -957,6 +957,7 @@ module ibex_pmu_core #(
     apmu_ibex_pmu_counter #()  pmu_counter_i (
         .clk_i              ( clk_i               ),
         .rst_ni             ( rst_ni              ),
+        .stall_pmu_i        ( stall_pmu_i         ),
 
         // counter interface
         .counter_op_o       ( counter_op_out      ),

@@ -640,6 +640,9 @@ module apmu_ibex_id_stage #(
       .flush_id_o                     ( flush_id                ),
       .ready_wb_i                     ( ready_wb_i              ),
       .stall_pmu_i                    ( stall_pmu_i             ),
+      .stall_pmc_wfx_i                ( stall_pmc &&
+                                        ((pmc_op == PMC_WFP) ||
+                                         (pmc_op == PMC_WFO))   ),
 
       // Performance Counters
       .perf_jump_o                    ( perf_jump_o             ),
