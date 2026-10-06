@@ -83,6 +83,7 @@ module pmu_dspm #(
     logic           b_ready;
 
     logic           start_axi4_write;
+    logic           start_axi4_read;
 
     // Signals whether the aw_addr is valid or not.
     logic           aw_dec_valid;
@@ -140,10 +141,13 @@ module pmu_dspm #(
         w_addr   = axi_req_i.aw.addr - START_ADDR;
 
         // Reads are prioritized over writes.
-        if (r_addr < NumBytes && axi_req_i.ar_valid) begin
+        if (r_addr < NumBytes && start_axi4_read) begin
             addr          = addr_t'(r_addr);
             ar_dec_valid  = 1'b1;
-        end else if (w_addr < NumBytes && axi_req_i.aw_valid) begin
+        // AW and W are independent AXI channels.  Do not let an AW-only
+        // request select the SRAM address: the FSM cannot service that write
+        // until W is also valid, and may service a PE request in the meantime.
+        end else if (w_addr < NumBytes && start_axi4_write) begin
             addr          = addr_t'(w_addr);
             aw_dec_valid  = 1'b1;
         end else if (pmc_addr < NumBytes && pmc_data_req_i) begin
@@ -158,6 +162,7 @@ module pmu_dspm #(
     // The SPM only starts a write when the aw_addr, w_data are valid;
     // and when the spill registers have space to store another write response.
     assign start_axi4_write  = axi_req_i.aw_valid && axi_req_i.w_valid && b_ready;
+    assign start_axi4_read   = axi_req_i.ar_valid && r_ready;
     assign w_data            = (start_axi4_write) ? axi_req_i.w.data : pmc_data_wdata_i;
 
     // ReadLatency = 32'd0;
@@ -196,7 +201,7 @@ module pmu_dspm #(
             
             // Reads are prioritized over writes.
             // Reads can start even before the Master is ready to claim them.
-            if (axi_req_i.ar_valid && r_ready) begin
+            if (start_axi4_read) begin
                 r_valid = 1'b1;
                 axi_resp_o.ar_ready = 1'b1;
                 pmc_data_gnt_o     = 1'b0;
@@ -306,10 +311,9 @@ module pmu_dspm #(
                 // Can start the next read or write request.
                 IDLE: begin
                     // Reads are prioritized over writes.
-                    // Reads can start even before the Master is ready to claim them.
-                    // Wait until the previous `axi_resp_o.r_valid` is claimed before starting a new read.
-                    // `axi_resp_o.r_valid` is allowed to be a condition as it comes from a pipelined register.
-                    if (axi_req_i.ar_valid && !axi_resp_o.r_valid) begin
+                    // Start only when the response spill register has room.
+                    // `r_ready` comes from a pipelined register.
+                    if (start_axi4_read) begin
                         axi_fsm_ns       = READ;
                         read_fsm_ns      = LAT_PLUS_ONE;
                         read_requestor_d = AXI4;
