@@ -194,7 +194,7 @@ module pmu_counter import pmu_pkg::*; #(
                         end
 
                         KEEP_MIN: begin
-                            if (event_info_isol_q > counter_i) begin
+                            if (event_info_isol_q < counter_i) begin
                                 counter_o = event_info_isol_q;
                                 pending_o = 1'b1;
                             end
