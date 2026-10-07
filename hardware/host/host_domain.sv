@@ -896,7 +896,8 @@ axi_spu_top #(
    pmu_top #(
      .NUM_PORT         ( (ariane_soc::NumCVA6)* 2 + 1   ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
-     .ISPM_NUM_WORDS   ( 1024                           ),  // 4 KB size
+     .ISPM_NUM_WORDS   ( 2048                           ),  // 8 KB size
+     .DSPM_BASE_ADDR   ( 32'h1042_9000                    ),  // follows 8 KiB ISPM
      .DSPM_NUM_WORDS   ( 32768                           ),
     //  // APMU Addresses and SPM configuration
     //  .MEMORY_BASE_ADDR ( ariane_soc::L2SPMBase          ),
