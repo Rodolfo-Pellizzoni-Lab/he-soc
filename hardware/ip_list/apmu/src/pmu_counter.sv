@@ -258,14 +258,14 @@ module pmu_counter import pmu_pkg::*; #(
 
                         ADD_CMP_EQ: begin
                             if (event_info_isol_q == val_lower) begin
-                                counter_o = counter_i + 1;
+                                counter_o = counter_i + event_info_isol_q;
                                 pending_o = 1'b1;
                             end
                         end
 
                         ADD_CMP_NEQ: begin
                             if (event_info_isol_q != val_lower) begin
-                                counter_o = counter_i + 1;
+                                counter_o = counter_i + event_info_isol_q;
                                 pending_o = 1'b1;
                             end
                         end
