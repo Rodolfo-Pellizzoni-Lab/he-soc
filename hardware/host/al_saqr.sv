@@ -310,6 +310,12 @@ module al_saqr
      .AXI_USER_WIDTH ( AXI_USER_WIDTH           )
   ) tlb_to_soc_axi_bus();
   AXI_BUS #(
+     .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
+     .AXI_DATA_WIDTH ( AXI_DATA_WIDTH           ),
+     .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH           )
+  ) tlb_idle_axi_bus();
+  AXI_BUS #(
      .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH               ),
      .AXI_DATA_WIDTH ( AXI_DATA_WIDTH                  ),
      .AXI_ID_WIDTH   ( ariane_soc::SocToClusterIdWidth ),
@@ -1002,26 +1008,46 @@ module al_saqr
      assign cluster_to_tlb_axi_bus.ar_valid = 'h0;
      assign cluster_to_tlb_axi_bus.r_ready = 1'b1;
 
-     ariane_axi_soc::req_slv_t    fake_cluster_s_req;
-     ariane_axi_soc::resp_slv_t   fake_cluster_s_resp;
+     // Accelerator socket in the cluster's place (hardware/accel/README.md): the CPU reaches the accelerators'
+     // registers through the cluster window, the accelerators reach memory through the cluster's master port
+     // (straight into the host xbar; the cluster TLB is left idle), and their interrupt uses the cluster EOC line.
+     ariane_axi_soc::req_slv_t    accel_s_req,  accel_m_req,  tlb_idle_req;
+     ariane_axi_soc::resp_slv_t   accel_s_resp, accel_m_resp, tlb_idle_resp;
 
-     `AXI_ASSIGN_TO_REQ(fake_cluster_s_req,tlb_to_cluster_axi_bus)
-     `AXI_ASSIGN_FROM_RESP(tlb_to_cluster_axi_bus,fake_cluster_s_resp)
+     `AXI_ASSIGN_TO_REQ(accel_s_req, soc_to_cluster_axi_bus)
+     `AXI_ASSIGN_FROM_RESP(soc_to_cluster_axi_bus, accel_s_resp)
+     `AXI_ASSIGN_FROM_REQ(tlb_to_soc_axi_bus, accel_m_req)
+     `AXI_ASSIGN_TO_RESP(accel_m_resp, tlb_to_soc_axi_bus)
 
+     accel_socket #(
+       .axi_req_t  ( ariane_axi_soc::req_slv_t  ),
+       .axi_resp_t ( ariane_axi_soc::resp_slv_t )
+     ) i_accel_socket (
+       .clk_i      ( s_soc_clk     ),
+       .rst_ni     ( s_soc_rst_n   ),
+       .slv_req_i  ( accel_s_req   ),
+       .slv_resp_o ( accel_s_resp  ),
+       .mst_req_o  ( accel_m_req   ),
+       .mst_resp_i ( accel_m_resp  ),
+       .irq_o      ( s_cluster_eoc )
+     );
+
+     // the idle cluster TLB's master port ends here
+     `AXI_ASSIGN_TO_REQ(tlb_idle_req, tlb_idle_axi_bus)
+     `AXI_ASSIGN_FROM_RESP(tlb_idle_axi_bus, tlb_idle_resp)
      axi_err_slv #(
        .AxiIdWidth ( ariane_soc::IdWidthSlave   ),
        .axi_req_t  ( ariane_axi_soc::req_slv_t  ),
        .axi_resp_t ( ariane_axi_soc::resp_slv_t ),
-       .RespWidth  ( 32'd64                     ),
-       .RespData   ( 64'hdeadbeefdeadbeef       ),
        .ATOPs      ( 1'b0                       ),
        .MaxTrans   ( 1                          )
-       ) clusternotimplemented (
-         .clk_i      ( s_soc_clk           ),
-         .rst_ni     ( s_soc_rst_n         ),
-         .slv_req_i  ( fake_cluster_s_req  ),
-         .slv_resp_o ( fake_cluster_s_resp )
-         );
+     ) i_tlb_idle_sink (
+       .clk_i      ( s_soc_clk     ),
+       .rst_ni     ( s_soc_rst_n   ),
+       .test_i     ( 1'b0          ),
+       .slv_req_i  ( tlb_idle_req  ),
+       .slv_resp_o ( tlb_idle_resp )
+     );
    `endif // !`ifndef EXCLUDE_CLUSTER
 
   localparam int unsigned ENTRIES = 32;
@@ -1042,7 +1068,11 @@ module al_saqr
      .rst_ni                  ( s_soc_rst_n            ),
      .test_en_i               ( 1'b0                   ),
      .slv                     ( cluster_to_tlb_axi_bus ),
+`ifdef EXCLUDE_CLUSTER
+     .mst                     ( tlb_idle_axi_bus       ),   // the accelerator socket drives tlb_to_soc_axi_bus
+`else
      .mst                     ( tlb_to_soc_axi_bus     ),
+`endif
      .cfg                     ( c2h_tlb_cfg            )
    );
 

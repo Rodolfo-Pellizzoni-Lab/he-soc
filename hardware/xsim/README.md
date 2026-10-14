@@ -181,3 +181,17 @@ Changing `env.sh` or adding files needs a full `./build.sh`.
   collapses onto the net, the kernel crashes when run outside the `xsim` front end (no gdb).
 - Verilator: the whole DUT lints (`--lint-only --timing`) with the same patches, but `--cc --build` was OOM-killed
   above 51 GB RSS on a 61 GB machine.
+
+## 6. Validation tests and custom accelerators
+
+- `software/soc_tests/` holds self-checking SoC tests (L3 flow, `make build`): `t_mem` (DRAM through L1/CCU/LLC with
+  every access size and an eviction sweep, on-chip SRAM), `t_atomics` (every AMO + LR/SC on DRAM and SRAM), `t_smp`
+  (4 cores: AMO/LR-SC counters, coherence, message passing), `t_irq` (CLINT software/timer interrupts, PLIC
+  registers), `t_socket` (accelerator socket error responses). Each prints `TEST PASS`/`TEST FAIL` and exits with the
+  number of failed checks; `include/soc_test.h` has the helpers (CHECK, trap guard, 4-core wake-up, barrier).
+- The PULP cluster's place is taken by the accelerator socket (`hardware/accel/`, see its README.md): 8 slots of
+  64 KB at 0x1000_0000, each with a register port, a memory master port and an interrupt (PLIC ID 9). Before the
+  socket, the error slave meant to answer the excluded cluster's window sat on an undriven bus
+  (`tlb_to_cluster_axi_bus`), while the xbar's cluster port (`soc_to_cluster_axi_bus`) had no responder at all.
+- The alsaqr-mcp tools `sim_regress`, `accel_add`, `accel_unit_test` and `accel_soc_test` drive both.
+

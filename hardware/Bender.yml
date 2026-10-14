@@ -127,6 +127,12 @@ sources:
   - host/axi_lite_subsystem.sv
   - host/host_domain.sv
   - host/pad_frame.sv
+  # accel: begin (managed by alsaqr-mcp; hardware/accel/slots.json)
+  - accel/example/example.sv
+  - accel/crc32/crc32.sv
+  - accel/accel_slots.sv
+  - accel/accel_socket.sv
+  # accel: end
   - host/al_saqr.sv
 
   - target: all(fpga, xilinx, ddr, not(asic))
