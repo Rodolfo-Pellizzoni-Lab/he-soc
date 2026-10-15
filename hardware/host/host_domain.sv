@@ -173,6 +173,11 @@ module host_domain
 
    ariane_axi_soc::req_slv_mem_t  axi_mem_req;
    ariane_axi_soc::resp_slv_mem_t axi_mem_res;
+   // the LLC's memory port after the DRAM timing model (host/axi_dram_timing.sv)
+   ariane_axi_soc::req_slv_mem_t  axi_dram_req;
+   ariane_axi_soc::resp_slv_mem_t axi_dram_res;
+   dram_model_pkg::cfg_t          s_dram_model_cfg;
+   dram_model_pkg::cnt_t          s_dram_model_cnt;
 
    ariane_axi_soc::req_lite_t  axi_llc_cfg_req;
    ariane_axi_soc::resp_lite_t axi_llc_cfg_res;
@@ -514,6 +519,7 @@ module host_domain
 
   `ifdef EXCLUDE_LLC
    `AXI_ASSIGN(mem_axi_bus,hyper_axi_bus)
+   assign s_dram_model_cnt = '0;   // no DRAM timing model without the LLC
 
    logic r_valid_d, r_valid_q;
    logic b_valid_d, b_valid_q;
@@ -553,14 +559,32 @@ module host_domain
 
    `AXI_ASSIGN_TO_REQ(axi_cpu_req,hyper_axi_bus)
    `AXI_ASSIGN_FROM_RESP(hyper_axi_bus,axi_cpu_res)
+   // DRAM timing model between the LLC's memory port and the DRAM path: a wire until it is enabled through the
+   // SoC control registers at 0x1A10_6100 (hardware/docs/dram_model.md)
+   axi_dram_timing #(
+     .axi_req_t  ( ariane_axi_soc::req_slv_mem_t    ),
+     .axi_resp_t ( ariane_axi_soc::resp_slv_mem_t   ),
+     .r_chan_t   ( ariane_axi_soc::r_chan_slv_mem_t ),
+     .b_chan_t   ( ariane_axi_soc::b_chan_slv_mem_t ),
+     .IdWidth    ( ariane_soc::IdWidthSlave + 1     )
+   ) i_axi_dram_timing (
+     .clk_i      ( s_soc_clk        ),
+     .rst_ni     ( s_synch_soc_rst  ),
+     .cfg_i      ( s_dram_model_cfg ),
+     .cnt_o      ( s_dram_model_cnt ),
+     .slv_req_i  ( axi_mem_req      ),
+     .slv_resp_o ( axi_mem_res      ),
+     .mst_req_o  ( axi_dram_req     ),
+     .mst_resp_i ( axi_dram_res     )
+   );
    `ifdef APMU_IP
     // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_mem_req )
-    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus_spu_o_bus )
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_dram_req )
+    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus_spu_o_bus )
   `else
     // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_mem_req )
-    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus )
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_dram_req )
+    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus )
   `endif
    `AXI_LITE_ASSIGN_TO_REQ(axi_llc_cfg_req,llc_cfg_bus)
    `AXI_LITE_ASSIGN_FROM_RESP(llc_cfg_bus,axi_llc_cfg_res)
@@ -1142,6 +1166,8 @@ axi_spu_top #(
       .llc_read_miss_cache_i  ( s_llc_read_miss_cache          ),
       .llc_write_hit_cache_i  ( s_llc_write_hit_cache          ),
       .llc_write_miss_cache_i ( s_llc_write_miss_cache         ),
+      .dram_model_cfg_o       ( s_dram_model_cfg               ),
+      .dram_model_cnt_i       ( s_dram_model_cnt               ),
 
       `ifdef XILINX_DDR
       .hyper_axi_bus_slave    ( dummyaxibus                    ),

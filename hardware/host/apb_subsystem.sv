@@ -69,6 +69,8 @@ module apb_subsystem
     input logic                 llc_read_miss_cache_i,
     input logic                 llc_write_hit_cache_i,
     input logic                 llc_write_miss_cache_i,
+    output dram_model_pkg::cfg_t dram_model_cfg_o,
+    input  dram_model_pkg::cnt_t dram_model_cnt_i,
 
     AXI_BUS.Slave               axi_apb_slave,
     AXI_BUS.Slave               hyper_axi_bus_slave,
@@ -986,6 +988,8 @@ module apb_subsystem
     .llc_read_miss_cache_i(llc_read_miss_cache_i),
     .llc_write_hit_cache_i(llc_write_hit_cache_i),
     .llc_write_miss_cache_i(llc_write_miss_cache_i),
+    .dram_model_cfg_o(dram_model_cfg_o),
+    .dram_model_cnt_i(dram_model_cnt_i),
     .cluster_lock_xor_key_o(cluster_lock_xor_key_o),
     .iommu_lock_xor_key_o( iommu_lock_xor_key_o ),
     .iopmp_lock_xor_key_o( iopmp_lock_xor_key_o ),

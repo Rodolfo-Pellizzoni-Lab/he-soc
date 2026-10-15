@@ -115,6 +115,7 @@ sources:
   - host/alsaqr_clk_rst_gen.sv
   - host/rstgen_bypass_ckg.sv
   - host/rstgen_ckg.sv
+  - host/axi_dram_timing.sv
   - host/apb_soc_control.sv
   - host/apb_subsystem.sv
   - host/gpio2padframe.sv

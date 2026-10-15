@@ -39,7 +39,10 @@ module apb_soc_control
     output logic [127:0] cluster_lock_xor_key_o,
     output logic [127:0] iommu_lock_xor_key_o,
     output logic [127:0] iopmp_lock_xor_key_o,
-    output logic [127:0] aia_lock_xor_key_o
+    output logic [127:0] aia_lock_xor_key_o,
+    // DRAM timing model (host/axi_dram_timing.sv): configuration and counters, registers at +0x100
+    output dram_model_pkg::cfg_t dram_model_cfg_o,
+    input  dram_model_pkg::cnt_t dram_model_cnt_i
    );
 
    // Logic Locking Keys
@@ -113,14 +116,68 @@ module apb_soc_control
        .reg_o     ( cfg_reg_master    )
       );
 
+   // ---------------------------------------------------------------- DRAM timing model registers, +0x100..+0x1FF
+   // The generated block decodes addr[7:0] only, so it gets the requests below +0x100 and this block the others:
+   //   0x100 CTRL        bit 0 enable (RW); bit 1 written 1: clear the counters
+   //   0x104 LAT_RD      [15:0] target cycles, accepted AR -> first read beat
+   //   0x108 LAT_WR      [15:0] target cycles, accepted AW -> write response (plus the burst's bus time)
+   //   0x10C OCC16       [15:0] data-bus time per 8-byte beat in 1/16 target cycles (bandwidth; 0 = unlimited)
+   //   0x110 RD_COUNT  0x114 WR_COUNT  0x118 RD_LATE  0x11C LATE_CYCLES  0x120 HOLD_CYCLES   read-only
+   //   0x124 ID          0xD2A3_0001 read-only (the model is present)
+   //   0x128 RD_BEATS    read beats delivered (8 bytes each)
+   reg_req_t reg_req_top;
+   reg_rsp_t reg_rsp_top;
+   logic     dm_sel;
+   logic [31:0] dm_rdata;
+   dram_model_pkg::cfg_t dm_cfg_q;
+   assign dm_sel = reg_req.addr[11:8] == 4'h1;
+   always_comb begin
+      reg_req_top       = reg_req;
+      reg_req_top.valid = reg_req.valid && !dm_sel;
+   end
+   always_comb begin
+      case (reg_req.addr[7:0])
+         8'h00:   dm_rdata = {31'b0, dm_cfg_q.enable};
+         8'h04:   dm_rdata = {16'b0, dm_cfg_q.lat_rd};
+         8'h08:   dm_rdata = {16'b0, dm_cfg_q.lat_wr};
+         8'h0C:   dm_rdata = {16'b0, dm_cfg_q.occ16};
+         8'h10:   dm_rdata = dram_model_cnt_i.rd_count;
+         8'h14:   dm_rdata = dram_model_cnt_i.wr_count;
+         8'h18:   dm_rdata = dram_model_cnt_i.rd_late;
+         8'h1C:   dm_rdata = dram_model_cnt_i.late_cycles;
+         8'h20:   dm_rdata = dram_model_cnt_i.hold_cycles;
+         8'h24:   dm_rdata = dram_model_pkg::ID;
+         8'h28:   dm_rdata = dram_model_cnt_i.rd_beats;
+         default: dm_rdata = '0;
+      endcase
+   end
+   always_ff @(posedge clk_i or negedge rst_ni) begin
+      if (!rst_ni) begin
+         dm_cfg_q <= '0;
+      end else begin
+         dm_cfg_q.clear <= 1'b0;
+         if (reg_req.valid && dm_sel && reg_req.write) begin
+            case (reg_req.addr[7:0])
+               8'h00: begin dm_cfg_q.enable <= reg_req.wdata[0]; dm_cfg_q.clear <= reg_req.wdata[1]; end
+               8'h04: dm_cfg_q.lat_rd <= reg_req.wdata[15:0];
+               8'h08: dm_cfg_q.lat_wr <= reg_req.wdata[15:0];
+               8'h0C: dm_cfg_q.occ16  <= reg_req.wdata[15:0];
+               default: ;
+            endcase
+         end
+      end
+   end
+   assign dram_model_cfg_o = dm_cfg_q;
+   assign reg_rsp = dm_sel ? reg_rsp_t'{rdata: dm_rdata, error: 1'b0, ready: 1'b1} : reg_rsp_top;
+
     control_register_config_reg_top  #(
         .reg_req_t (reg_req_t),
         .reg_rsp_t (reg_rsp_t)
     ) i_soc_ctrl (
        .clk_i      ( clk_i           ),
        .rst_ni     ( rst_ni          ),
-       .reg_req_i  ( reg_req         ),
-       .reg_rsp_o  ( reg_rsp         ),
+       .reg_req_i  ( reg_req_top     ),
+       .reg_rsp_o  ( reg_rsp_top     ),
        .reg2hw     ( reg2hw_socctrl  ),
        .hw2reg     ( hw2reg_socctrl  ),
        .devmode_i  ( '0              )
