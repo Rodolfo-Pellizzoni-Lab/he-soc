@@ -59,17 +59,37 @@ DRAM and the DDR4 controller provide; the simulation reports a different ID at t
 The generated SoC control block decodes only the low 8 address bits; apb_soc_control routes offsets 0x100-0x1FF
 to the model's registers and everything else to the generated block.
 
-## Measured (2026-10-15, model off)
+## Measured (2026-10-15)
+
+Model off (the real memory path, `t_dram` step 1):
 
 | Access from core 0 | VCU118 at 50 MHz | xsim (simulated DRAM behind the CDC and delayer) |
 |---|---|---|
 | dependent 64-byte line read, L1 miss and LLC miss | 85 cycles | 82 cycles |
 | dependent 16-byte L1 fill of DRAM outside the LLC window (passed through the LLC) | 62-63 cycles | 48-49 cycles |
 
-So on the board a modelled `LAT_RD` of about 50 target cycles or more is always met without stalling the SoC
-clock (the first beat comes back in ~45 of the 85 cycles; the rest is the path through the caches and the CCU), and
-for a 1 GHz target with any realistic DRAM latency (80-120 ns) the clock gate of the second step would almost
-never close.
+With the model, on the VCU118 (bitstream `dram_model_b`, `t_dram` passes its 20 checks; 64 dependent line reads
+per setting):
+
+| Setting | Cycles per line read | Counters |
+|---|---|---|
+| `LAT_RD = 256` | 328 | 64 reads of 512 beats, 0 late, 242 hold cycles per read |
+| `LAT_RD = 256`, bypass path (16-byte fills) | 312 | 64 reads of 128 beats |
+| `LAT_RD = 1` | 87 | every read late, by 13 cycles |
+| `OCC16 = 512` (32 cycles per beat) | 289 dependent, 291 streamed | |
+| `LAT_WR = 300`, 64 dirty lines evicted from one set | | 65 write bursts, data read back correct |
+
+The hold and late counters locate the memory's own share of the 85 cycles: the DDR4 path returns the first beat
+about 14 cycles after the model accepts the read (256 - 242, and 1 + 13), and the other ~70 cycles are the L1
+miss, the CCU, the crossbar and the LLC refill. Any `LAT_RD` of 20 target cycles or more is therefore met without
+stalling the SoC clock, and for a 1 GHz target with any realistic DRAM latency (80-120 ns) the clock gate of the
+second step would almost never close.
+
+Under Linux (Buildroot, 433 MB of RAM) the model is configured with devmem from the shell. With the 1 GHz target
+values (`LAT_RD = LAT_WR = 80`, `OCC16 = 20`) writing 32 MB into tmpfs took 26.7 s of host time against 12.4 s
+with the model off, and reading it back 1.2 s against 0.7 s. The model saw 5.7 M reads of 2.04 beats on average
+(the kernel's memory lies outside the LLC window, so its traffic is 16-byte L1 fills) and 4.4 M write-through
+stores; 1 read was late, by 12 cycles.
 
 ## Test
 
