@@ -668,6 +668,9 @@ module cva6 import ariane_pkg::*; #(
   // ---------
   // CSR
   // ---------
+  logic [ariane_pkg::QOS_RCID_WIDTH-1:0] qos_rcid;
+  logic [ariane_pkg::QOS_MCID_WIDTH-1:0] qos_mcid;
+
   csr_regfile #(
     .AsidWidth              ( ASID_WIDTH                    ),
     .VmidWidth              ( VMID_WIDTH                    ),
@@ -744,6 +747,8 @@ module cva6 import ariane_pkg::*; #(
     .perf_we_o              ( we_csr_perf                   ),
     .pmpcfg_o               ( pmpcfg                        ),
     .pmpaddr_o              ( pmpaddr                       ),
+    .qos_rcid_o             ( qos_rcid                      ),
+    .qos_mcid_o             ( qos_mcid                      ),
     .debug_req_i,
     .ipi_i,
     .irq_i,
@@ -867,6 +872,7 @@ module cva6 import ariane_pkg::*; #(
   // -------------------
   // Cache Subsystem
   // -------------------
+  axi_req_t axi_req_cache;
 
   if (DCACHE_TYPE == int'(cva6_config_pkg::WT)) begin : WT
   // this is a cache subsystem that is compatible with OpenPiton
@@ -913,7 +919,7 @@ module cva6 import ariane_pkg::*; #(
     .l15_rtrn_i            ( l15_rtrn_i                  )
 `else
     // memory side
-    .axi_req_o             ( axi_req_o                   ),
+    .axi_req_o             ( axi_req_cache               ),
     .axi_resp_i            ( axi_resp_i                  )
 `endif
   );
@@ -969,11 +975,58 @@ module cva6 import ariane_pkg::*; #(
     .dcache_req_ports_i    ( dcache_req_ports_ex_cache   ),
     .dcache_req_ports_o    ( dcache_req_ports_cache_ex   ),
     // memory side
-    .axi_req_o             ( axi_req_o                   ),
+    .axi_req_o             ( axi_req_cache               ),
     .axi_resp_i            ( axi_resp_i                  )
   );
   assign dcache_commit_wbuffer_not_ni = 1'b1;
   end
+
+  // -------------------
+  // QoS tag (Ssqosid)
+  // -------------------
+  // Every AR and AW leaving the core carries {AT, MCID, RCID} of srmcfg in user[QOS_TAG_WIDTH-1:0]. A request
+  // that is waiting for ready keeps the tag it was raised with (AXI payload stability across an srmcfg write).
+  // AT = 1 for instruction fetches: the WB cache subsystem gives I$ refills AXI ID 4'b0000; the WT one does not
+  // distinguish them (AT = 0).
+  ariane_pkg::qos_tag_t qos_tag, qos_aw_tag_q, qos_ar_tag_q, qos_aw_tag, qos_ar_tag;
+  logic                 qos_aw_hold_q, qos_ar_hold_q;
+
+  assign qos_tag = '{at: 1'b0, mcid: qos_mcid, rcid: qos_rcid};
+
+  axi_req_t             qos_req;
+
+  always_comb begin : qos_tag_requests
+    qos_req    = axi_req_cache;
+    qos_aw_tag = qos_aw_hold_q ? qos_aw_tag_q : qos_tag;
+    qos_ar_tag = qos_ar_hold_q ? qos_ar_tag_q : qos_tag;
+    if (!qos_ar_hold_q && DCACHE_TYPE != int'(cva6_config_pkg::WT)) begin
+      qos_ar_tag.at = (axi_req_cache.ar.id[3:2] == 2'b00);
+    end
+    qos_req.aw.user[ariane_pkg::QOS_TAG_WIDTH-1:0] = qos_aw_tag;
+    qos_req.ar.user[ariane_pkg::QOS_TAG_WIDTH-1:0] = qos_ar_tag;
+    axi_req_o  = qos_req;
+  end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin : qos_tag_hold
+    if (!rst_ni) begin
+      qos_aw_hold_q <= 1'b0;
+      qos_ar_hold_q <= 1'b0;
+      qos_aw_tag_q  <= '0;
+      qos_ar_tag_q  <= '0;
+    end else begin
+      qos_aw_hold_q <= axi_req_cache.aw_valid && !axi_resp_i.aw_ready;
+      qos_ar_hold_q <= axi_req_cache.ar_valid && !axi_resp_i.ar_ready;
+      qos_aw_tag_q  <= qos_aw_tag;
+      qos_ar_tag_q  <= qos_ar_tag;
+    end
+  end
+
+  // pragma translate_off
+  `ifndef VERILATOR
+  initial a_qos_user_width : assert ($bits(axi_req_cache.ar.user) >= ariane_pkg::QOS_TAG_WIDTH)
+    else $error("AXI user field narrower than the QoS tag");
+  `endif
+  // pragma translate_on
 
   // -------------------
   // CLIC Controller

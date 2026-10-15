@@ -125,6 +125,7 @@ sources:
   - host/l2_subsystem.sv
   - host/clk_gen_hyper.sv
   - host/axi_lite_subsystem.sv
+  - host/qos_monitor.sv
   - host/host_domain.sv
   - host/pad_frame.sv
   # accel: begin (managed by alsaqr-mcp; hardware/accel/slots.json)

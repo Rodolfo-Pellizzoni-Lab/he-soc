@@ -20,11 +20,12 @@ package ariane_axi_soc;
     // used in axi_adapter.sv
     typedef enum logic { SINGLE_REQ, CACHE_LINE_REQ } ad_req_t;
 
-   `ifdef QUAD_CORE
-    localparam UserWidth = 2;
-   `else
-    localparam UserWidth = 1;
-   `endif
+    // AXI user field of the SoC buses:
+    //   [QosUserLsb-1:0]                       source port of a core request, written by the CCU
+    //   [QosUserLsb +: ariane_pkg::QOS_TAG_WIDTH] QoS tag {AT, MCID, RCID} of the requesting hart (Ssqosid srmcfg,
+    //                                          for CBQRI capacity / bandwidth controllers); 0 from other masters
+    localparam int unsigned QosUserLsb = 2;
+    localparam UserWidth = QosUserLsb + ariane_pkg::QOS_TAG_WIDTH;
     localparam AddrWidth = 64;
     localparam DataWidth = 64;
     localparam DataWidth32 = 32;
@@ -37,6 +38,14 @@ package ariane_axi_soc;
     typedef logic [DataWidth-1:0] data_t;
     typedef logic [StrbWidth-1:0] strb_t;
     typedef logic [UserWidth-1:0] user_t;
+
+    // QoS tag carried by a SoC AXI user field, and the user field for a tag
+    function automatic ariane_pkg::qos_tag_t qos_tag(user_t user);
+        return ariane_pkg::qos_tag_t'(user[QosUserLsb +: ariane_pkg::QOS_TAG_WIDTH]);
+    endfunction
+    function automatic user_t qos_user(ariane_pkg::qos_tag_t tag);
+        return user_t'(tag) << QosUserLsb;
+    endfunction
     typedef logic [DataWidth32-1:0] data32_t;
 
     // AXI extension for untranslated transactions - IOMMU (Chapter A14)

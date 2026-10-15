@@ -464,6 +464,7 @@ package riscv;
         CSR_SIP            = 12'h144,
         CSR_SINTTHRESH     = 12'h147,
         CSR_SATP           = 12'h180,
+        CSR_SRMCFG         = 12'h181, // Ssqosid
         // Hypervisor-extended Supervisor Mode CSRs
         CSR_HSTATUS        = 12'h600,
         CSR_HEDELEG        = 12'h602,

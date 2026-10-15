@@ -111,7 +111,10 @@ module csr_regfile import ariane_pkg::*; #(
     output logic                  perf_we_o,
     // PMPs
     output riscv::pmpcfg_t [15:0] pmpcfg_o,   // PMP configuration containing pmpcfg for max 16 PMPs
-    output logic [15:0][riscv::PLEN-3:0] pmpaddr_o            // PMP addresses
+    output logic [15:0][riscv::PLEN-3:0] pmpaddr_o,           // PMP addresses
+    // QoS identifiers (srmcfg)
+    output logic [ariane_pkg::QOS_RCID_WIDTH-1:0] qos_rcid_o,
+    output logic [ariane_pkg::QOS_MCID_WIDTH-1:0] qos_mcid_o
 );
     // internal signal to keep track of access exceptions
     logic        read_access_exception, update_access_exception, privilege_violation;
@@ -193,6 +196,10 @@ module csr_regfile import ariane_pkg::*; #(
     // Environment Configuration Registers
     riscv::envcfg_rv_t menvcfg_q, menvcfg_d;
     riscv::senvcfg_rv_t senvcfg_q, senvcfg_d;
+
+    // Ssqosid
+    logic [ariane_pkg::QOS_RCID_WIDTH-1:0] rcid_q, rcid_d;
+    logic [ariane_pkg::QOS_MCID_WIDTH-1:0] mcid_q, mcid_d;
 
     riscv::xlen_t dcache_q,    dcache_d;
     riscv::xlen_t icache_q,    icache_d;
@@ -392,6 +399,15 @@ module csr_regfile import ariane_pkg::*; #(
                     end
                 end
                 riscv::CSR_SENVCFG: csr_rdata = senvcfg_q[riscv::XLEN-1:0];
+                // Ssqosid: inaccessible when V=1 (virtual-instruction exception)
+                riscv::CSR_SRMCFG: begin
+                    if (ariane_pkg::RVH && v_q) begin
+                        virtual_read_access_exception = 1'b1;
+                    end else begin
+                        csr_rdata[11:0]  = 12'(rcid_q);
+                        csr_rdata[27:16] = 12'(mcid_q);
+                    end
+                end
                 // hypervisor mode registers
                 riscv::CSR_HSTATUS: begin
                     if(~ariane_pkg::RVH) read_access_exception = 1'b1;           
@@ -753,6 +769,8 @@ module csr_regfile import ariane_pkg::*; #(
 
         menvcfg_d               = menvcfg_q;
         senvcfg_d               = senvcfg_q;
+        rcid_d                  = rcid_q;
+        mcid_d                  = mcid_q;
 
         en_ld_st_translation_d  = en_ld_st_translation_q;
         if(ariane_pkg::RVH) begin
@@ -991,6 +1009,15 @@ module csr_regfile import ariane_pkg::*; #(
                     senvcfg_d[riscv::XLEN-1:0] = (senvcfg_q[riscv::XLEN-1:0] & ~mask) | (csr_wdata & mask);
                     // this instruction has side-effects
                     flush_o = 1'b1;
+                end
+                riscv::CSR_SRMCFG: begin
+                    if (ariane_pkg::RVH && v_q) begin
+                        virtual_update_access_exception = 1'b1;
+                    end else begin
+                        // WARL: bits beyond the implemented RCID / MCID widths are dropped
+                        rcid_d = csr_wdata[ariane_pkg::QOS_RCID_WIDTH-1:0];
+                        mcid_d = csr_wdata[16 +: ariane_pkg::QOS_MCID_WIDTH];
+                    end
                 end
                 //hypervisor mode registers
                 riscv::CSR_HSTATUS: begin
@@ -1848,6 +1875,11 @@ module csr_regfile import ariane_pkg::*; #(
                     else
                         privilege_violation = 1'b1;
                 end
+                // Ssqosid: srmcfg is inaccessible when V=1, from VS and VU mode alike (virtual-instruction exception;
+                // in VU mode privilege_violation stays set and blocks the access)
+                if (v_q && csr_addr_i == riscv::CSR_SRMCFG) begin
+                    virtual_privilege_violation = 1'b1;
+                end
                 // check access to debug mode only CSRs
                 if (csr_addr_i[11:4] == 8'h7b && !debug_mode_q) begin
                     privilege_violation = 1'b1;
@@ -2060,6 +2092,8 @@ module csr_regfile import ariane_pkg::*; #(
     assign icache_en_o      = icache_q[0] & (~debug_mode_q);
 `endif
     assign dcache_en_o      = dcache_q[0];
+    assign qos_rcid_o       = rcid_q;
+    assign qos_mcid_o       = mcid_q;
     assign fence_t_pad_o    = fence_t_pad_q;
     assign fence_t_src_sel_o= fence_t_ceil_q[32];
 
@@ -2104,6 +2138,8 @@ module csr_regfile import ariane_pkg::*; #(
             mtinst_q               <= {riscv::XLEN{1'b0}};
             menvcfg_q              <= '0;
             senvcfg_q              <= '0;
+            rcid_q                 <= '0;
+            mcid_q                 <= '0;
             dcache_q               <= {{riscv::XLEN-1{1'b0}}, 1'b1};
             icache_q               <= {{riscv::XLEN-1{1'b0}}, 1'b1};
             fence_t_pad_q          <= {riscv::XLEN{1'b0}};
@@ -2177,6 +2213,8 @@ module csr_regfile import ariane_pkg::*; #(
             mtinst_q               <= mtinst_d;
             menvcfg_q              <= menvcfg_d;
             senvcfg_q              <= senvcfg_d;
+            rcid_q                 <= rcid_d;
+            mcid_q                 <= mcid_d;
             dcache_q               <= dcache_d;
             icache_q               <= icache_d;
             fence_t_pad_q          <= fence_t_pad_d;

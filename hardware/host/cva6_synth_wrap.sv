@@ -272,6 +272,7 @@ module cva6_synth_wrap
   logic [31:0]          instr[1:0];
 
   ariane_ace::req_t [ariane_soc::NumCVA6-1:0] ace_ariane_req;
+  ariane_ace::req_t [ariane_soc::NumCVA6-1:0] ace_core_req;     // QoS tag in user[QOS_TAG_WIDTH-1:0]
   ariane_ace::resp_t [ariane_soc::NumCVA6-1:0] ace_ariane_resp;
 
   logic [ariane_soc::NumCVA6-1:0][1:0] hart_id;
@@ -524,12 +525,41 @@ module cva6_synth_wrap
       .emitter_instr_o      ( instr[i]              ),
       .l15_req_o            (                       ),
       .l15_rtrn_i           ( '0                    ),
-      .axi_req_o            ( ace_ariane_req[i]     ),
+      .axi_req_o            ( ace_core_req[i]       ),
       .axi_resp_i           ( ace_ariane_resp[i]    ),
       .perfc_evu_req_i     ( perfc_axi_event_ids[i]),
       .pcmiles_evu_req_i    ( perfc_pc_milestones[i]),
       .perfc_evu_status_resp     ( perfc_evu_events_resp[i])
     );
+
+    // SoC user layout (ariane_axi_soc): the core's QoS tag sits above the source-port bits the CCU writes
+    ariane_ace::req_t core_req_soc_user;
+    always_comb begin : qos_user
+      core_req_soc_user         = ace_core_req[i];
+      core_req_soc_user.aw.user = ariane_axi::user_t'(ariane_axi_soc::qos_user(
+                                    ace_core_req[i].aw.user[ariane_pkg::QOS_TAG_WIDTH-1:0]));
+      core_req_soc_user.ar.user = ariane_axi::user_t'(ariane_axi_soc::qos_user(
+                                    ace_core_req[i].ar.user[ariane_pkg::QOS_TAG_WIDTH-1:0]));
+      ace_ariane_req[i]         = core_req_soc_user;
+    end
+
+    `ifndef SYNTHESIS
+    // QoS scoreboard: the tags this core puts on its requests (checked at the LLC, host/qos_monitor.sv)
+    qos_monitor #(
+      .Name   ( "core"                  ),
+      .Role   ( "core"                  ),
+      .Core   ( i                       ),
+      .req_t  ( ariane_ace::req_t       ),
+      .resp_t ( ariane_ace::resp_t      )
+    ) i_qos_mon_core (
+      .clk_i  ( clk_i              ),
+      .rst_ni ( rst_ni             ),
+      .req_i      ( ace_ariane_req[i]               ),
+      .resp_i     ( ace_ariane_resp[i]              ),
+      .csr_rcid_i ( i_ariane.csr_regfile_i.rcid_q   ),
+      .csr_mcid_i ( i_ariane.csr_regfile_i.mcid_q   )
+    );
+    `endif
 
     `ifdef APMU_IP
     `ACE_ASSIGN_FROM_REQ(core_to_SPU[i], ace_ariane_req[i])

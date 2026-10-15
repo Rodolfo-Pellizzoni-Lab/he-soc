@@ -420,6 +420,7 @@ module ccu_fsm
             ccu_req_o.aw.size      = 2'b11;
             ccu_req_o.aw.burst     = axi_pkg::BURST_INCR; // Use BURST_INCR for AXI regular transaction
             ccu_req_o.aw.id        = {first_responder, ccu_req_holder.ar.id[SlvAxiIDWidth-1:0]}; // It should be visible this data originates from the responder, important e.g. for AMO operations
+            ccu_req_o.aw.user      = ccu_req_holder.ar.user; // QoS tag of the request that caused the write-back
             ccu_req_o.aw.len       = DcacheLineWords-1;
             // WRITEBACK
             ccu_req_o.aw.domain    = 2'b00;
@@ -476,6 +477,7 @@ module ccu_fsm
             ccu_req_o.aw.size      = 2'b11;
             ccu_req_o.aw.burst     = axi_pkg::BURST_INCR; // Use BURST_INCR for AXI regular transaction
             ccu_req_o.aw.id        = {first_responder, ccu_req_holder.aw.id[SlvAxiIDWidth-1:0]}; // It should be visible this data originates from the responder, important e.g. for AMO operations
+            ccu_req_o.aw.user      = ccu_req_holder.aw.user; // QoS tag of the request that caused the write-back
             ccu_req_o.aw.len       = DcacheLineWords-1;
             // WRITEBACK
             ccu_req_o.aw.domain    = 2'b00;
