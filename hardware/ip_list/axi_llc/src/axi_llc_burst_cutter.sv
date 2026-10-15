@@ -94,6 +94,7 @@ module axi_llc_burst_cutter #(
       a_x_lock:  curr_chan_i.lock,
       a_x_prot:  curr_chan_i.prot,
       a_x_cache: curr_chan_i.cache,
+      a_x_user:  curr_chan_i.user,
       x_resp:    axi_pkg::RESP_OKAY,
       rw:        Write,
       default: '0

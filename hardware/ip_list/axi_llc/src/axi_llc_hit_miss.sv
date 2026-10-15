@@ -57,6 +57,12 @@ module axi_llc_hit_miss #(
   // then set SourceIDStart = 7, SourceIDEnd = 9. (Both inclusive.)
   parameter int unsigned SourceIDStart    = 0,
   parameter int unsigned SourceIDEnd      = AxiCfg.SlvPortIdWidth,
+  /// CBQRI capacity allocation: RCID width (0 = off), RCID position and access-type bit in desc.a_x_user
+  parameter int unsigned QosRcidWidth     = 0,
+  parameter int unsigned QosRcidLsb       = 0,
+  parameter int unsigned QosAtBit         = 0,
+  // This is autofilled. Do not expose.
+  parameter int unsigned QosNumRcid       = (QosRcidWidth > 0) ? 2**QosRcidWidth : 1,
   // This is autofilled. Do not expose.
   parameter int unsigned SOURCE_ID_BITS   = SourceIDEnd - SourceIDStart + 1,
   /// Kbit selection from AXI_ID bits for Master Selection
@@ -84,6 +90,8 @@ module axi_llc_hit_miss #(
   input  way_ind_t spm_lock_i,
   input  way_ind_t flushed_i,
   input  bitmask_ind_t id_bitmask_i,
+  // CBQRI block masks: ways each (RCID, AT) may allocate into
+  input  logic [QosNumRcid-1:0][1:0][Cfg.SetAssociativity-1:0] qos_mask_i,
   // unlock inputs from the units
   input  lock_t    w_unlock_i,
   input  logic     w_unlock_req_i,
@@ -388,6 +396,20 @@ module axi_llc_hit_miss #(
   `FFLARN(total_lock_i_d, total_lock_i, 1'b1, '0, clk_i, rst_ni)
   `FFLARN(total_lock_i_q, total_lock_i_d, 1'b1, '0, clk_i, rst_ni)
 
+  // CBQRI capacity allocation: the ways outside the block mask of the looked-up descriptor's (RCID, AT) are
+  // locked for the replacement decision. desc_q holds that descriptor from the tag-store request until its
+  // result is taken, so the lock belongs to the request the PLRU decides for. If the mask leaves no way that is
+  // not already locked (e.g. it only covers SPM ways), the mask is ignored for that request.
+  way_ind_t qos_lock, store_lock;
+  logic     qos_fallback;
+  if (QosRcidWidth > 0) begin : gen_qos_lock
+    assign qos_lock = ~qos_mask_i[desc_q.a_x_user[QosRcidLsb +: QosRcidWidth]][desc_q.a_x_user[QosAtBit]];
+  end else begin : gen_no_qos_lock
+    assign qos_lock = '0;
+  end
+  assign qos_fallback = &(total_lock_i_q | qos_lock);
+  assign store_lock   = qos_fallback ? total_lock_i_q : (total_lock_i_q | qos_lock);
+
   axi_llc_tag_store #(
     .Cfg         ( Cfg         ),
     .way_ind_t   ( way_ind_t   ),
@@ -398,7 +420,7 @@ module axi_llc_hit_miss #(
     .rst_ni,
     .test_i,
     .flushed_i    	( flushed_i          ),
-    .total_lock_i 	( total_lock_i_q     ),
+    .total_lock_i 	( store_lock         ),
     .req_i        	( store_req          ),
     .valid_i      	( store_req_valid    ),
     .ready_o      	( store_req_ready    ),
@@ -469,6 +491,60 @@ module axi_llc_hit_miss #(
       else $fatal(1, "[hit_miss.desc_o.way_ind] More than two bit set in the one-hot signal!");
   `endif
   // pragma translate_on
+  // pragma translate_off
+  `ifndef SYNTHESIS
+  // CBQRI allocation check (simulation): every refill must go into a way of its (RCID, AT) block mask. Prints at
+  // the end "[QOS] llc_alloc rcid=.. at=.. n=.. ways=.. mask=.." per (RCID, AT) and one summary line; a refill
+  // outside the mask prints "[QOS] ERROR llc_alloc ...".
+  if (QosRcidWidth > 0) begin : gen_qos_alloc_check
+    logic [QosRcidWidth-1:0]         chk_rcid;
+    logic                            chk_at;
+    logic [Cfg.SetAssociativity-1:0] chk_mask, chk_allowed;
+    logic                            chk_fire;
+    int unsigned n_alloc, n_err, n_fallback;
+    int unsigned n_per   [QosNumRcid][2];
+    logic [Cfg.SetAssociativity-1:0] ways_per [QosNumRcid][2];
+
+    assign chk_rcid    = desc_o.a_x_user[QosRcidLsb +: QosRcidWidth];
+    assign chk_at      = desc_o.a_x_user[QosAtBit];
+    assign chk_mask    = qos_mask_i[chk_rcid][chk_at];
+    assign chk_allowed = chk_mask & ~spm_lock_i;
+    assign chk_fire    = miss_valid_o && miss_ready_i && !desc_o.flush && !desc_o.spm && desc_o.refill;
+
+    initial begin
+      n_alloc = 0; n_err = 0; n_fallback = 0;
+      for (int r = 0; r < QosNumRcid; r++) for (int a = 0; a < 2; a++) begin
+        n_per[r][a] = 0; ways_per[r][a] = '0;
+      end
+    end
+
+    always @(posedge clk_i) begin
+      if (rst_ni && chk_fire) begin
+        n_alloc++;
+        n_per[chk_rcid][chk_at]++;
+        ways_per[chk_rcid][chk_at] |= desc_o.way_ind;
+        if (chk_allowed == '0) n_fallback++;
+        else if ((desc_o.way_ind & ~chk_mask) != '0) begin
+          n_err++;
+          if (n_err <= 10)
+            $display("[QOS] ERROR llc_alloc rcid=%0d at=%0d addr=0x%h way=0x%h outside mask 0x%h", chk_rcid,
+                     chk_at, desc_o.a_x_addr, desc_o.way_ind, chk_mask);
+        end
+      end
+    end
+
+    final begin
+      for (int r = 0; r < QosNumRcid; r++) for (int a = 0; a < 2; a++)
+        if (n_per[r][a] != 0)
+          $display("[QOS] llc_alloc rcid=%0d at=%0d n=%0d ways=0x%h mask=0x%h", r, a, n_per[r][a], ways_per[r][a],
+                   qos_mask_i[r][a]);
+      $display("[QOS] llc_alloc check: %0d refills, %0d outside their mask%s, %0d with no usable way in the mask",
+               n_alloc, n_err, (n_err != 0) ? " ERROR" : "", n_fallback);
+    end
+  end
+  `endif
+  // pragma translate_on
+
 `ifdef XSIM_INIT_REGS
   initial begin total_lock_i_d = '0; total_lock_i_q = '0; busy_q = '0; init_q = '0; desc_q = '0; end // xsim: kill time-0 X in the BIST handshake ring
 `endif
