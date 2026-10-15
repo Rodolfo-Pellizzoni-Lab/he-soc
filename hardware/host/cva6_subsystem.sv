@@ -472,6 +472,15 @@ module cva6_subsystem
     .AXI_USER_WIDTH     ( AXI_USER_WIDTH           ),
     .AXI_MAX_READ_TXNS  ( 8                        ),
     .AXI_MAX_WRITE_TXNS ( 8                        ),
+    // LR/SC reservations keyed by the CCU's source-port bits (one entry per core, ariane_axi_soc user[1:0]) instead of
+    // the AXI ID: the core-side ID remapper (cva6_synth_wrap, cva6_axi_id_remap) allocates read and write IDs from
+    // separate tables, so the LR's AR ID and the SC's AW ID only agree when nothing else is in flight. On the VCU118
+    // (posted UART / L2 writes pending) an ID-keyed table failed every SC to the uncached L2 while simulation passed
+    // (2026-10-14). The port bits are stable across the remapper. The address check that clears a reservation on any
+    // write is unchanged, and the 2**IdWidthSlave-entry table was also the routing hot spot of the FPGA build.
+    .AXI_USER_AS_ID     ( 1'b1                     ),
+    .AXI_USER_ID_MSB    ( ariane_axi_soc::QosUserLsb-1 ),
+    .AXI_USER_ID_LSB    ( 0                        ),
     .RISCV_WORD_WIDTH   ( 64                       ),
     .CUT_OUP_POP_INP_GNT( 1                        )
   ) i_axi_riscv_atomicsl2 (
@@ -551,6 +560,15 @@ module cva6_subsystem
     .AXI_USER_WIDTH     ( AXI_USER_WIDTH           ),
     .AXI_MAX_READ_TXNS  ( 8                        ),
     .AXI_MAX_WRITE_TXNS ( 8                        ),
+    // LR/SC reservations keyed by the CCU's source-port bits (one entry per core, ariane_axi_soc user[1:0]) instead of
+    // the AXI ID: the core-side ID remapper (cva6_synth_wrap, cva6_axi_id_remap) allocates read and write IDs from
+    // separate tables, so the LR's AR ID and the SC's AW ID only agree when nothing else is in flight. On the VCU118
+    // (posted UART / L2 writes pending) an ID-keyed table failed every SC to the uncached L2 while simulation passed
+    // (2026-10-14). The port bits are stable across the remapper. The address check that clears a reservation on any
+    // write is unchanged, and the 2**IdWidthSlave-entry table was also the routing hot spot of the FPGA build.
+    .AXI_USER_AS_ID     ( 1'b1                     ),
+    .AXI_USER_ID_MSB    ( ariane_axi_soc::QosUserLsb-1 ),
+    .AXI_USER_ID_LSB    ( 0                        ),
     .RISCV_WORD_WIDTH   ( 64                       )
   ) i_axi_riscv_atomicsl3 (
     .clk_i,

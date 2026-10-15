@@ -241,10 +241,24 @@ module alsaqr_clk_rst_gen (
     assign s_clk_cva6        = s_clk_fll_cva6;
     assign s_clk_opentitan_o = s_clk_fll_soc;
 
-    assign s_rstn_soc_sync     = s_rstn_soc & (~rst_dm_i) ;
-    assign s_rstn_cluster_sync = s_rstn_soc & (~rst_dm_i);
+    // SoC, cluster and CVA6 reset (all domains run on ref_clk_i here): asynchronous assertion, synchronous
+    // deassertion. rstgen's output multiplexer is a BUFGMUX on Xilinx (tech_cells_generic fpga/tc_clk_xilinx.sv),
+    // so the reset is distributed on the global clock network. Driven straight from `s_rstn_soc & ~rst_dm_i`, this
+    // net reached ~213k asynchronous clears through fabric routing (~20 ns) and failed recovery timing at 50 MHz.
+    logic s_rstn_dm_sync;
+
+    rstgen i_fpga_rstgen (
+      .clk_i       ( s_clk_fll_soc            ),
+      .rst_ni      ( s_rstn_soc & (~rst_dm_i) ),
+      .test_mode_i ( test_mode_i              ),
+      .rst_no      ( s_rstn_dm_sync           ),
+      .init_no     (                          )
+    );
+
+    assign s_rstn_soc_sync     = s_rstn_dm_sync;
+    assign s_rstn_cluster_sync = s_rstn_dm_sync;
     assign s_rst_glob_sync     = s_rstn_soc;
-    assign s_rstn_cva6_sync    = s_rstn_soc & (~rst_dm_i);
+    assign s_rstn_cva6_sync    = s_rstn_dm_sync;
 
   `endif
 

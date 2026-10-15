@@ -852,13 +852,23 @@ module udma_subsystem
             assign s_rx_cfg_stream_id[CH_ID_RX_SDIO+g_sdio] = 'h0;
             assign s_rx_ch_destination[CH_ID_RX_SDIO+g_sdio] = 'h0;
             assign s_tx_ch_destination[CH_ID_TX_SDIO+g_sdio] = 'h0;
+            // The SDIO runs on a gated clock; on the FPGA that is a second-level BUFGCE whose edge reaches the SDIO
+            // flops ~3 ns after the SoC clock edge, while the rstgen reset on the global clock network arrives too
+            // early for their removal check (VCU118 at 50 MHz, 2026-10-14). A kept LUT buffer puts the SDIO's reset
+            // on a fabric branch (~0.5 ns later; recovery keeps ~18 ns of margin).
+            logic s_sdio_rstn;
+`ifdef TARGET_FPGA
+            (* DONT_TOUCH = "true" *) LUT1 #(.INIT(2'b10)) i_sdio_rstn_buf (.I0(sys_resetn_i), .O(s_sdio_rstn));
+`else
+            assign s_sdio_rstn = sys_resetn_i;
+`endif
             udma_sdio_top #(
                 .L2_AWIDTH_NOAL ( L2_AWIDTH_NOAL ),
                 .TRANS_SIZE     ( TRANS_SIZE     )
             ) i_sdio (
                 .sys_clk_i           ( s_clk_periphs_core[PER_ID_SDIO+g_sdio] ),
                 .periph_clk_i        ( s_clk_periphs_per[PER_ID_SDIO+g_sdio]  ),
-                .rstn_i              ( sys_resetn_i                           ),
+                .rstn_i              ( s_sdio_rstn                            ),
 
                 .err_o               ( s_sdio_err[g_sdio] ),
                 .eot_o               ( s_sdio_eot[g_sdio] ),
