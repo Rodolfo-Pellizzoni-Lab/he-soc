@@ -88,8 +88,23 @@ second step would almost never close.
 Under Linux (Buildroot, 433 MB of RAM) the model is configured with devmem from the shell. With the 1 GHz target
 values (`LAT_RD = LAT_WR = 80`, `OCC16 = 20`) writing 32 MB into tmpfs took 26.7 s of host time against 12.4 s
 with the model off, and reading it back 1.2 s against 0.7 s. The model saw 5.7 M reads of 2.04 beats on average
-(the kernel's memory lies outside the LLC window, so its traffic is 16-byte L1 fills) and 4.4 M write-through
-stores; 1 read was late, by 12 cycles.
+(the kernel's memory lies outside the LLC window, so its traffic is 16-byte L1 fills) and 4.4 M write bursts;
+1 read was late, by 12 cycles.
+
+## Latency sweep
+
+`software/soc_tests/t_sweep` chases a random cyclic chain of 16-byte elements (one L1 line each) through arrays
+of 1 KB to 7 MB in LLC-cached DRAM and prints the cycles per dependent read for every size, with the model off
+and with the 1 GHz settings; `software/soc_tests/plot_sweep.py` draws its console log. On the VCU118:
+
+![cycles per dependent read against the array size](latency_sweep.png)
+
+| Array | Model off | 1 GHz settings | |
+|---|---|---|---|
+| up to 16 KB | 4.3 cycles | 4.3 | L1 hit: the L1 data cache of this configuration (`cv64a6_imafdc_sv39_wb`) is 16 KB, 8 ways of 16-byte lines |
+| 128 KB to 1 MB | 45.0 | 45.0 | LLC hit: the model sees no traffic |
+| 2 MB | 58.8 | 99.3 | |
+| 7 MB | 65.7 | 127.0 | mostly DRAM; a 64-byte LLC line holds 4 elements, so a share of the hops still hit the LLC and the curve keeps climbing towards the pure miss (85 cycles in `t_dram`, whose chain thrashes one set) |
 
 ## Test
 

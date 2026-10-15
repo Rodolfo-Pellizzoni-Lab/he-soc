@@ -42,7 +42,7 @@
 static inline uint64_t ld(uint64_t a) { return *(volatile uint64_t *)a; }
 static inline void     st(uint64_t a, uint64_t v) { *(volatile uint64_t *)a = v; }
 
-// read 64 KB of LLC-cached DRAM in sets 2..1023: everything else leaves the 32 KB L1
+// read 64 KB of LLC-cached DRAM in sets 2..1023: everything else leaves the 16 KB L1
 static void l1_sweep(void) {
   uint64_t s = 0;
   for (uint64_t a = REGION + 0x80; a < REGION + 0x10000; a += 64) s += ld(a);
