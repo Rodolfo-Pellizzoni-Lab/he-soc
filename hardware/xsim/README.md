@@ -163,7 +163,10 @@ f=$HW/<path>; line=$(grep -E "^xvlog .*[ /]$(basename $f)( |$)" compile.sh | hea
 xvlog -sv -work work -L uvm $(echo "$line" | grep -oE '(-i|-d) [^ ]+' | tr '\n' ' ') $f
 ```
 
-Changing `env.sh` or adding files needs a full `./build.sh`.
+Changing `env.sh` needs a full `./build.sh`; a new file needs `./build.sh -j` (Bender list -> `compile.sh` only,
+seconds) and then a compile of the new file. A changed **package** (a struct, a parameter) needs every file that
+imports it recompiled as well: xelab elaborates the stale users against the new package and dies with
+`Signal SIGSEGV received` instead of an error message. `rtl_recompile` lists the importers it was not given.
 
 The alsaqr-mcp tools elaborate a snapshot named after the library state they know: the last full build plus the
 files recompiled through `rtl_recompile`. A file recompiled by hand with the command above is invisible to them,
