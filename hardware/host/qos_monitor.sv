@@ -137,6 +137,8 @@ module qos_monitor #(
   // role "core": a request is new in the first cycle its valid is high (the tag is then taken from srmcfg)
   logic ar_pending_q, aw_pending_q;
   initial begin ar_pending_q = 0; aw_pending_q = 0; end
+  typedef struct { bit is_w; longint unsigned addr; int unsigned u; } obs_t;
+  obs_t deferred[$];   // role "llc_out": requests sampled in the previous cycle
   task automatic check_csr(bit is_w, int unsigned u, bit fetch);
     if (f_rcid(u) != csr_rcid_i || f_mcid(u) != csr_mcid_i || f_at(u) != fetch) begin
       n_err++;
@@ -155,8 +157,21 @@ module qos_monitor #(
       aw_pending_q <= req_i.aw_valid && !resp_i.aw_ready;
     end
     if (rst_ni) begin
-      if (req_i.ar_valid && resp_i.ar_ready) observe(1'b0, longint'(req_i.ar.addr), user_of(64'(req_i.ar.user)));
-      if (req_i.aw_valid && resp_i.aw_ready) observe(1'b1, longint'(req_i.aw.addr), user_of(64'(req_i.aw.user)));
+      if (Role == "llc_out") begin
+        // the LLC's bypass path has no register: a bypassed request is at the output in the cycle it enters, and
+        // this instance may sample it before the "llc_in" instance has recorded it. Check output requests one
+        // cycle later.
+        while (deferred.size() > 0) begin
+          obs_t o;
+          o = deferred.pop_front();
+          observe(o.is_w, o.addr, o.u);
+        end
+        if (req_i.ar_valid && resp_i.ar_ready) deferred.push_back('{1'b0, longint'(req_i.ar.addr), user_of(64'(req_i.ar.user))});
+        if (req_i.aw_valid && resp_i.aw_ready) deferred.push_back('{1'b1, longint'(req_i.aw.addr), user_of(64'(req_i.aw.user))});
+      end else begin
+        if (req_i.ar_valid && resp_i.ar_ready) observe(1'b0, longint'(req_i.ar.addr), user_of(64'(req_i.ar.user)));
+        if (req_i.aw_valid && resp_i.aw_ready) observe(1'b1, longint'(req_i.aw.addr), user_of(64'(req_i.aw.user)));
+      end
     end
   end
 
