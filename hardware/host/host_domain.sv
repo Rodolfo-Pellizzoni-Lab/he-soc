@@ -395,8 +395,72 @@ module host_domain
    `AXI_TYPEDEF_ALL(xsim_dram, xsim_dram_addr_t, xsim_dram_id_t, xsim_dram_data_t, xsim_dram_strb_t, xsim_dram_user_t)
    xsim_dram_req_t  [0:0] xsim_dram_req;
    xsim_dram_resp_t [0:0] xsim_dram_rsp;
-   `AXI_ASSIGN_TO_REQ(xsim_dram_req[0], mem_axi_bus)
-   `AXI_ASSIGN_FROM_RESP(mem_axi_bus, xsim_dram_rsp[0])
+   xsim_dram_req_t        xsim_llc_mem_req;
+   xsim_dram_resp_t       xsim_llc_mem_rsp;
+   `AXI_ASSIGN_TO_REQ(xsim_llc_mem_req, mem_axi_bus)
+   `AXI_ASSIGN_FROM_RESP(mem_axi_bus, xsim_llc_mem_rsp)
+   logic xsim_dram_clk, xsim_dram_rst_n;
+  `ifdef XSIM_DRAM_IDEAL
+   // memory answers in the SoC clock domain within a cycle or two
+   assign xsim_dram_clk    = s_soc_clk;
+   assign xsim_dram_rst_n  = s_synch_soc_rst;
+   assign xsim_dram_req[0] = xsim_llc_mem_req;
+   assign xsim_llc_mem_rsp = xsim_dram_rsp[0];
+  `else
+   // Board-like memory path (default). On the FPGA (fpga/ddr/alsaqr_xilinx.sv) the LLC memory port crosses into
+   // the DDR4 controller's clock through an axi_cdc (LOG_DEPTH 4), and the controller answers after a variable
+   // latency, so a read can overtake an earlier write (AXI orders nothing between AR and AW/W). Model both: the
+   // same CDC into a 300 MHz clock, then random stalls (0-15 cycles per transfer) on every channel. Races that
+   // only show up behind real DDR show up here too; XSIM_DRAM_IDEAL restores the direct connection.
+   xsim_dram_req_t  xsim_cdc_req;
+   xsim_dram_resp_t xsim_cdc_rsp;
+   initial xsim_dram_clk = 1'b0;
+   always #1667ps xsim_dram_clk = ~xsim_dram_clk;
+   logic [1:0] xsim_dram_rst_q;
+   always_ff @(posedge xsim_dram_clk or negedge s_synch_soc_rst)
+     if (!s_synch_soc_rst) xsim_dram_rst_q <= '0;
+     else                  xsim_dram_rst_q <= {xsim_dram_rst_q[0], 1'b1};
+   assign xsim_dram_rst_n = xsim_dram_rst_q[1];
+   axi_cdc #(
+     .aw_chan_t  ( xsim_dram_aw_chan_t ),
+     .w_chan_t   ( xsim_dram_w_chan_t  ),
+     .b_chan_t   ( xsim_dram_b_chan_t  ),
+     .ar_chan_t  ( xsim_dram_ar_chan_t ),
+     .r_chan_t   ( xsim_dram_r_chan_t  ),
+     .axi_req_t  ( xsim_dram_req_t     ),
+     .axi_resp_t ( xsim_dram_resp_t    ),
+     .LogDepth   ( 4                   )
+   ) i_xsim_dram_cdc (
+     .src_clk_i  ( s_soc_clk        ),
+     .src_rst_ni ( s_synch_soc_rst  ),
+     .src_req_i  ( xsim_llc_mem_req ),
+     .src_resp_o ( xsim_llc_mem_rsp ),
+     .dst_clk_i  ( xsim_dram_clk    ),
+     .dst_rst_ni ( xsim_dram_rst_n  ),
+     .dst_req_o  ( xsim_cdc_req     ),
+     .dst_resp_i ( xsim_cdc_rsp     )
+   );
+   axi_delayer #(
+     .aw_chan_t         ( xsim_dram_aw_chan_t ),
+     .w_chan_t          ( xsim_dram_w_chan_t  ),
+     .b_chan_t          ( xsim_dram_b_chan_t  ),
+     .ar_chan_t         ( xsim_dram_ar_chan_t ),
+     .r_chan_t          ( xsim_dram_r_chan_t  ),
+     .axi_req_t         ( xsim_dram_req_t     ),
+     .axi_resp_t        ( xsim_dram_resp_t    ),
+     .StallRandomInput  ( 1'b1                ),
+     .StallRandomOutput ( 1'b1                ),
+     .FixedDelayInput   ( 0                   ),
+     .FixedDelayOutput  ( 0                   )
+   ) i_xsim_dram_delay (
+     .clk_i      ( xsim_dram_clk    ),
+     .rst_ni     ( xsim_dram_rst_n  ),
+     .slv_req_i  ( xsim_cdc_req     ),
+     .slv_resp_o ( xsim_cdc_rsp     ),
+     .mst_req_o  ( xsim_dram_req[0] ),
+     .mst_resp_i ( xsim_dram_rsp[0] )
+   );
+  `endif
    axi_sim_mem #(
      .AddrWidth         ( AXI_ADDRESS_WIDTH          ),
      .DataWidth         ( AXI_DATA_WIDTH             ),
@@ -407,11 +471,11 @@ module host_domain
      .axi_rsp_t         ( xsim_dram_resp_t           ),
      .WarnUninitialized ( 1'b0                       ),
      .UninitializedData ( "zeros"                    ),
-     .ApplDelay         ( 1ns                        ),
-     .AcqDelay          ( 3ns                        )
+     .ApplDelay         ( 300ps                      ),
+     .AcqDelay          ( 1500ps                     )
    ) i_xsim_sim_dram (
-     .clk_i     ( s_soc_clk       ),
-     .rst_ni    ( s_synch_soc_rst ),
+     .clk_i     ( xsim_dram_clk   ),
+     .rst_ni    ( xsim_dram_rst_n ),
      .axi_req_i ( xsim_dram_req   ),
      .axi_rsp_o ( xsim_dram_rsp   ),
      .mon_w_valid_o (), .mon_w_addr_o (), .mon_w_data_o (), .mon_w_id_o (), .mon_w_user_o (), .mon_w_beat_count_o (), .mon_w_last_o (),
@@ -521,7 +585,13 @@ module host_domain
       // Source ID Specifications
       .SourceIDStart    ( 2                              ),
       .SourceIDEnd      (  ariane_soc::IdWidthSlave-1    ),
-      .NumCfgRegcp      ( 64                             )
+      .NumCfgRegcp      ( 64                             ),
+      // CBQRI capacity controller at LLC config base + 0x800 (0x1040_1800): ways allocated per (RCID, AT) of the
+      // QoS tag in the AXI user field (ariane_axi_soc layout, hardware/docs/qos.md)
+      .QosRcidWidth     ( ariane_pkg::QOS_RCID_WIDTH     ),
+      .QosRcidLsb       ( ariane_axi_soc::QosUserLsb     ),
+      .QosAtBit         ( ariane_axi_soc::QosUserLsb + ariane_pkg::QOS_RCID_WIDTH + ariane_pkg::QOS_MCID_WIDTH ),
+      .QosCcOffset      ( 32'h800                        )
     ) i_axi_llc (
       .clk_i               ( s_soc_clk                                                                           ),
       .rst_ni              ( s_synch_soc_rst                                                                     ),
@@ -537,6 +607,37 @@ module host_domain
       .spm_start_addr_i    ( {{(AXI_ADDRESS_WIDTH-$bits(s_llc_spm_addr_start)){1'b0}}  , s_llc_spm_addr_start  } ),
       .axi_llc_events_o    ( llc_events                                                                          )
     );
+
+   `ifndef SYNTHESIS
+   // QoS tag scoreboard (ariane_axi_soc user layout, host/qos_monitor.sv): LLC requests against the cores'
+   // requests, LLC refills / evictions against the LLC requests
+   qos_monitor #(
+     .Name     ( "llc_in"                                ),
+     .Role     ( "llc_in"                                ),
+     .LineBits ( $clog2(ariane_soc::LLC_NUM_BLOCKS * 8)  ),
+     .SetBits  ( $clog2(ariane_soc::LLC_NUM_LINES)       ),
+     .req_t  ( ariane_axi_soc::req_slv_t  ),
+     .resp_t ( ariane_axi_soc::resp_slv_t )
+   ) i_qos_mon_llc_in (
+     .clk_i  ( s_soc_clk       ),
+     .rst_ni ( s_synch_soc_rst ),
+     .req_i  ( axi_cpu_req     ),
+     .resp_i ( axi_cpu_res     )
+   );
+   qos_monitor #(
+     .Name     ( "llc_out"                               ),
+     .Role     ( "llc_out"                               ),
+     .LineBits ( $clog2(ariane_soc::LLC_NUM_BLOCKS * 8)  ),
+     .SetBits  ( $clog2(ariane_soc::LLC_NUM_LINES)       ),
+     .req_t  ( ariane_axi_soc::req_slv_mem_t  ),
+     .resp_t ( ariane_axi_soc::resp_slv_mem_t )
+   ) i_qos_mon_llc_out (
+     .clk_i  ( s_soc_clk       ),
+     .rst_ni ( s_synch_soc_rst ),
+     .req_i  ( axi_mem_req     ),
+     .resp_i ( axi_mem_res     )
+   );
+   `endif
 
    assign s_llc_read_hit_cache = llc_events.hit_read_cache.active;
    assign s_llc_read_miss_cache = llc_events.miss_read_cache.active;

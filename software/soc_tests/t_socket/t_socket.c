@@ -30,7 +30,7 @@ int main(void) {
   CHECK(faults == 1 || v == 0xdeadbeef, "32-bit read past the last slot returned 0x%x (faults %d)", v, faults);
   uint32_t v4 = REG32(PAST_LAST_SLOT + 0x14);
   CHECK(faults >= 1 || v4 == 0xdeadbeef, "32-bit read at +4 (upper lane) returned 0x%x", v4);
-  uint64_t d = REG64(0x103F0000UL);   // top of the cluster window
+  uint64_t d = REG64(0x103FFFF8UL);   // last word of the cluster window (0x103F_0000 is the QoS probe)
   CHECK(faults >= 1 || d == 0xdeadbeefdeadbeefULL, "64-bit read at the top of the window returned %08x%08x", H64(d));
   REG64(PAST_LAST_SLOT + 0x20) = 0x1234;
   __asm__ volatile("fence" ::: "memory");

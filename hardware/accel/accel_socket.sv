@@ -11,6 +11,10 @@
 // Register accesses are 32-bit: a 64-bit access becomes two (low word first), a narrower one reads/writes the
 // containing word with byte strobes. Bursts are walked beat by beat. Atomic (ATOP) writes are refused (SLVERR).
 //
+// QoS probe: the 8 bytes at 0x103F_0000 (the rest of that 64 KB answers DECERR), for checking the QoS tag the cores put on AXI requests
+// (ariane_axi_soc user layout): a 32-bit read of +0x0 returns the AR user field of that read itself, +0x4 the AW
+// user field of the last write to the probe (a 64-bit read of +0x0 returns both). Writes are only recorded.
+//
 // Register port protocol (see accel_slots.sv): reg_req is a one-cycle strobe; the slot answers with exactly one
 // reg_ack pulse in the same or a later cycle, with reg_rdata valid in the ack cycle.
 
@@ -83,6 +87,7 @@ module accel_socket #(
   logic [2:0]                        size_q;
   logic [1:0]                        burst_q, resp_q;
   logic [TW-1:0]                     wait_q;
+  logic [31:0]                       user_q, probe_aw_user_q;
 
   // which 32-bit halves of the 64-bit lane a beat touches
   function automatic logic needs_lo(logic wr, logic [7:0] strb, logic [2:0] size, logic [63:0] a);
@@ -93,6 +98,9 @@ module accel_socket #(
   endfunction
   function automatic logic slot_ok(logic [63:0] a);
     return a[21:16] < NumSlots;
+  endfunction
+  function automatic logic is_probe(logic [63:0] a);
+    return a[21:3] == {6'h3F, 13'h0};
   endfunction
   function automatic logic [63:0] next_addr(logic [63:0] a, logic [2:0] size, logic [1:0] burst);
     return (burst == axi_pkg::BURST_FIXED) ? a : ((a >> size) + 64'd1) << size;
@@ -138,10 +146,12 @@ module accel_socket #(
     wait_q      <= '0;
   endtask
 
-  // start a read beat at address a (or answer DECERR without an access)
-  task automatic start_read(input logic [63:0] a, input logic [2:0] size);
+  // start a read beat at address a (or answer the probe / DECERR without an access)
+  task automatic start_read(input logic [63:0] a, input logic [2:0] size, input logic [31:0] user);
     rdata_q <= '0;
-    if (!slot_ok(a)) begin
+    if (is_probe(a)) begin
+      rdata_q <= {probe_aw_user_q, user}; state_q <= S_RDATA;
+    end else if (!slot_ok(a)) begin
       resp_q <= axi_pkg::RESP_DECERR; rdata_q <= 64'hdeadbeef_deadbeef; state_q <= S_RDATA;
     end else begin
       need_hi_q <= needs_hi(1'b0, '0, size, a);
@@ -155,6 +165,7 @@ module accel_socket #(
       state_q <= S_IDLE; is_write_q <= 1'b0; atop_q <= 1'b0; hi_q <= 1'b0; need_hi_q <= 1'b0;
       id_q <= '0; addr_q <= '0; beats_q <= '0; size_q <= '0; burst_q <= '0;
       wdata_q <= '0; rdata_q <= '0; wstrb_q <= '0; resp_q <= '0; wait_q <= '0;
+      user_q <= '0; probe_aw_user_q <= '0;
       reg_req_q <= 1'b0; reg_slot_q <= '0; reg_addr_q <= '0; reg_we_q <= 1'b0; reg_wdata_q <= '0; reg_wstrb_q <= '0;
     end else begin
       reg_req_q <= 1'b0;   // one-cycle strobe; issue() overrides
@@ -164,18 +175,21 @@ module accel_socket #(
           if (aw_take) begin
             is_write_q <= 1'b1; id_q <= slv_req_i.aw.id; addr_q <= slv_req_i.aw.addr; beats_q <= slv_req_i.aw.len;
             size_q <= slv_req_i.aw.size; burst_q <= slv_req_i.aw.burst; atop_q <= (slv_req_i.aw.atop != '0);
+            user_q <= 32'(slv_req_i.aw.user);
             state_q <= S_WDATA;
           end else if (ar_take) begin
             is_write_q <= 1'b0; id_q <= slv_req_i.ar.id; addr_q <= slv_req_i.ar.addr; beats_q <= slv_req_i.ar.len;
             size_q <= slv_req_i.ar.size; burst_q <= slv_req_i.ar.burst; atop_q <= 1'b0;
-            start_read(slv_req_i.ar.addr, slv_req_i.ar.size);
+            user_q <= 32'(slv_req_i.ar.user);
+            start_read(slv_req_i.ar.addr, slv_req_i.ar.size, 32'(slv_req_i.ar.user));
           end
         end
         S_WDATA: if (w_take) begin
           wdata_q <= slv_req_i.w.data; wstrb_q <= slv_req_i.w.strb;
           if (atop_q || !slot_ok(addr_q) || slv_req_i.w.strb == '0) begin
-            // refused or empty beat: no register access
-            if (atop_q)               resp_q <= axi_pkg::RESP_SLVERR;
+            // refused, probe or empty beat: no register access
+            if (atop_q)                resp_q <= axi_pkg::RESP_SLVERR;
+            else if (is_probe(addr_q)) probe_aw_user_q <= user_q;
             else if (!slot_ok(addr_q)) resp_q <= axi_pkg::RESP_DECERR;
             if (beats_q == 8'd0) state_q <= S_BRESP;
             else begin beats_q <= beats_q - 8'd1; addr_q <= next_addr(addr_q, size_q, burst_q); end
@@ -211,7 +225,7 @@ module accel_socket #(
           else begin
             beats_q <= beats_q - 8'd1;
             addr_q  <= next_addr(addr_q, size_q, burst_q);
-            start_read(next_addr(addr_q, size_q, burst_q), size_q);
+            start_read(next_addr(addr_q, size_q, burst_q), size_q, user_q);
           end
         end
         default: state_q <= S_IDLE;
