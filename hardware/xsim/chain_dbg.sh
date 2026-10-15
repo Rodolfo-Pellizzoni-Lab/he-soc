@@ -26,7 +26,7 @@ XP=$!
     [ "$a" = "$b" ] && [ -n "$a" ] && { echo "STALL $a" >> st_$tag.txt; for p in $(pgrep -f "x[s]imk.*$snap"); do kill -9 $p; done; break; }
   done ) &
 wait $XP
-last=$(grep REACHED st_$tag.txt | tail -1 | awk '{print $2, $3}'); echo "last marker: $last"
+last=$(grep '^REACHED' st_$tag.txt | tail -1 | awk '{print $2, $3}'); echo "last marker: $last"
 grep -q NOSTALL st_$tag.txt && { echo "no stall in window"; exit 0; }
 v=$(echo $last | awk '{ if ($2=="us") print $1*1000; else if ($2=="ns") print $1; else if ($2=="ps") print $1/1000; else print $1*1000000 }')
 from=$(awk -v v="$v" 'BEGIN{printf "%d", v-200}')

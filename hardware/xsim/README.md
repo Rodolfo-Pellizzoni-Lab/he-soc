@@ -128,6 +128,7 @@ they only worked through a latch data-vs-enable race that depended on placement 
 `comb_fix.py`, check the Vivado synthesis log for `inferring latch` in the rewritten file.
 | Debug module memory: rw-logic ↔ hart control queue | `riscv-dbg/src/dm_mem.sv` (+ `dm_csrs.sv` outputs) | first "halted" write, 2.016 ms |
 | AXI data-width downsizer W/R blocks ↔ fall-through fifo | `axi_dw_downsizer.sv`, `fifo_v3.sv` (data_o) | first UART write, 2.53 ms |
+| SPU monitor CAM: each entry's block read `ptr_d[mmatch]`, written by the other entries' blocks (rewritten to `mmatch_next` from registered state, which also removed the `addr_idx_o` latch) | `spu/src/spu_r_chan.sv`, `spu_w_chan.sv` | only with the board-like DRAM path: a read response and a new request in the same cycle, 2.62 ms |
 
 ### Other xsim patches
 
@@ -136,7 +137,12 @@ they only worked through a latch data-vs-enable race that depended on placement 
 - `fll_dummy`: clocks idle while RSTB is not 1 (XSIM_FLL_IDLE_IN_RESET).
 - `jtag_pkg`, `jtag_test`: `timescale 1ps/1ps` and time literals — xsim rescaled the `parameter time TA/TT` overrides, so JTAG never initialised.
 - `default disable iff` removed (not supported by xsim); `tran` removed from the tb; struct-literal `'{` fixes in `cva6.sv`; `logic` on inout tb nets; VHDL `mod` width in CAN `bit_(de)stuffing`; use-before-declare in `sdModel.v`; compilation-unit `timeunit` in `hwpe_ctrl_interfaces.sv`; anonymous instance in `apb_subsystem.sv`; behavioral `pad_alsaqr` models rewritten with continuous assignments.
-- `host_domain.sv`: XSIM_SIM_DRAM — `axi_sim_mem` (zero-initialised) on `mem_axi_bus`, HyperBus slave port tied off, and a `wfi; j -4` loop preloaded at 0x8000_0000 so a core sent there by the L2-flow startup code parks instead of wedging.
+- `host_domain.sv`: XSIM_SIM_DRAM — `axi_sim_mem` (zero-initialised) on `mem_axi_bus`, HyperBus slave port tied off, and a `wfi; j -4` loop preloaded at 0x8000_0000 so a core sent there by the L2-flow startup code parks instead of wedging. By default the memory sits behind the
+  same path as on the FPGA (`fpga/ddr/alsaqr_xilinx.sv`): an `axi_cdc` (LOG_DEPTH 4) into a separate 300 MHz clock,
+  then `axi_delayer` with random stalls (0-15 cycles per transfer, every channel), so responses come back with
+  DDR-like jitter and a read can overtake an earlier write. Define XSIM_DRAM_IDEAL for the old direct connection
+  (memory in the SoC clock domain, answers within a cycle or two). The ideal path hid a zero-delay ring in the SPU
+  (table above) that the jitter exposes.
 - Testbench: direct ELF preload (XSIM_L2_PRELOAD: L2 banks, plus the sim DRAM with XSIM_L3_FLOW) instead of JTAG SBA bit-banging; XSIM_L3_FLOW selects entry 0x8000_0000 / tohost 0x1C00_0000; XSIM_TICK prints a heartbeat every 10 µs for the watchdog.
 - Left in the sources, off by default: bisection hooks used while hunting the rings (`XSIM_CUT_<inst>`, `XSIM_V_CLK/RST/IN` in host_domain, `XSIM_INIT_REGS`, `XSIM_FORCE_RESET/REGS`, `XSIM_LLC_DEBUG`, `XSIM_DMI_DEBUG`, ...).
 
@@ -159,6 +165,10 @@ xvlog -sv -work work -L uvm $(echo "$line" | grep -oE '(-i|-d) [^ ]+' | tr '\n' 
 
 Changing `env.sh` or adding files needs a full `./build.sh`.
 
+The alsaqr-mcp tools elaborate a snapshot named after the library state they know: the last full build plus the
+files recompiled through `rtl_recompile`. A file recompiled by hand with the command above is invisible to them,
+and `sim_run` / `sim_regress` keep reusing the old snapshot; recompile through `rtl_recompile` instead.
+
 ## 4. Debugging a stall
 
 - Watchdog says `STALLED at <t>` with growing RSS: a combinational ring. `./chain_dbg.sh <tag> <elf> <t-10us in ns> 40 500`
@@ -175,6 +185,8 @@ Changing `env.sh` or adding files needs a full `./build.sh`.
 
 - L2 is 32 KB in this configuration; bigger programs must be L3 builds.
 - The sim DRAM is zero-initialised (plus the WFI loop at 0x8000_0000) and holds only what the preload writes.
+- The board-like DRAM path models the DDR controller's clock crossing and variable latency, not its absolute
+  latency or bank behaviour; its random stalls come from fixed LFSR seeds, so every run sees the same sequence.
 - No HyperBus timing, no flash/SD/CAN/Ethernet traffic: those device models are off.
 - The Questa flow (`make` in `hardware/`) is not maintained on this branch.
 - xsim itself: no `tran`, no `default disable iff`, `time` parameter overrides are rescaled, port `add_force`
@@ -187,8 +199,9 @@ Changing `env.sh` or adding files needs a full `./build.sh`.
 - `software/soc_tests/` holds self-checking SoC tests (L3 flow, `make build`): `t_mem` (DRAM through L1/CCU/LLC with
   every access size and an eviction sweep, on-chip SRAM), `t_atomics` (every AMO + LR/SC on DRAM and SRAM), `t_smp`
   (4 cores: AMO/LR-SC counters, coherence, message passing), `t_irq` (CLINT software/timer interrupts, PLIC
-  registers), `t_socket` (accelerator socket error responses). Each prints `TEST PASS`/`TEST FAIL` and exits with the
-  number of failed checks; `include/soc_test.h` has the helpers (CHECK, trap guard, 4-core wake-up, barrier).
+  registers), `t_socket` (accelerator socket error responses), `t_qos` (Ssqosid `srmcfg` CSR and the QoS tag on
+  the buses, see `../docs/qos.md`). Each prints `TEST PASS`/`TEST FAIL` and exits with the number of failed checks;
+  `include/soc_test.h` has the helpers (CHECK, trap guard, 4-core wake-up, barrier).
 - The PULP cluster's place is taken by the accelerator socket (`hardware/accel/`, see its README.md): 8 slots of
   64 KB at 0x1000_0000, each with a register port, a memory master port and an interrupt (PLIC ID 9). Before the
   socket, the error slave meant to answer the excluded cluster's window sat on an undriven bus

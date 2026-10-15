@@ -170,6 +170,18 @@ always_comb begin
     end
 end
 
+// `ptr_d[mmatch]`, computed from registered state: the per-entry blocks below must not read `ptr_d`, which
+// the other entries' blocks write (a zero-delay loop in xsim when a response and a new request meet in a cycle).
+// Only the youngest entry of the group (ymatch) gets a new pointer; mmatch is valid and ematch is empty, so the
+// new entry itself can never be mmatch.
+idx_t mmatch_next;
+always_comb begin
+    mmatch_next = ptr_q[mmatch];
+    if (ins_op && ymatch_valid && ematch_valid && (ymatch == mmatch)) begin
+        mmatch_next = ematch;
+    end
+end
+
 // Hardware to add or remove entries.
 for(gen_i=0; gen_i<DEPTH; gen_i=gen_i+1) begin
     always_comb begin
@@ -223,7 +235,7 @@ for(gen_i=0; gen_i<DEPTH; gen_i=gen_i+1) begin
             oldest_d[gen_i]  = 1'b1;
         end
 
-        if (del_op && ins_op && mmatch_valid && (gen_i == ptr_d[mmatch])) begin
+        if (del_op && ins_op && mmatch_valid && (gen_i == mmatch_next)) begin
             oldest_d[gen_i]  = 1'b1;
         end
     end
@@ -235,10 +247,10 @@ assign source_id_o = b_chan_i.id[ SourceIDStart +: SOURCE_ID_BITS ];
 
 // Output logic.
 always_comb begin
-    latency_o = '0;
+    latency_o  = '0;
+    addr_idx_o = addr_idx_q[mmatch];
     if (del_op) begin
         latency_o   = spu_timer - req_start_q[mmatch];
-        addr_idx_o  = addr_idx_q[mmatch];
     end
 end
 
