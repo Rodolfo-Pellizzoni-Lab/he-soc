@@ -69,9 +69,10 @@ Rules for the DMA master, from the CCU's snoop-data path: single-beat 64-bit req
 
 What the port costs (`software/soc_tests/t_dma`, slot 0 `example`, one word in flight, cycles per 64-bit word,
 read + write): the CCU handles one snooped transaction at a time and each one is a snoop round trip through the
-four L1s, so a word takes 45-87 cycles instead of 15-28 through the plain crossbar path it replaced. The
-`t_dma` test prints the numbers for the design it runs on, and whether the source and destination hazards came out
-coherent.
+four L1s, so a word takes 45-87 cycles in simulation and 90-128 on the VCU118 (real DDR latency inside each round
+trip) instead of 15-28 through the plain crossbar path it replaced. The `t_dma` test prints the numbers for the
+design it runs on, and whether the source and destination hazards came out coherent; on the VCU118 bitstream
+with this port it reports both coherent and the soc suite passes 9/9.
 
 Before this port the socket master entered the host xbar directly, after the coherence unit, and `t_dma` measured
 what that means on this SoC: a core's writes stay dirty in its 16 KB L1 (the device read stale data), the device's
