@@ -55,8 +55,16 @@ module rstgen_bypass_ckg #(
 
     always @(posedge clk_i or negedge rst_n) begin
         if (~rst_n) begin
+`ifdef XSIM_RST_NO_REWRITE
+            if (synch_regs_q !== '0) synch_regs_q <= 0; // xsim: do not re-write the (unchanged) zero every clock while in reset;
+                                                          // xsim turns each write into an event on the reset net that wakes every async-reset flop
+`else
             synch_regs_q <= 0;
+`endif
         end else begin
+`ifdef XSIM_RST_NO_REWRITE
+            if (synch_regs_q !== {synch_regs_q[NumRstRegs+NumClkRegs-2:0], 1'b1}) // xsim: no unchanged re-writes on the reset net
+`endif
             synch_regs_q <= {synch_regs_q[NumRstRegs+NumClkRegs-2:0], 1'b1};
         end
     end

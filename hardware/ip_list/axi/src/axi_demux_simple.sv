@@ -66,6 +66,8 @@ module axi_demux_simple #(
   input  axi_resp_t   [NoMstPorts-1:0]  mst_resps_i
 );
 
+  axi_req_t    [NoMstPorts-1:0] mst_reqs_o_xc; // xsim: shadow of output port mst_reqs_o
+  axi_resp_t slv_resp_o_xc; // xsim: shadow of output port slv_resp_o
   localparam int unsigned IdCounterWidth = cf_math_pkg::idx_width(MaxTrans);
   typedef logic [IdCounterWidth-1:0] id_cnt_t;
 
@@ -137,7 +139,7 @@ module axi_demux_simple #(
     // Control of the AW handshake
     always_comb begin
       // AXI Handshakes
-      slv_resp_o.aw_ready = 1'b0;
+      slv_resp_o_xc.aw_ready = 1'b0;
       aw_valid     = 1'b0;
       // `lock_aw_valid`, used to be protocol conform as it is not allowed to deassert
       // a valid if there was no corresponding ready. As this process has to be able to inject
@@ -155,7 +157,7 @@ module axi_demux_simple #(
         aw_valid = 1'b1;
         // transaction
         if (aw_ready) begin
-          slv_resp_o.aw_ready    = 1'b1;
+          slv_resp_o_xc.aw_ready    = 1'b1;
           lock_aw_valid_d = 1'b0;
           load_aw_lock    = 1'b1;
           // inject the ATOP if necessary
@@ -181,7 +183,7 @@ module axi_demux_simple #(
             w_cnt_up     = 1'b1;
             // on AW transaction
             if (aw_ready) begin
-              slv_resp_o.aw_ready = 1'b1;
+              slv_resp_o_xc.aw_ready = 1'b1;
               atop_inject  = slv_req_i.aw.atop[axi_pkg::ATOP_R_RESP] & AtopSupport;
             // no AW transaction this cycle, lock the decision
             end else begin
@@ -191,6 +193,7 @@ module axi_demux_simple #(
           end
         end
       end
+          slv_resp_o.aw_ready = slv_resp_o_xc.aw_ready; // xsim: outputs assigned once
     end
 
     // lock the valid signal, as the selection gets pushed into the W FIFO on first assertion,
@@ -283,10 +286,11 @@ module axi_demux_simple #(
 
     always_comb begin
       if (slv_resp_o.b_valid) begin
-        `AXI_SET_B_STRUCT(slv_resp_o.b, mst_resps_i[b_idx].b)
+        `AXI_SET_B_STRUCT(slv_resp_o_xc.b, mst_resps_i[b_idx].b)
       end else begin
-        slv_resp_o.b = '0;
+        slv_resp_o_xc.b = '0;
       end
+          slv_resp_o.b = slv_resp_o_xc.b; // xsim: outputs assigned once
     end
 
     //--------------------------------------
@@ -296,7 +300,7 @@ module axi_demux_simple #(
     // control of the AR handshake
     always_comb begin
       // AXI Handshakes
-      slv_resp_o.ar_ready    = 1'b0;
+      slv_resp_o_xc.ar_ready    = 1'b0;
       ar_valid        = 1'b0;
       // `lock_ar_valid`: Used to be protocol conform as it is not allowed to deassert `ar_valid`
       // if there was no corresponding `ar_ready`. There is the possibility that an injection
@@ -312,7 +316,7 @@ module axi_demux_simple #(
         ar_valid = 1'b1;
         // transaction
         if (ar_ready) begin
-          slv_resp_o.ar_ready    = 1'b1;
+          slv_resp_o_xc.ar_ready    = 1'b1;
           ar_push         = 1'b1;
           lock_ar_valid_d = 1'b0;
           load_ar_lock    = 1'b1;
@@ -327,7 +331,7 @@ module axi_demux_simple #(
             ar_valid     = 1'b1;
             // on transaction
             if (ar_ready) begin
-              slv_resp_o.ar_ready = 1'b1;
+              slv_resp_o_xc.ar_ready = 1'b1;
               ar_push      = 1'b1;
             // no transaction this cycle, lock the valid decision!
             end else begin
@@ -337,6 +341,7 @@ module axi_demux_simple #(
           end
         end
       end
+          slv_resp_o.ar_ready = slv_resp_o_xc.ar_ready; // xsim: outputs assigned once
     end
 
     // this ff is needed so that ar does not get de-asserted if an atop gets injected
@@ -401,10 +406,11 @@ module axi_demux_simple #(
 
     always_comb begin
       if (slv_resp_o.r_valid) begin
-        `AXI_SET_R_STRUCT(slv_resp_o.r, mst_resps_i[r_idx].r)
+        `AXI_SET_R_STRUCT(slv_resp_o_xc.r, mst_resps_i[r_idx].r)
       end else begin
-        slv_resp_o.r = '0;
+        slv_resp_o_xc.r = '0;
       end
+          slv_resp_o.r = slv_resp_o_xc.r; // xsim: outputs assigned once
     end
 
     assign ar_ready = ar_valid & mst_resps_i[slv_ar_select_i].ar_ready;
@@ -414,40 +420,42 @@ module axi_demux_simple #(
     // as mst_reqs_o has to be drivem from the same always comb block!
     always_comb begin
       // default assignments
-      mst_reqs_o  = '0;
-      slv_resp_o.w_ready = 1'b0;
+      mst_reqs_o_xc  = '0;
+      slv_resp_o_xc.w_ready = 1'b0;
       w_cnt_down  = 1'b0;
 
       for (int unsigned i = 0; i < NoMstPorts; i++) begin
         // AW channel
-        mst_reqs_o[i].aw       = slv_req_i.aw;
-        mst_reqs_o[i].aw_valid = 1'b0;
+        mst_reqs_o_xc[i].aw       = slv_req_i.aw;
+        mst_reqs_o_xc[i].aw_valid = 1'b0;
         if (aw_valid && (slv_aw_select_i == i)) begin
-          mst_reqs_o[i].aw_valid = 1'b1;
+          mst_reqs_o_xc[i].aw_valid = 1'b1;
         end
 
         //  W channel
-        mst_reqs_o[i].w       = slv_req_i.w;
-        mst_reqs_o[i].w_valid = 1'b0;
+        mst_reqs_o_xc[i].w       = slv_req_i.w;
+        mst_reqs_o_xc[i].w_valid = 1'b0;
         if (w_select_valid && (w_select == i)) begin
-          mst_reqs_o[i].w_valid = slv_req_i.w_valid;
-          slv_resp_o.w_ready           = mst_resps_i[i].w_ready;
+          mst_reqs_o_xc[i].w_valid = slv_req_i.w_valid;
+          slv_resp_o_xc.w_ready           = mst_resps_i[i].w_ready;
           w_cnt_down            = slv_req_i.w_valid & mst_resps_i[i].w_ready & slv_req_i.w.last;
         end
 
         //  B channel
-        mst_reqs_o[i].b_ready = mst_b_readies[i];
+        mst_reqs_o_xc[i].b_ready = mst_b_readies[i];
 
         // AR channel
-        mst_reqs_o[i].ar       = slv_req_i.ar;
-        mst_reqs_o[i].ar_valid = 1'b0;
+        mst_reqs_o_xc[i].ar       = slv_req_i.ar;
+        mst_reqs_o_xc[i].ar_valid = 1'b0;
         if (ar_valid && (slv_ar_select_i == i)) begin
-          mst_reqs_o[i].ar_valid = 1'b1;
+          mst_reqs_o_xc[i].ar_valid = 1'b1;
         end
 
         //  R channel
-        mst_reqs_o[i].r_ready = mst_r_readies[i];
+        mst_reqs_o_xc[i].r_ready = mst_r_readies[i];
       end
+          mst_reqs_o = mst_reqs_o_xc; // xsim: outputs assigned once
+          slv_resp_o.w_ready = slv_resp_o_xc.w_ready; // xsim: outputs assigned once
     end
     // unpack the response B and R channels for the arbitration
     for (genvar i = 0; i < NoMstPorts; i++) begin : gen_b_channels
@@ -467,7 +475,7 @@ module axi_demux_simple #(
       AXI_ID_BITS:  assume (AxiIdWidth >= AxiLookBits) else
         $fatal(1, "AxiIdBits has to be equal or smaller than AxiIdWidth.");
     end
-    default disable iff (!rst_ni);
+    // xsim: unsupported -- default disable iff (!rst_ni);
     aw_select: assume property( @(posedge clk_i) (slv_req_i.aw_valid |->
                                                  (slv_aw_select_i < NoMstPorts))) else
       $fatal(1, "slv_aw_select_i is %d: AW has selected a slave that is not defined.\

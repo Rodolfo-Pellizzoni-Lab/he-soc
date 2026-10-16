@@ -76,6 +76,9 @@ module fll_dummy #(
      end
      always begin
        // Emit rising clock edge.
+`ifdef XSIM_FLL_IDLE_IN_RESET
+       if (RSTB !== 1'b1) begin clk_100 = 1'b0; @(posedge RSTB); end // xsim: outputs are gated by RSTB anyway; stay idle while in reset
+`endif
        clk_100 = 1'b1;
        // Wait for at most half the clock period before emitting falling clock edge.  Due to integer
        // division, this is not always exactly half the clock period but as close as we can get.
@@ -92,6 +95,9 @@ module fll_dummy #(
      end
      always begin
        // Emit rising clock edge.
+`ifdef XSIM_FLL_IDLE_IN_RESET
+       if (RSTB !== 1'b1) begin clk_250 = 1'b0; @(posedge RSTB); end // xsim: outputs are gated by RSTB anyway; stay idle while in reset
+`endif
        clk_250 = 1'b1;
        // Wait for at most half the clock period before emitting falling clock edge.  Due to integer
        // division, this is not always exactly half the clock period but as close as we can get.

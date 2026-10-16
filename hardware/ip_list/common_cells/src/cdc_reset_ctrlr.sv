@@ -211,6 +211,14 @@ module cdc_reset_ctrlr_half
   input logic                async_req_i,
   output logic               async_ack_o
 );
+  clear_seq_phase_e initiator_clear_seq_phase_xc; // xsim: shadow of initiator_clear_seq_phase
+  logic initiator_phase_transition_req_xc; // xsim: shadow of initiator_phase_transition_req
+  logic initiator_isolate_out_xc; // xsim: shadow of initiator_isolate_out
+  logic initiator_clear_out_xc; // xsim: shadow of initiator_clear_out
+  clear_seq_phase_e receiver_next_phase_xc; // xsim: shadow of receiver_next_phase
+  logic receiver_phase_ack_xc; // xsim: shadow of receiver_phase_ack
+  logic receiver_isolate_out_xc; // xsim: shadow of receiver_isolate_out
+  logic receiver_clear_out_xc; // xsim: shadow of receiver_clear_out
 
 
   // How this module works:
@@ -264,10 +272,10 @@ module cdc_reset_ctrlr_half
 
   always_comb begin
     initiator_state_d              = initiator_state_q;
-    initiator_phase_transition_req = 1'b0;
-    initiator_isolate_out          = 1'b0;
-    initiator_clear_out            = 1'b0;
-    initiator_clear_seq_phase      = CLEAR_PHASE_IDLE;
+    initiator_phase_transition_req_xc = 1'b0;
+    initiator_isolate_out_xc          = 1'b0;
+    initiator_clear_out_xc            = 1'b0;
+    initiator_clear_seq_phase_xc      = CLEAR_PHASE_IDLE;
 
     case (initiator_state_q)
       IDLE: begin
@@ -277,10 +285,10 @@ module cdc_reset_ctrlr_half
       end
 
       ISOLATE: begin
-        initiator_phase_transition_req = 1'b1;
-        initiator_clear_seq_phase      = CLEAR_PHASE_ISOLATE;
-        initiator_isolate_out          = 1'b1;
-        initiator_clear_out            = 1'b0;
+        initiator_phase_transition_req_xc = 1'b1;
+        initiator_clear_seq_phase_xc      = CLEAR_PHASE_ISOLATE;
+        initiator_isolate_out_xc          = 1'b1;
+        initiator_clear_out_xc            = 1'b0;
         if (initiator_phase_transition_ack && isolate_ack_i) begin
           initiator_state_d = CLEAR;
         end else if (initiator_phase_transition_ack) begin
@@ -291,29 +299,29 @@ module cdc_reset_ctrlr_half
       end
 
       WAIT_ISOLATE_ACK: begin
-        initiator_isolate_out     = 1'b1;
-        initiator_clear_out       = 1'b0;
-        initiator_clear_seq_phase = CLEAR_PHASE_ISOLATE;
+        initiator_isolate_out_xc     = 1'b1;
+        initiator_clear_out_xc       = 1'b0;
+        initiator_clear_seq_phase_xc = CLEAR_PHASE_ISOLATE;
         if (isolate_ack_i) begin
           initiator_state_d = CLEAR;
         end
       end
 
       WAIT_ISOLATE_PHASE_ACK: begin
-        initiator_phase_transition_req = 1'b1;
-        initiator_clear_seq_phase      = CLEAR_PHASE_ISOLATE;
-        initiator_isolate_out          = 1'b1;
-        initiator_clear_out            = 1'b0;
+        initiator_phase_transition_req_xc = 1'b1;
+        initiator_clear_seq_phase_xc      = CLEAR_PHASE_ISOLATE;
+        initiator_isolate_out_xc          = 1'b1;
+        initiator_clear_out_xc            = 1'b0;
         if (initiator_phase_transition_ack) begin
           initiator_state_d = CLEAR;
         end
       end
 
       CLEAR: begin
-        initiator_isolate_out          = 1'b1;
-        initiator_clear_out            = 1'b1;
-        initiator_phase_transition_req = 1'b1;
-        initiator_clear_seq_phase      = CLEAR_PHASE_CLEAR;
+        initiator_isolate_out_xc          = 1'b1;
+        initiator_clear_out_xc            = 1'b1;
+        initiator_phase_transition_req_xc = 1'b1;
+        initiator_clear_seq_phase_xc      = CLEAR_PHASE_CLEAR;
         if (initiator_phase_transition_ack && clear_ack_i) begin
           initiator_state_d = POST_CLEAR;
         end else if (initiator_phase_transition_ack) begin
@@ -324,39 +332,39 @@ module cdc_reset_ctrlr_half
       end
 
       WAIT_CLEAR_ACK: begin
-        initiator_isolate_out     = 1'b1;
-        initiator_clear_out       = 1'b1;
-        initiator_clear_seq_phase = CLEAR_PHASE_CLEAR;
+        initiator_isolate_out_xc     = 1'b1;
+        initiator_clear_out_xc       = 1'b1;
+        initiator_clear_seq_phase_xc = CLEAR_PHASE_CLEAR;
         if (clear_ack_i) begin
           initiator_state_d = POST_CLEAR;
         end
       end
 
       WAIT_CLEAR_PHASE_ACK: begin
-        initiator_phase_transition_req = 1'b1;
-        initiator_clear_seq_phase      = CLEAR_PHASE_CLEAR;
-        initiator_isolate_out          = 1'b1;
-        initiator_clear_out            = 1'b1;
+        initiator_phase_transition_req_xc = 1'b1;
+        initiator_clear_seq_phase_xc      = CLEAR_PHASE_CLEAR;
+        initiator_isolate_out_xc          = 1'b1;
+        initiator_clear_out_xc            = 1'b1;
         if (initiator_phase_transition_ack) begin
           initiator_state_d = POST_CLEAR;
         end
       end
 
       POST_CLEAR: begin
-        initiator_isolate_out          = 1'b1;
-        initiator_clear_out            = 1'b0;
-        initiator_phase_transition_req = 1'b1;
-        initiator_clear_seq_phase      = CLEAR_PHASE_POST_CLEAR;
+        initiator_isolate_out_xc          = 1'b1;
+        initiator_clear_out_xc            = 1'b0;
+        initiator_phase_transition_req_xc = 1'b1;
+        initiator_clear_seq_phase_xc      = CLEAR_PHASE_POST_CLEAR;
         if (initiator_phase_transition_ack) begin
           initiator_state_d = FINISHED;
         end
       end
 
       FINISHED: begin
-        initiator_isolate_out          = 1'b1;
-        initiator_clear_out            = 1'b0;
-        initiator_phase_transition_req = 1'b1;
-        initiator_clear_seq_phase      = CLEAR_PHASE_IDLE;
+        initiator_isolate_out_xc          = 1'b1;
+        initiator_clear_out_xc            = 1'b0;
+        initiator_phase_transition_req_xc = 1'b1;
+        initiator_clear_seq_phase_xc      = CLEAR_PHASE_IDLE;
         if (initiator_phase_transition_ack) begin
           initiator_state_d = IDLE;
         end
@@ -366,7 +374,11 @@ module cdc_reset_ctrlr_half
         initiator_state_d = ISOLATE;
       end
     endcase
-  end
+        initiator_clear_seq_phase = initiator_clear_seq_phase_xc; // xsim: outputs assigned once
+          initiator_phase_transition_req = initiator_phase_transition_req_xc; // xsim: outputs assigned once
+          initiator_isolate_out = initiator_isolate_out_xc; // xsim: outputs assigned once
+          initiator_clear_out = initiator_clear_out_xc; // xsim: outputs assigned once
+    end
 
   always_ff @(posedge clk_i, negedge rst_ni) begin
     if (!rst_ni) begin
@@ -444,43 +456,43 @@ module cdc_reset_ctrlr_half
   end
 
   always_comb begin
-    receiver_isolate_out = 1'b0;
-    receiver_clear_out   = 1'b0;
-    receiver_phase_ack   = 1'b0;
+    receiver_isolate_out_xc = 1'b0;
+    receiver_clear_out_xc   = 1'b0;
+    receiver_phase_ack_xc   = 1'b0;
 
     // If there is a new phase requestd, checkout which one it is and act accordingly
     if (receiver_phase_req) begin
       case (receiver_next_phase)
         CLEAR_PHASE_IDLE: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b0;
-          receiver_phase_ack   = 1'b1;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b0;
+          receiver_phase_ack_xc   = 1'b1;
         end
 
         CLEAR_PHASE_ISOLATE: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b1;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b1;
           // Wait for the isolate to be acknowledged before ack'ing the phase
-          receiver_phase_ack = isolate_ack_i;
+          receiver_phase_ack_xc = isolate_ack_i;
         end
 
         CLEAR_PHASE_CLEAR: begin
-          receiver_clear_out   = 1'b1;
-          receiver_isolate_out = 1'b1;
+          receiver_clear_out_xc   = 1'b1;
+          receiver_isolate_out_xc = 1'b1;
           // Wait for the clear to be acknowledged before ack'ing the phase
-          receiver_phase_ack   = clear_ack_i;
+          receiver_phase_ack_xc   = clear_ack_i;
         end
 
         CLEAR_PHASE_POST_CLEAR: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b1;
-          receiver_phase_ack   = 1'b1;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b1;
+          receiver_phase_ack_xc   = 1'b1;
         end
 
         default: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b0;
-          receiver_phase_ack   = 1'b0;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b0;
+          receiver_phase_ack_xc   = 1'b0;
         end
       endcase
 
@@ -489,33 +501,36 @@ module cdc_reset_ctrlr_half
       // current phase signal
       case (receiver_phase_q)
         CLEAR_PHASE_IDLE: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b0;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b0;
         end
 
         CLEAR_PHASE_ISOLATE: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b1;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b1;
         end
 
         CLEAR_PHASE_CLEAR: begin
-          receiver_clear_out   = 1'b1;
-          receiver_isolate_out = 1'b1;
+          receiver_clear_out_xc   = 1'b1;
+          receiver_isolate_out_xc = 1'b1;
         end
 
         CLEAR_PHASE_POST_CLEAR: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b1;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b1;
         end
 
         default: begin
-          receiver_clear_out   = 1'b0;
-          receiver_isolate_out = 1'b0;
-          receiver_phase_ack   = 1'b0;
+          receiver_clear_out_xc   = 1'b0;
+          receiver_isolate_out_xc = 1'b0;
+          receiver_phase_ack_xc   = 1'b0;
         end
       endcase
     end
-  end
+        receiver_phase_ack = receiver_phase_ack_xc; // xsim: outputs assigned once
+          receiver_isolate_out = receiver_isolate_out_xc; // xsim: outputs assigned once
+          receiver_clear_out = receiver_clear_out_xc; // xsim: outputs assigned once
+    end
 
   // Output Assignment
 

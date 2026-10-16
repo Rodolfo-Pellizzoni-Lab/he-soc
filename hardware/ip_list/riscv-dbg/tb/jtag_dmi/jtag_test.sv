@@ -1,3 +1,4 @@
+`timescale 1ps/1ps // xsim: match the tb unit so integer-scaled `time` parameter overrides (TA/TT) are not re-scaled
 // Copyright 2020 ETH Zurich and University of Bologna.
 // Solderpad Hardware License, Version 0.51, see LICENSE for details.
 // SPDX-License-Identifier: SHL-0.51

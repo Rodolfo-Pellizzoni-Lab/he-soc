@@ -105,6 +105,9 @@ module cdc_4phase_src #(
   input  logic async_ack_i,
   output T     async_data_o
 );
+  logic ready_o_xc; // xsim: shadow of ready_o
+  logic async_req_o_xc; // xsim: shadow of async_req_o
+  T async_data_o_xc; // xsim: shadow of async_data_o
 
   (* dont_touch = "true" *)
   logic  req_src_d, req_src_q;
@@ -131,15 +134,15 @@ module cdc_4phase_src #(
     state_d    = state_q;
     req_src_d  = 1'b0;
     data_src_d = data_src_q;
-    ready_o    = 1'b0;
+    ready_o_xc    = 1'b0;
     case (state_q)
       IDLE: begin
         // If decoupling is disabled, defer assertion of ready until the
         // handshake with the dst is completed
         if (DECOUPLED) begin
-          ready_o = 1'b1;
+          ready_o_xc = 1'b1;
         end else begin
-          ready_o = 1'b0;
+          ready_o_xc = 1'b0;
         end
         // Sample a new item when the valid signal is asserted.
         if (valid_i) begin
@@ -159,7 +162,7 @@ module cdc_4phase_src #(
         if (ack_synced == 1'b0) begin
           state_d = IDLE;
           if (!DECOUPLED) begin
-            ready_o = 1'b1;
+            ready_o_xc = 1'b1;
           end
         end
       end
@@ -167,7 +170,8 @@ module cdc_4phase_src #(
         state_d = IDLE;
       end
     endcase
-  end
+        ready_o = ready_o_xc; // xsim: outputs assigned once
+    end
 
   always_ff @(posedge clk_i, negedge rst_ni) begin
     if (!rst_ni) begin
@@ -216,6 +220,9 @@ module cdc_4phase_dst #(
   output logic async_ack_o,
   input  T     async_data_i
 );
+  T data_o_xc; // xsim: shadow of data_o
+  logic valid_o_xc; // xsim: shadow of valid_o
+  logic async_ack_o_xc; // xsim: shadow of async_ack_o
 
   (* dont_touch = "true" *)
   logic  ack_dst_d, ack_dst_q;

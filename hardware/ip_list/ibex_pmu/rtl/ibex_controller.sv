@@ -104,6 +104,7 @@ module apmu_ibex_controller #(
     input  logic                  stall_id_i,
     input  logic                  stall_wb_i,
     input  logic                  stall_pmu_i,
+    input  logic                  stall_pmc_wfx_i,
     output logic                  flush_id_o,
     input  logic                  ready_wb_i,
 
@@ -606,6 +607,15 @@ module apmu_ibex_controller #(
           end
         end
 
+        // A WFP/WFO can keep the ordinary ID stall asserted forever.  Allow
+        // the host stall to cancel that specific kind of blocked operation;
+        // the PMU counter-interface FSM is cancelled in the same cycle.
+        if (stall_pmu_i && stall_pmc_wfx_i) begin
+          ctrl_fsm_ns = PMU_STALL;
+          halt_if     = 1'b1;
+          flush_id    = 1'b1;
+        end
+
       end // DECODE
 
       IRQ_TAKEN: begin
@@ -650,6 +660,7 @@ module apmu_ibex_controller #(
 
       PMU_STALL: begin
         halt_if = 1'b1;
+        flush_id = 1'b1;
         if (!stall_pmu_i) begin
           ctrl_fsm_ns = BOOT_SET;
         end

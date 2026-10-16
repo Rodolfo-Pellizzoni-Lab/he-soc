@@ -271,11 +271,12 @@ module pmu_core
         core_data_err   = dec_pmc_data_error;
         if (pmc_dspm_rvalid) begin
             core_data_rdata = pmc_dspm_rdata;
+            core_data_err   = dec_pmc_data_error || pmc_dspm_err;
         end else if (pmc_resp_i.r_valid || pmc_resp_i.b_valid) begin
             core_data_rdata = pmc_resp_i.r.data;
             if ((pmc_resp_i.r.resp == axi_pkg::RESP_OKAY) || 
                 (pmc_resp_i.r.resp == axi_pkg::RESP_EXOKAY)) begin
-                core_data_err = 1'b0;
+                core_data_err = dec_pmc_data_error;
             end else begin
                 core_data_err = 1'b1;
             end

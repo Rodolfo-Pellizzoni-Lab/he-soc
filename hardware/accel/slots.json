@@ -1,0 +1,12 @@
+{
+ "slots": {
+  "0": {
+   "name": "example",
+   "module": "example"
+  },
+  "1": {
+   "name": "crc32",
+   "module": "crc32"
+  }
+ }
+}

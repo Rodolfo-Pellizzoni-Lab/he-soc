@@ -173,6 +173,11 @@ module host_domain
 
    ariane_axi_soc::req_slv_mem_t  axi_mem_req;
    ariane_axi_soc::resp_slv_mem_t axi_mem_res;
+   // the LLC's memory port after the DRAM timing model (host/axi_dram_timing.sv)
+   ariane_axi_soc::req_slv_mem_t  axi_dram_req;
+   ariane_axi_soc::resp_slv_mem_t axi_dram_res;
+   dram_model_pkg::cfg_t          s_dram_model_cfg;
+   dram_model_pkg::cnt_t          s_dram_model_cnt;
 
    ariane_axi_soc::req_lite_t  axi_llc_cfg_req;
    ariane_axi_soc::resp_lite_t axi_llc_cfg_res;
@@ -372,6 +377,131 @@ module host_domain
    XBAR_TCDM_BUS udma_2_tcdm_channels[NB_UDMA_TCDM_CHANNEL]();
 
 
+  `ifdef XSIM_SIM_DRAM
+   // xsim: with NO_L3_CONNECTION no HyperRAM model sits on the pads, so an LLC refill never returns and the
+   // CCU FSM blocks every core. Terminate mem_axi_bus (LLC -> SPU -> HyperBus path) in a simulation memory
+   // and give the HyperBus subsystem an idle bus instead.
+   AXI_BUS #(
+     .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH           ),
+     .AXI_DATA_WIDTH ( AXI_DATA_WIDTH              ),
+     .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave +1 ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH              )
+   ) xsim_hyper_dummy_bus();
+   assign xsim_hyper_dummy_bus.aw_valid = 1'b0;
+   assign xsim_hyper_dummy_bus.ar_valid = 1'b0;
+   assign xsim_hyper_dummy_bus.w_valid  = 1'b0;
+   assign xsim_hyper_dummy_bus.b_ready  = 1'b1;
+   assign xsim_hyper_dummy_bus.r_ready  = 1'b1;
+   typedef logic [AXI_ADDRESS_WIDTH-1:0]      xsim_dram_addr_t;
+   typedef logic [ariane_soc::IdWidthSlave:0] xsim_dram_id_t;
+   typedef logic [AXI_DATA_WIDTH-1:0]         xsim_dram_data_t;
+   typedef logic [AXI_DATA_WIDTH/8-1:0]       xsim_dram_strb_t;
+   typedef logic [AXI_USER_WIDTH-1:0]         xsim_dram_user_t;
+   `AXI_TYPEDEF_ALL(xsim_dram, xsim_dram_addr_t, xsim_dram_id_t, xsim_dram_data_t, xsim_dram_strb_t, xsim_dram_user_t)
+   xsim_dram_req_t  [0:0] xsim_dram_req;
+   xsim_dram_resp_t [0:0] xsim_dram_rsp;
+   xsim_dram_req_t        xsim_llc_mem_req;
+   xsim_dram_resp_t       xsim_llc_mem_rsp;
+   `AXI_ASSIGN_TO_REQ(xsim_llc_mem_req, mem_axi_bus)
+   `AXI_ASSIGN_FROM_RESP(mem_axi_bus, xsim_llc_mem_rsp)
+   logic xsim_dram_clk, xsim_dram_rst_n;
+  `ifdef XSIM_DRAM_IDEAL
+   // memory answers in the SoC clock domain within a cycle or two
+   assign xsim_dram_clk    = s_soc_clk;
+   assign xsim_dram_rst_n  = s_synch_soc_rst;
+   assign xsim_dram_req[0] = xsim_llc_mem_req;
+   assign xsim_llc_mem_rsp = xsim_dram_rsp[0];
+  `else
+   // Board-like memory path (default). On the FPGA (fpga/ddr/alsaqr_xilinx.sv) the LLC memory port crosses into
+   // the DDR4 controller's clock through an axi_cdc (LOG_DEPTH 4), and the controller answers after a variable
+   // latency, so a read can overtake an earlier write (AXI orders nothing between AR and AW/W). Model both: the
+   // same CDC into a 300 MHz clock, then random stalls (0-15 cycles per transfer) on every channel. Races that
+   // only show up behind real DDR show up here too; XSIM_DRAM_IDEAL restores the direct connection.
+   xsim_dram_req_t  xsim_cdc_req;
+   xsim_dram_resp_t xsim_cdc_rsp;
+   initial xsim_dram_clk = 1'b0;
+   always #1667ps xsim_dram_clk = ~xsim_dram_clk;
+   logic [1:0] xsim_dram_rst_q;
+   always_ff @(posedge xsim_dram_clk or negedge s_synch_soc_rst)
+     if (!s_synch_soc_rst) xsim_dram_rst_q <= '0;
+     else                  xsim_dram_rst_q <= {xsim_dram_rst_q[0], 1'b1};
+   assign xsim_dram_rst_n = xsim_dram_rst_q[1];
+   axi_cdc #(
+     .aw_chan_t  ( xsim_dram_aw_chan_t ),
+     .w_chan_t   ( xsim_dram_w_chan_t  ),
+     .b_chan_t   ( xsim_dram_b_chan_t  ),
+     .ar_chan_t  ( xsim_dram_ar_chan_t ),
+     .r_chan_t   ( xsim_dram_r_chan_t  ),
+     .axi_req_t  ( xsim_dram_req_t     ),
+     .axi_resp_t ( xsim_dram_resp_t    ),
+     .LogDepth   ( 4                   )
+   ) i_xsim_dram_cdc (
+     .src_clk_i  ( s_soc_clk        ),
+     .src_rst_ni ( s_synch_soc_rst  ),
+     .src_req_i  ( xsim_llc_mem_req ),
+     .src_resp_o ( xsim_llc_mem_rsp ),
+     .dst_clk_i  ( xsim_dram_clk    ),
+     .dst_rst_ni ( xsim_dram_rst_n  ),
+     .dst_req_o  ( xsim_cdc_req     ),
+     .dst_resp_i ( xsim_cdc_rsp     )
+   );
+   axi_delayer #(
+     .aw_chan_t         ( xsim_dram_aw_chan_t ),
+     .w_chan_t          ( xsim_dram_w_chan_t  ),
+     .b_chan_t          ( xsim_dram_b_chan_t  ),
+     .ar_chan_t         ( xsim_dram_ar_chan_t ),
+     .r_chan_t          ( xsim_dram_r_chan_t  ),
+     .axi_req_t         ( xsim_dram_req_t     ),
+     .axi_resp_t        ( xsim_dram_resp_t    ),
+     .StallRandomInput  ( 1'b1                ),
+     .StallRandomOutput ( 1'b1                ),
+     .FixedDelayInput   ( 0                   ),
+     .FixedDelayOutput  ( 0                   )
+   ) i_xsim_dram_delay (
+     .clk_i      ( xsim_dram_clk    ),
+     .rst_ni     ( xsim_dram_rst_n  ),
+     .slv_req_i  ( xsim_cdc_req     ),
+     .slv_resp_o ( xsim_cdc_rsp     ),
+     .mst_req_o  ( xsim_dram_req[0] ),
+     .mst_resp_i ( xsim_dram_rsp[0] )
+   );
+  `endif
+   axi_sim_mem #(
+     .AddrWidth         ( AXI_ADDRESS_WIDTH          ),
+     .DataWidth         ( AXI_DATA_WIDTH             ),
+     .IdWidth           ( ariane_soc::IdWidthSlave+1 ),
+     .UserWidth         ( AXI_USER_WIDTH             ),
+     .NumPorts          ( 1                          ),
+     .axi_req_t         ( xsim_dram_req_t            ),
+     .axi_rsp_t         ( xsim_dram_resp_t           ),
+     .WarnUninitialized ( 1'b0                       ),
+     .UninitializedData ( "zeros"                    ),
+     .ApplDelay         ( 300ps                      ),
+     .AcqDelay          ( 1500ps                     )
+   ) i_xsim_sim_dram (
+     .clk_i     ( xsim_dram_clk   ),
+     .rst_ni    ( xsim_dram_rst_n ),
+     .axi_req_i ( xsim_dram_req   ),
+     .axi_rsp_o ( xsim_dram_rsp   ),
+     .mon_w_valid_o (), .mon_w_addr_o (), .mon_w_data_o (), .mon_w_id_o (), .mon_w_user_o (), .mon_w_beat_count_o (), .mon_w_last_o (),
+     .mon_r_valid_o (), .mon_r_addr_o (), .mon_r_data_o (), .mon_r_id_o (), .mon_r_user_o (), .mon_r_beat_count_o (), .mon_r_last_o ()
+   );
+   // The common startup code (software/common/syscalls.c) wakes the second core through the SCMI mailbox
+   // with the hard-coded L3 entry 0x8000_0000. In the L2 flow nothing lives there, and an all-zero opcode is an
+   // illegal instruction that CVA6 offloads to the absent CV-X-IF coprocessor and never commits, so the later
+   // JTAG halt of that core can never be taken. Park it in a WFI loop there instead.
+   initial begin
+     i_xsim_sim_dram.mem[64'h8000_0000] = 8'h73; // wfi          = 0x10500073
+     i_xsim_sim_dram.mem[64'h8000_0001] = 8'h00;
+     i_xsim_sim_dram.mem[64'h8000_0002] = 8'h50;
+     i_xsim_sim_dram.mem[64'h8000_0003] = 8'h10;
+     i_xsim_sim_dram.mem[64'h8000_0004] = 8'h6f; // jal x0, -4   = 0xffdff06f
+     i_xsim_sim_dram.mem[64'h8000_0005] = 8'hf0;
+     i_xsim_sim_dram.mem[64'h8000_0006] = 8'hdf;
+     i_xsim_sim_dram.mem[64'h8000_0007] = 8'hff;
+   end
+  `endif
+
   `ifdef XILINX_DDR
    AXI_BUS #(
      .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH           ),
@@ -389,6 +519,7 @@ module host_domain
 
   `ifdef EXCLUDE_LLC
    `AXI_ASSIGN(mem_axi_bus,hyper_axi_bus)
+   assign s_dram_model_cnt = '0;   // no DRAM timing model without the LLC
 
    logic r_valid_d, r_valid_q;
    logic b_valid_d, b_valid_q;
@@ -428,14 +559,32 @@ module host_domain
 
    `AXI_ASSIGN_TO_REQ(axi_cpu_req,hyper_axi_bus)
    `AXI_ASSIGN_FROM_RESP(hyper_axi_bus,axi_cpu_res)
+   // DRAM timing model between the LLC's memory port and the DRAM path: a wire until it is enabled through the
+   // SoC control registers at 0x1A10_6100 (hardware/docs/dram_model.md)
+   axi_dram_timing #(
+     .axi_req_t  ( ariane_axi_soc::req_slv_mem_t    ),
+     .axi_resp_t ( ariane_axi_soc::resp_slv_mem_t   ),
+     .r_chan_t   ( ariane_axi_soc::r_chan_slv_mem_t ),
+     .b_chan_t   ( ariane_axi_soc::b_chan_slv_mem_t ),
+     .IdWidth    ( ariane_soc::IdWidthSlave + 1     )
+   ) i_axi_dram_timing (
+     .clk_i      ( s_soc_clk        ),
+     .rst_ni     ( s_synch_soc_rst  ),
+     .cfg_i      ( s_dram_model_cfg ),
+     .cnt_o      ( s_dram_model_cnt ),
+     .slv_req_i  ( axi_mem_req      ),
+     .slv_resp_o ( axi_mem_res      ),
+     .mst_req_o  ( axi_dram_req     ),
+     .mst_resp_i ( axi_dram_res     )
+   );
    `ifdef APMU_IP
     // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_mem_req )
-    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus_spu_o_bus )
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_dram_req )
+    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus_spu_o_bus )
   `else
     // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_mem_req )
-    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus )
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_dram_req )
+    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus )
   `endif
    `AXI_LITE_ASSIGN_TO_REQ(axi_llc_cfg_req,llc_cfg_bus)
    `AXI_LITE_ASSIGN_FROM_RESP(llc_cfg_bus,axi_llc_cfg_res)
@@ -460,7 +609,13 @@ module host_domain
       // Source ID Specifications
       .SourceIDStart    ( 2                              ),
       .SourceIDEnd      (  ariane_soc::IdWidthSlave-1    ),
-      .NumCfgRegcp      ( 64                             )
+      .NumCfgRegcp      ( 64                             ),
+      // CBQRI capacity controller at LLC config base + 0x800 (0x1040_1800): ways allocated per (RCID, AT) of the
+      // QoS tag in the AXI user field (ariane_axi_soc layout, hardware/docs/qos.md)
+      .QosRcidWidth     ( ariane_pkg::QOS_RCID_WIDTH     ),
+      .QosRcidLsb       ( ariane_axi_soc::QosUserLsb     ),
+      .QosAtBit         ( ariane_axi_soc::QosUserLsb + ariane_pkg::QOS_RCID_WIDTH + ariane_pkg::QOS_MCID_WIDTH ),
+      .QosCcOffset      ( 32'h800                        )
     ) i_axi_llc (
       .clk_i               ( s_soc_clk                                                                           ),
       .rst_ni              ( s_synch_soc_rst                                                                     ),
@@ -476,6 +631,37 @@ module host_domain
       .spm_start_addr_i    ( {{(AXI_ADDRESS_WIDTH-$bits(s_llc_spm_addr_start)){1'b0}}  , s_llc_spm_addr_start  } ),
       .axi_llc_events_o    ( llc_events                                                                          )
     );
+
+   `ifndef SYNTHESIS
+   // QoS tag scoreboard (ariane_axi_soc user layout, host/qos_monitor.sv): LLC requests against the cores'
+   // requests, LLC refills / evictions against the LLC requests
+   qos_monitor #(
+     .Name     ( "llc_in"                                ),
+     .Role     ( "llc_in"                                ),
+     .LineBits ( $clog2(ariane_soc::LLC_NUM_BLOCKS * 8)  ),
+     .SetBits  ( $clog2(ariane_soc::LLC_NUM_LINES)       ),
+     .req_t  ( ariane_axi_soc::req_slv_t  ),
+     .resp_t ( ariane_axi_soc::resp_slv_t )
+   ) i_qos_mon_llc_in (
+     .clk_i  ( s_soc_clk       ),
+     .rst_ni ( s_synch_soc_rst ),
+     .req_i  ( axi_cpu_req     ),
+     .resp_i ( axi_cpu_res     )
+   );
+   qos_monitor #(
+     .Name     ( "llc_out"                               ),
+     .Role     ( "llc_out"                               ),
+     .LineBits ( $clog2(ariane_soc::LLC_NUM_BLOCKS * 8)  ),
+     .SetBits  ( $clog2(ariane_soc::LLC_NUM_LINES)       ),
+     .req_t  ( ariane_axi_soc::req_slv_mem_t  ),
+     .resp_t ( ariane_axi_soc::resp_slv_mem_t )
+   ) i_qos_mon_llc_out (
+     .clk_i  ( s_soc_clk       ),
+     .rst_ni ( s_synch_soc_rst ),
+     .req_i  ( axi_mem_req     ),
+     .resp_i ( axi_mem_res     )
+   );
+   `endif
 
    assign s_llc_read_hit_cache = llc_events.hit_read_cache.active;
    assign s_llc_read_miss_cache = llc_events.miss_read_cache.active;
@@ -599,6 +785,7 @@ module host_domain
          end_addr:   ariane_soc::HYAXIBase + ariane_soc::HYAXILength
    };
 
+`ifndef XSIM_CUT_i_spu_llc_mem // xsim bisect
 axi_spu_top #(
      // Static configuration parameters of the cache.
      .SetAssociativity   ( ariane_soc::LLC_SET_ASSOC   ),
@@ -625,6 +812,7 @@ axi_spu_top #(
      .spu_mst            ( mem_axi_bus                 ),
      .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
    );
+`endif // XSIM_CUT_i_spu_llc_mem
 
    // AXI Cut for IOPMP Configuration Port
    axi_cut_intf #(
@@ -652,6 +840,7 @@ axi_spu_top #(
      .out    ( iopmp_mst_cut   )
    );
 
+`ifndef XSIM_CUT_i_riscv_iopmp // xsim bisect
    riscv_iopmp #(
      // AXI specific parameters
      .ADDR_WIDTH			   ( AXI_ADDRESS_WIDTH        ),
@@ -700,6 +889,7 @@ axi_spu_top #(
      .wsi_wire_o         ( iopmp_irq             ),
      .iopmp_lock_xor_key_i ( iopmp_lock_xor_key )
    );
+`endif // XSIM_CUT_i_riscv_iopmp
 
    axi_lite_dw_converter_intf #(
      .AXI_ADDR_WIDTH          ( AXI_ADDRESS_WIDTH        ),
@@ -726,10 +916,12 @@ axi_spu_top #(
    );
 
    // The PMU only works with 32-bit AXI4-Lite port.
+`ifndef XSIM_CUT_i_pmu_top // xsim bisect
    pmu_top #(
      .NUM_PORT         ( (ariane_soc::NumCVA6)* 2 + 1   ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
-     .ISPM_NUM_WORDS   ( 1024                           ),  // 4 KB size
+     .ISPM_NUM_WORDS   ( 2048                           ),  // 8 KB size
+     .DSPM_BASE_ADDR   ( 32'h1042_9000                    ),  // follows 8 KiB ISPM
      .DSPM_NUM_WORDS   ( 32768                           ),
     //  // APMU Addresses and SPM configuration
     //  .MEMORY_BASE_ADDR ( ariane_soc::L2SPMBase          ),
@@ -754,6 +946,7 @@ axi_spu_top #(
      .master_resp_i    ( pmu_master_res                 ),
      .intr_o           ( pmu_intr_o                     )
    );
+`endif // XSIM_CUT_i_pmu_top
 
   `AXI_LITE_ASSIGN_TO_REQ( axi_lite_pmu_cfg_req, apmu_cfg_lite_bus    )
   `AXI_LITE_ASSIGN_FROM_RESP( apmu_cfg_lite_bus, axi_lite_pmu_cfg_res )
@@ -762,7 +955,11 @@ axi_spu_top #(
   `AXI_LITE_ASSIGN_FROM_RESP( perfc_cfg_lite_bus, axi_lite_perfc_cfg_resp)
   `endif
 
-   cva6_subsystem # (
+`ifndef XSIM_CUT_i_cva6_subsystem // xsim bisect
+ `ifdef XSIM_V_CLK
+  logic xsim_plain_clk = 1'b0; always #2000 xsim_plain_clk = ~xsim_plain_clk;
+`endif
+  cva6_subsystem # (
         .NUM_WORDS         ( NUM_WORDS      ),
         .AXI_USER_WIDTH    ( AXI_USER_WIDTH ),
         .APMU_NUM_COUNTER  ( APMU_NUM_COUNTER ),
@@ -773,10 +970,22 @@ axi_spu_top #(
         .axi_req_t         ( axi_req_t      ),
         .axi_rsp_t         ( axi_rsp_t      )
    ) i_cva6_subsystem (
+`ifdef XSIM_V_CLK
+    .clk_i(xsim_plain_clk),
+`else
         .clk_i(s_soc_clk),
+`endif
+`ifdef XSIM_V_RST
+    .rst_ni(1'b0),
+`else
         .rst_ni(s_synch_global_rst),
+`endif
         .cva6_clk_i(s_clk_cva6),
+`ifdef XSIM_V_RST
+    .cva6_rst_ni(1'b0),
+`else
         .cva6_rst_ni(s_rstn_cva6_sync),
+`endif
         .rtc_i,
         .jtag_TCK,
         .jtag_TMS,
@@ -786,17 +995,49 @@ axi_spu_top #(
         .jtag_TDO_driven,
         .ot_axi_req,
         .ot_axi_rsp,
+`ifdef XSIM_V_IN
+    .irq_mbox_i('0),
+`else
         .irq_mbox_i            ( completion_irq_o      ),
+`endif
         .snoop_trigger_irq_o   ( cfi_req_irq_o         ),
         .snoop_watermark_irq_o ( snoop_watermark_irq_o ),
+`ifdef XSIM_V_RST
+    .sync_rst_ni(1'b0),
+`else
         .sync_rst_ni           ( s_synch_soc_rst       ),
+`endif
+`ifdef XSIM_V_IN
+    .udma_events_i('0),
+`else
         .udma_events_i         ( s_udma_events         ),
+`endif
         .cluster_eoc_i         ( cluster_eoc_i         ),
+`ifdef XSIM_V_IN
+    .c2h_irq_i('0),
+`else
         .c2h_irq_i             ( s_c2h_irq             ),
+`endif
+`ifdef XSIM_V_IN
+    .can_irq_i('0),
+`else
         .can_irq_i             ( s_can_irq             ),
+`endif
+`ifdef XSIM_V_IN
+    .pwm_irq_i('0),
+`else
         .pwm_irq_i             ( s_pwm_irq             ),
+`endif
+`ifdef XSIM_V_IN
+    .gpio_irq_i('0),
+`else
         .gpio_irq_i            ( s_gpio_irq            ),
+`endif
+`ifdef XSIM_V_IN
+    .cl_dma_pe_evt_i('0),
+`else
         .cl_dma_pe_evt_i       ( s_dma_pe_evt          ),
+`endif
         .dm_rst_o              ( s_dm_rst              ),
         .l2_axi_master         ( l2_axi_bus            ),
         .apb_axi_master        ( apb_axi_bus           ),
@@ -820,22 +1061,40 @@ axi_spu_top #(
         // EVU 
         .spu_core_o           ( spu_o[ariane_soc::NumCVA6 +: ariane_soc::NumCVA6]),
         // APMU
+`ifdef XSIM_V_IN
+    .pmu_intr_i('0),
+`else
         .pmu_intr_i           ( pmu_intr_o           ),
+`endif
+`ifdef XSIM_V_IN
+    .iopmp_irq_i('0),
+`else
         .iopmp_irq_i          ( iopmp_irq            ),
 
+`endif
         .cva6_uart_rx_i       ( cva6_uart_rx_i       ),
         .cva6_uart_tx_o       ( cva6_uart_tx_o       ),
         .axi_lite_master      ( host_lite_bus        ),
         .axi_lite_snoop_req_i ( axi_lite_snooper_req ),
         .axi_lite_snoop_rsp_o ( axi_lite_snooper_rsp ),
+`ifdef XSIM_V_IN
+    .iommu_lock_xor_key_i('0),
+`else
 
         .iommu_lock_xor_key_i ( iommu_lock_xor_key   ),
+`endif
+`ifdef XSIM_V_IN
+    .aia_lock_xor_key_i('0),
+`else
         .aia_lock_xor_key_i   ( aia_lock_xor_key     ),
+`endif
         .perfc_cfg_req_i       ( axi_lite_perfc_cfg_req  ),
         .perfc_cfg_resp_o       ( axi_lite_perfc_cfg_resp ),
         .perfc_evu_status_resp_o( spu_o[0 +: ariane_soc::NumCVA6]) 
     );
+`endif // XSIM_CUT_i_cva6_subsystem
 
+`ifndef XSIM_CUT_i_axi2mem_l2 // xsim bisect
    axi2tcdm_wrap #(
       .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
       .AXI_USER_WIDTH ( AXI_USER_WIDTH           ),
@@ -848,8 +1107,10 @@ axi_spu_top #(
       .tcdm_master ( axi_bridge_2_interconnect ),
       .busy_o      (                           )
    );
+`endif // XSIM_CUT_i_axi2mem_l2
 
 
+`ifndef XSIM_CUT_i_l2_subsystem // xsim bisect
    l2_subsystem #(
       .NB_L2_BANKS        ( NB_L2_BANKS              ),
       .L2_BANK_SIZE       ( L2_BANK_SIZE             ),
@@ -861,6 +1122,7 @@ axi_spu_top #(
       .axi_bridge_2_interconnect ( axi_bridge_2_interconnect ),
       .udma_tcdm_channels        ( udma_2_tcdm_channels      )
      );
+`endif // XSIM_CUT_i_l2_subsystem
 
     edge_propagator_rx ep_dma_pe_evt_i (
         .clk_i   ( s_soc_clk               ),
@@ -904,9 +1166,13 @@ axi_spu_top #(
       .llc_read_miss_cache_i  ( s_llc_read_miss_cache          ),
       .llc_write_hit_cache_i  ( s_llc_write_hit_cache          ),
       .llc_write_miss_cache_i ( s_llc_write_miss_cache         ),
+      .dram_model_cfg_o       ( s_dram_model_cfg               ),
+      .dram_model_cnt_i       ( s_dram_model_cnt               ),
 
       `ifdef XILINX_DDR
       .hyper_axi_bus_slave    ( dummyaxibus                    ),
+      `elsif XSIM_SIM_DRAM
+      .hyper_axi_bus_slave    ( xsim_hyper_dummy_bus           ),
       `else
       .hyper_axi_bus_slave    ( mem_axi_bus                    ),
       `endif
@@ -959,6 +1225,7 @@ axi_spu_top #(
       );
 
 
+`ifndef XSIM_CUT_i_axi_lite_subsystem // xsim bisect
    axi_lite_subsystem #(
        .AXI_USER_WIDTH      ( AXI_USER_WIDTH    ),
        .AXI_ADDR_WIDTH      ( AXI_ADDRESS_WIDTH ),
@@ -982,5 +1249,6 @@ axi_spu_top #(
        .completion_irq_o,
        .perfc_cfg_master      ( perfc_cfg_lite_bus     )
    );
+`endif // XSIM_CUT_i_axi_lite_subsystem
 
 endmodule

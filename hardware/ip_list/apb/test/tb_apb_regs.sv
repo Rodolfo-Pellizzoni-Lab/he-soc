@@ -179,7 +179,7 @@ module tb_apb_regs;
   // pragma translate_off
   `ifndef VERILATOR
   // Assertions to determine correct APB protocol sequencing
-  default disable iff (!rst_n);
+  // xsim: unsupported -- default disable iff (!rst_n);
   // when psel is not asserted, the bus is in the idle state
   sequence APB_IDLE;
     !apb_slave.psel;

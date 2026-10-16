@@ -57,6 +57,12 @@ module axi_llc_hit_miss #(
   // then set SourceIDStart = 7, SourceIDEnd = 9. (Both inclusive.)
   parameter int unsigned SourceIDStart    = 0,
   parameter int unsigned SourceIDEnd      = AxiCfg.SlvPortIdWidth,
+  /// CBQRI capacity allocation: RCID width (0 = off), RCID position and access-type bit in desc.a_x_user
+  parameter int unsigned QosRcidWidth     = 0,
+  parameter int unsigned QosRcidLsb       = 0,
+  parameter int unsigned QosAtBit         = 0,
+  // This is autofilled. Do not expose.
+  parameter int unsigned QosNumRcid       = (QosRcidWidth > 0) ? 2**QosRcidWidth : 1,
   // This is autofilled. Do not expose.
   parameter int unsigned SOURCE_ID_BITS   = SourceIDEnd - SourceIDStart + 1,
   /// Kbit selection from AXI_ID bits for Master Selection
@@ -84,6 +90,8 @@ module axi_llc_hit_miss #(
   input  way_ind_t spm_lock_i,
   input  way_ind_t flushed_i,
   input  bitmask_ind_t id_bitmask_i,
+  // CBQRI block masks: ways each (RCID, AT) may allocate into
+  input  logic [QosNumRcid-1:0][1:0][Cfg.SetAssociativity-1:0] qos_mask_i,
   // unlock inputs from the units
   input  lock_t    w_unlock_i,
   input  logic     w_unlock_req_i,
@@ -97,6 +105,10 @@ module axi_llc_hit_miss #(
   output way_ind_t bist_res_o,
   output logic     bist_valid_o
 );
+  desc_t desc_o_xc; // xsim: shadow of desc_o
+  logic ready_o_xc; // xsim: shadow of ready_o
+  logic miss_valid_o_xc; // xsim: shadow of miss_valid_o
+  logic hit_valid_o_xc; // xsim: shadow of hit_valid_o
   `include "common_cells/registers.svh"
   localparam int unsigned IndexBase = Cfg.ByteOffsetLength + Cfg.BlockOffsetLength;
   localparam int unsigned TagBase   = Cfg.ByteOffsetLength + Cfg.BlockOffsetLength +
@@ -135,12 +147,15 @@ module axi_llc_hit_miss #(
 
   // Signals to/from the tag store
   store_req_t store_req;
+  store_req_t store_req_xc; // xsim: shadow of store_req
   logic       store_req_valid;
+  logic store_req_valid_xc; // xsim: shadow of store_req_valid
   logic       store_req_ready;
 
   store_res_t store_res;
   logic       store_res_valid;
   logic       store_res_ready;
+  logic store_res_ready_xc; // xsim: shadow of store_res_ready
   // lock signal
   lock_t lock;
   logic  lock_req, locked;
@@ -151,30 +166,36 @@ module axi_llc_hit_miss #(
 
   // Flipflops
   logic  busy_d,    busy_q, load_busy; // we have a valid descriptor in the unit
+  logic busy_d_xc; // xsim: shadow of busy_d
+  logic load_busy_xc; // xsim: shadow of load_busy
   logic  init_d,    init_q, load_init; // is the tag storage initialized?
+  logic init_d_xc; // xsim: shadow of init_d
+  logic load_init_xc; // xsim: shadow of load_init
   desc_t desc_d,    desc_q;            // descriptor residing in unit
+  desc_t desc_d_xc; // xsim: shadow of desc_d
   logic  load_desc;
+  logic load_desc_xc; // xsim: shadow of load_desc
 
   // control
   always_comb begin
     // default assignments
-    init_d    = init_q;
-    load_init = 1'b0;
-    busy_d    = busy_q;
-    load_busy = 1'b0;
-    desc_d    = desc_q;
+    init_d_xc    = init_q;
+    load_init_xc = 1'b0;
+    busy_d_xc    = busy_q;
+    load_busy_xc = 1'b0;
+    desc_d_xc    = desc_q;
     // output
-    desc_o    = desc_q; // some fields get combinatorically overwritten from the tag lookup
-    load_desc = 1'b0;
+    desc_o_xc    = desc_q; // some fields get combinatorically overwritten from the tag lookup
+    load_desc_xc = 1'b0;
     // unit handshaking
-    ready_o      = 1'b0;
-    miss_valid_o = 1'b0;
-    hit_valid_o  = 1'b0;
+    ready_o_xc      = 1'b0;
+    miss_valid_o_xc = 1'b0;
+    hit_valid_o_xc  = 1'b0;
     // inputs to the tag store
-    store_req       = store_req_t'{mode: axi_llc_pkg::Bist, default: '0};
-    store_req_valid = 1'b0;
+    store_req_xc       = store_req_t'{mode: axi_llc_pkg::Bist, indicator: {Cfg.SetAssociativity{1'b1}}, default: '0}; // xsim: default equals the init-time BIST request so no transient value crosses the port
+    store_req_valid_xc = 1'b0;
 
-    store_res_ready = 1'b0;
+    store_res_ready_xc = 1'b0;
 
     // we are initialized, can operate on input descriptors
     if (init_q) begin
@@ -187,25 +208,25 @@ module axi_llc_hit_miss #(
           /////////////////////////////////////////////////////////
           // check if the spm access would go onto a way configured as cache, if yes error
           if (|(desc_q.way_ind & (~spm_lock_i))) begin
-            desc_o.x_resp = axi_pkg::RESP_SLVERR;
+            desc_o_xc.x_resp = axi_pkg::RESP_SLVERR;
           end
 
           // only do something if we are not stalled or locked
           if (!(locked | cnt_stall)) begin
             // check if we have to go to hit or bypass
             if (!to_miss) begin
-              hit_valid_o = 1'b1;
+              hit_valid_o_xc = 1'b1;
               // transfer
               if (hit_ready_i) begin
-                busy_d    = 1'b0;
-                load_busy = 1'b1;
+                busy_d_xc    = 1'b0;
+                load_busy_xc = 1'b1;
               end
             end else begin
-              miss_valid_o = 1'b1;
+              miss_valid_o_xc = 1'b1;
               // transfer
               if (miss_ready_i) begin
-                busy_d    = 1'b0;
-                load_busy = 1'b1;
+                busy_d_xc    = 1'b0;
+                load_busy_xc = 1'b1;
               end
             end
           end
@@ -217,17 +238,17 @@ module axi_llc_hit_miss #(
           ////////////////////////////////////////////////////////////////
           if (store_res_valid) begin
             if (desc_q.flush) begin
-              // We have to send further, update desc_o
-              desc_o.evict     = store_res.evict;
-              desc_o.evict_tag = store_res.evict_tag;
+              // We have to send further, update desc_o_xc
+              desc_o_xc.evict     = store_res.evict;
+              desc_o_xc.evict_tag = store_res.evict_tag;
               // check that the line is not locked!
               if (!locked) begin
-                miss_valid_o     = 1'b1;
+                miss_valid_o_xc     = 1'b1;
                 // transfer of flush descriptor to miss unit
                 if (miss_ready_i) begin
-                  store_res_ready = 1'b1;
-                  busy_d          = 1'b0;
-                  load_busy       = 1'b1;
+                  store_res_ready_xc = 1'b1;
+                  busy_d_xc          = 1'b0;
+                  load_busy_xc       = 1'b1;
                 end
               end
             end else begin
@@ -235,17 +256,17 @@ module axi_llc_hit_miss #(
               // NORMAL lookup - differentiate between hit / miss
               /////////////////////////////////////////////////////////////
               // set out descriptor
-              desc_o.way_ind   = store_res.indicator;
-              desc_o.evict     = store_res.evict;
-              desc_o.evict_tag = store_res.evict_tag;
-              desc_o.refill    = store_res.hit ? 1'b0 : 1'b1;
+              desc_o_xc.way_ind   = store_res.indicator;
+              desc_o_xc.evict     = store_res.evict;
+              desc_o_xc.evict_tag = store_res.evict_tag;
+              desc_o_xc.refill    = store_res.hit ? 1'b0 : 1'b1;
               // determine if it has to go to the bypass or not if we are not stalled
               if (!(locked || cnt_stall)) begin
-                hit_valid_o  = ~to_miss &  store_res.hit;
-                miss_valid_o =  to_miss | ~store_res.hit;
+                hit_valid_o_xc  = ~to_miss &  store_res.hit;
+                miss_valid_o_xc =  to_miss | ~store_res.hit;
                 // check for a transfer, do not update hit_valid or miss_valid from this point on!
-                if ((hit_valid_o && hit_ready_i) || (miss_valid_o && miss_ready_i)) begin
-                  store_res_ready = 1'b1;
+                if ((hit_valid_o_xc && hit_ready_i) || (miss_valid_o_xc && miss_ready_i)) begin
+                  store_res_ready_xc = 1'b1;
                   // New tag is written with the lookup or flush if it was necessary and the storage
                   // will go to ready, if it can take a new request.
                   // Does the module have a new descriptor at its input and we can take it?
@@ -253,12 +274,12 @@ module axi_llc_hit_miss #(
                     // snoop at the descriptors spm, we do not have to make a lookup if it is spm
                     if (desc_i.spm) begin
                       // load directly, if it is spm
-                      ready_o   = 1'b1;
-                      desc_d    = desc_i;
-                      load_desc = 1'b1;
+                      ready_o_xc   = 1'b1;
+                      desc_d_xc    = desc_i;
+                      load_desc_xc = 1'b1;
                     end else begin
                       // make the request to the tag store,
-                      store_req = store_req_t'{
+                      store_req_xc = store_req_t'{
                         mode:      desc_i.flush ? axi_llc_pkg::Flush : axi_llc_pkg::Lookup,
                         indicator: desc_i.flush ? desc_i.way_ind     : ~flushed_i,
                         index:     desc_i.a_x_addr[IndexBase+:Cfg.IndexLength],
@@ -266,22 +287,22 @@ module axi_llc_hit_miss #(
                         dirty:     desc_i.rw,
                         default:   '0
                       };
-                      store_req_valid = 1'b1;
+                      store_req_valid_xc = 1'b1;
                       // transfer
                       if (store_req_ready) begin
-                        ready_o   = 1'b1;
-                        desc_d    = desc_i;
-                        load_desc = 1'b1;
+                        ready_o_xc   = 1'b1;
+                        desc_d_xc    = desc_i;
+                        load_desc_xc = 1'b1;
                       end else begin
                         // go to idle and do nothing
-                        busy_d    = 1'b0;
-                        load_busy = 1'b1;
+                        busy_d_xc    = 1'b0;
+                        load_busy_xc = 1'b1;
                       end
                     end
                   end else begin
                     // Go to IDLE otherwise
-                    busy_d    = 1'b0;
-                    load_busy = 1'b1;
+                    busy_d_xc    = 1'b0;
+                    load_busy_xc = 1'b1;
                   end
                 end
               end
@@ -298,14 +319,14 @@ module axi_llc_hit_miss #(
           // snoop at the descriptors spm, we do not have to make a lookup if it is spm
           if (desc_i.spm) begin
             // load directly, if it is spm
-            ready_o   = 1'b1;
-            busy_d    = 1'b1;
-            load_busy = 1'b1;
-            desc_d    = desc_i;
-            load_desc = 1'b1;
+            ready_o_xc   = 1'b1;
+            busy_d_xc    = 1'b1;
+            load_busy_xc = 1'b1;
+            desc_d_xc    = desc_i;
+            load_desc_xc = 1'b1;
           end else begin
             // make the request to the tag store,
-            store_req = store_req_t'{
+            store_req_xc = store_req_t'{
               mode:      desc_i.flush ? axi_llc_pkg::Flush : axi_llc_pkg::Lookup,
               indicator: desc_i.flush ? desc_i.way_ind     : ~flushed_i,
               index:     desc_i.a_x_addr[IndexBase+:Cfg.IndexLength],
@@ -313,14 +334,14 @@ module axi_llc_hit_miss #(
               dirty:     desc_i.rw,
               default:   '0
             };
-            store_req_valid = 1'b1;
+            store_req_valid_xc = 1'b1;
             // transfer
             if (store_req_ready) begin
-              ready_o   = 1'b1;
-              busy_d    = 1'b1;
-              load_busy = 1'b1;
-              desc_d    = desc_i;
-              load_desc = 1'b1;
+              ready_o_xc   = 1'b1;
+              busy_d_xc    = 1'b1;
+              load_busy_xc = 1'b1;
+              desc_d_xc    = desc_i;
+              load_desc_xc = 1'b1;
             end
           end
         end // we had a new descriptor for loading
@@ -331,18 +352,31 @@ module axi_llc_hit_miss #(
     ///////////////////////////////////////////////////////////////////////////////
     end else begin
       // first cycle after reset start initialization of the sram makros
-      store_req = store_req_t'{
+      store_req_xc = store_req_t'{
         mode:      axi_llc_pkg::Bist,
         indicator: {Cfg.SetAssociativity{1'b1}},
         default:   '0
       };
-      store_req_valid = 1'b1;
+      store_req_valid_xc = 1'b1;
       if (store_req_ready) begin
-        init_d    = 1'b1;
-        load_init = 1'b1;
+        init_d_xc    = 1'b1;
+        load_init_xc = 1'b1;
       end
     end
-  end
+        busy_d = busy_d_xc; // xsim: outputs assigned once
+          load_busy = load_busy_xc; // xsim: outputs assigned once
+          desc_o = desc_o_xc; // xsim: outputs assigned once
+          desc_d = desc_d_xc; // xsim: outputs assigned once
+          load_desc = load_desc_xc; // xsim: outputs assigned once
+          ready_o = ready_o_xc; // xsim: outputs assigned once
+          miss_valid_o = miss_valid_o_xc; // xsim: outputs assigned once
+          store_req = store_req_xc; // xsim: outputs assigned once
+          store_req_valid = store_req_valid_xc; // xsim: outputs assigned once
+          hit_valid_o = hit_valid_o_xc; // xsim: outputs assigned once
+          store_res_ready = store_res_ready_xc; // xsim: outputs assigned once
+          init_d = init_d_xc; // xsim: outputs assigned once
+          load_init = load_init_xc; // xsim: outputs assigned once
+    end
   
 
   /// Cache way locking logic.
@@ -362,6 +396,20 @@ module axi_llc_hit_miss #(
   `FFLARN(total_lock_i_d, total_lock_i, 1'b1, '0, clk_i, rst_ni)
   `FFLARN(total_lock_i_q, total_lock_i_d, 1'b1, '0, clk_i, rst_ni)
 
+  // CBQRI capacity allocation: the ways outside the block mask of the looked-up descriptor's (RCID, AT) are
+  // locked for the replacement decision. desc_q holds that descriptor from the tag-store request until its
+  // result is taken, so the lock belongs to the request the PLRU decides for. If the mask leaves no way that is
+  // not already locked (e.g. it only covers SPM ways), the mask is ignored for that request.
+  way_ind_t qos_lock, store_lock;
+  logic     qos_fallback;
+  if (QosRcidWidth > 0) begin : gen_qos_lock
+    assign qos_lock = ~qos_mask_i[desc_q.a_x_user[QosRcidLsb +: QosRcidWidth]][desc_q.a_x_user[QosAtBit]];
+  end else begin : gen_no_qos_lock
+    assign qos_lock = '0;
+  end
+  assign qos_fallback = &(total_lock_i_q | qos_lock);
+  assign store_lock   = qos_fallback ? total_lock_i_q : (total_lock_i_q | qos_lock);
+
   axi_llc_tag_store #(
     .Cfg         ( Cfg         ),
     .way_ind_t   ( way_ind_t   ),
@@ -372,7 +420,7 @@ module axi_llc_hit_miss #(
     .rst_ni,
     .test_i,
     .flushed_i    	( flushed_i          ),
-    .total_lock_i 	( total_lock_i_q     ),
+    .total_lock_i 	( store_lock         ),
     .req_i        	( store_req          ),
     .valid_i      	( store_req_valid    ),
     .ready_o      	( store_req_ready    ),
@@ -443,4 +491,61 @@ module axi_llc_hit_miss #(
       else $fatal(1, "[hit_miss.desc_o.way_ind] More than two bit set in the one-hot signal!");
   `endif
   // pragma translate_on
+  // pragma translate_off
+  `ifndef SYNTHESIS
+  // CBQRI allocation check (simulation): every refill must go into a way of its (RCID, AT) block mask. Prints at
+  // the end "[QOS] llc_alloc rcid=.. at=.. n=.. ways=.. mask=.." per (RCID, AT) and one summary line; a refill
+  // outside the mask prints "[QOS] ERROR llc_alloc ...".
+  if (QosRcidWidth > 0) begin : gen_qos_alloc_check
+    logic [QosRcidWidth-1:0]         chk_rcid;
+    logic                            chk_at;
+    logic [Cfg.SetAssociativity-1:0] chk_mask, chk_allowed;
+    logic                            chk_fire;
+    int unsigned n_alloc, n_err, n_fallback;
+    int unsigned n_per   [QosNumRcid][2];
+    logic [Cfg.SetAssociativity-1:0] ways_per [QosNumRcid][2];
+
+    assign chk_rcid    = desc_o.a_x_user[QosRcidLsb +: QosRcidWidth];
+    assign chk_at      = desc_o.a_x_user[QosAtBit];
+    assign chk_mask    = qos_mask_i[chk_rcid][chk_at];
+    assign chk_allowed = chk_mask & ~spm_lock_i;
+    assign chk_fire    = miss_valid_o && miss_ready_i && !desc_o.flush && !desc_o.spm && desc_o.refill;
+
+    initial begin
+      n_alloc = 0; n_err = 0; n_fallback = 0;
+      for (int r = 0; r < QosNumRcid; r++) for (int a = 0; a < 2; a++) begin
+        n_per[r][a] = 0; ways_per[r][a] = '0;
+      end
+    end
+
+    always @(posedge clk_i) begin
+      if (rst_ni && chk_fire) begin
+        n_alloc++;
+        n_per[chk_rcid][chk_at]++;
+        ways_per[chk_rcid][chk_at] |= desc_o.way_ind;
+        if (chk_allowed == '0) n_fallback++;
+        else if ((desc_o.way_ind & ~chk_mask) != '0) begin
+          n_err++;
+          if (n_err <= 10)
+            $display("[QOS] ERROR llc_alloc rcid=%0d at=%0d addr=0x%h way=0x%h outside mask 0x%h", chk_rcid,
+                     chk_at, desc_o.a_x_addr, desc_o.way_ind, chk_mask);
+        end
+      end
+    end
+
+    final begin
+      for (int r = 0; r < QosNumRcid; r++) for (int a = 0; a < 2; a++)
+        if (n_per[r][a] != 0)
+          $display("[QOS] llc_alloc rcid=%0d at=%0d n=%0d ways=0x%h mask=0x%h", r, a, n_per[r][a], ways_per[r][a],
+                   qos_mask_i[r][a]);
+      $display("[QOS] llc_alloc check: %0d refills, %0d outside their mask%s, %0d with no usable way in the mask",
+               n_alloc, n_err, (n_err != 0) ? " ERROR" : "", n_fallback);
+    end
+  end
+  `endif
+  // pragma translate_on
+
+`ifdef XSIM_INIT_REGS
+  initial begin total_lock_i_d = '0; total_lock_i_q = '0; busy_q = '0; init_q = '0; desc_q = '0; end // xsim: kill time-0 X in the BIST handshake ring
+`endif
 endmodule

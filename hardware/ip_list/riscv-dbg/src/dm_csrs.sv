@@ -79,6 +79,9 @@ module dm_csrs #(
   input  logic                              sberror_valid_i, // bus error occurred
   input  logic [2:0]                        sberror_i // bus error occurred
 );
+  logic clear_resumeack_o_xc; // xsim: shadow of clear_resumeack_o
+  logic [NrHarts-1:0] haltreq_o_xc; // xsim: shadow of haltreq_o
+  logic [NrHarts-1:0] resumereq_o_xc; // xsim: shadow of resumereq_o
   // the amount of bits we need to represent all harts
   localparam int unsigned HartSelLen = (NrHarts == 1) ? 1 : $clog2(NrHarts);
   localparam int unsigned NrHartsAligned = 2**HartSelLen;
@@ -284,7 +287,7 @@ module dm_csrs #(
     sbaddress_write_valid_o = 1'b0;
     sbdata_read_valid_o     = 1'b0;
     sbdata_write_valid_o    = 1'b0;
-    clear_resumeack_o       = 1'b0;
+    clear_resumeack_o_xc       = 1'b0;
 
     // helper variables
     sbcs         = '0;
@@ -545,7 +548,7 @@ module dm_csrs #(
     // Non-writeable, clear only
     dmcontrol_d.ackhavereset    = 1'b0;
     if (!dmcontrol_q.resumereq && dmcontrol_d.resumereq) begin
-      clear_resumeack_o = 1'b1;
+      clear_resumeack_o_xc = 1'b1;
     end
     if (dmcontrol_q.resumereq && resumeack_i) begin
       dmcontrol_d.resumereq = 1'b0;
@@ -559,19 +562,22 @@ module dm_csrs #(
     sbcs_d.sbaccess32           = logic'(BusWidth >= 32'd32);
     sbcs_d.sbaccess16           = logic'(BusWidth >= 32'd16);
     sbcs_d.sbaccess8            = logic'(BusWidth >= 32'd8);
-  end
+        clear_resumeack_o = clear_resumeack_o_xc; // xsim: outputs assigned once
+    end
 
   // output multiplexer
   always_comb begin : p_outmux
     selected_hart = hartsel_o[HartSelLen-1:0];
     // default assignment
-    haltreq_o = '0;
-    resumereq_o = '0;
+    haltreq_o_xc = '0;
+    resumereq_o_xc = '0;
     if (selected_hart <= HartSelLen'(NrHarts-1)) begin
-      haltreq_o[selected_hart]   = dmcontrol_q.haltreq;
-      resumereq_o[selected_hart] = dmcontrol_q.resumereq;
+      haltreq_o_xc[selected_hart]   = dmcontrol_q.haltreq;
+      resumereq_o_xc[selected_hart] = dmcontrol_q.resumereq;
     end
-  end
+        haltreq_o = haltreq_o_xc; // xsim: outputs assigned once
+          resumereq_o = resumereq_o_xc; // xsim: outputs assigned once
+    end
 
   assign dmactive_o  = dmcontrol_q.dmactive;
   assign cmd_o       = command_q;

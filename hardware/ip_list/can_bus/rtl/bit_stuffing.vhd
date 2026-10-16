@@ -289,7 +289,7 @@ begin
     ---------------------------------------------------------------------------    
     -- Combinationally incremented stuff counter by 1.
     ---------------------------------------------------------------------------
-    bst_ctr_add <= (bst_ctr_q + 1) mod 8;
+    bst_ctr_add <= resize((bst_ctr_q + 1) mod 8, bst_ctr_add'length); -- xsim: mod widens
 
 
     ---------------------------------------------------------------------------
@@ -348,7 +348,7 @@ begin
     -- Combinationally incremented value of equal consecutive bits of equal
     -- value.
     ---------------------------------------------------------------------------
-    same_bits_add <= (same_bits_q + 1) mod 8;
+    same_bits_add <= resize((same_bits_q + 1) mod 8, same_bits_add'length); -- xsim: mod widens
 
     ---------------------------------------------------------------------------
     -- Preset value in case of start of transmission without transmission of

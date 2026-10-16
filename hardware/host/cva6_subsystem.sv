@@ -472,6 +472,15 @@ module cva6_subsystem
     .AXI_USER_WIDTH     ( AXI_USER_WIDTH           ),
     .AXI_MAX_READ_TXNS  ( 8                        ),
     .AXI_MAX_WRITE_TXNS ( 8                        ),
+    // LR/SC reservations keyed by the CCU's source-port bits (ariane_axi_soc user[QosUserLsb-1:0], one entry per CCU port) instead of
+    // the AXI ID: the core-side ID remapper (cva6_synth_wrap, cva6_axi_id_remap) allocates read and write IDs from
+    // separate tables, so the LR's AR ID and the SC's AW ID only agree when nothing else is in flight. On the VCU118
+    // (posted UART / L2 writes pending) an ID-keyed table failed every SC to the uncached L2 while simulation passed
+    // (2026-10-14). The port bits are stable across the remapper. The address check that clears a reservation on any
+    // write is unchanged, and the 2**IdWidthSlave-entry table was also the routing hot spot of the FPGA build.
+    .AXI_USER_AS_ID     ( 1'b1                     ),
+    .AXI_USER_ID_MSB    ( ariane_axi_soc::QosUserLsb-1 ),
+    .AXI_USER_ID_LSB    ( 0                        ),
     .RISCV_WORD_WIDTH   ( 64                       ),
     .CUT_OUP_POP_INP_GNT( 1                        )
   ) i_axi_riscv_atomicsl2 (
@@ -551,6 +560,15 @@ module cva6_subsystem
     .AXI_USER_WIDTH     ( AXI_USER_WIDTH           ),
     .AXI_MAX_READ_TXNS  ( 8                        ),
     .AXI_MAX_WRITE_TXNS ( 8                        ),
+    // LR/SC reservations keyed by the CCU's source-port bits (ariane_axi_soc user[QosUserLsb-1:0], one entry per CCU port) instead of
+    // the AXI ID: the core-side ID remapper (cva6_synth_wrap, cva6_axi_id_remap) allocates read and write IDs from
+    // separate tables, so the LR's AR ID and the SC's AW ID only agree when nothing else is in flight. On the VCU118
+    // (posted UART / L2 writes pending) an ID-keyed table failed every SC to the uncached L2 while simulation passed
+    // (2026-10-14). The port bits are stable across the remapper. The address check that clears a reservation on any
+    // write is unchanged, and the 2**IdWidthSlave-entry table was also the routing hot spot of the FPGA build.
+    .AXI_USER_AS_ID     ( 1'b1                     ),
+    .AXI_USER_ID_MSB    ( ariane_axi_soc::QosUserLsb-1 ),
+    .AXI_USER_ID_LSB    ( 0                        ),
     .RISCV_WORD_WIDTH   ( 64                       )
   ) i_axi_riscv_atomicsl3 (
     .clk_i,
@@ -579,9 +597,16 @@ module cva6_subsystem
   );
 
   // ---------------
-  // AXI CLUSTER Master
+  // AXI CLUSTER Master: the accelerator socket's DMA. It enters the SoC through a port of the coherence unit
+  // (cva6_synth_wrap), so it is snooped against the cores' L1 data caches; its old xbar port is left idle.
   // ---------------
-  `AXI_ASSIGN(slave[ariane_soc::CLUSTER_MST], cluster_axi_slave)
+  ariane_axi_soc::req_slv_t  cluster_dma_req;
+  ariane_axi_soc::resp_slv_t cluster_dma_resp;
+  ariane_axi_soc::req_t      cluster_xbar_idle_req;
+  `AXI_ASSIGN_TO_REQ(cluster_dma_req, cluster_axi_slave)
+  `AXI_ASSIGN_FROM_RESP(cluster_axi_slave, cluster_dma_resp)
+  assign cluster_xbar_idle_req = '0;
+  `AXI_ASSIGN_FROM_REQ(slave[ariane_soc::CLUSTER_MST], cluster_xbar_idle_req)
 
   // ---------------
   // AXI uDMA TX L3 Master (READ ONLY from MEM)
@@ -607,7 +632,7 @@ module cva6_subsystem
                                          MaxMstTrans: ariane_soc::NB_PERIPHERALS,
                                          MaxSlvTrans: ariane_soc::NrSlaves,
                                          FallThrough: 1'b0,
-                                         LatencyMode: axi_pkg::NO_LATENCY, // If you cut anything, you might want to remove the soc2cluster_cut.
+                                         LatencyMode: axi_pkg::CUT_ALL_PORTS, // FPGA-timing experiment: spill registers on every xbar port (was NO_LATENCY)
                                          PipelineStages: 32'd0,
                                          AxiIdWidthSlvPorts: ariane_soc::IdWidth,
                                          AxiIdUsedSlvPorts: ariane_soc::IdWidth,
@@ -909,6 +934,9 @@ module cva6_subsystem
     .ipi_i                ( ipi                         ), // async signal
     .time_irq_i           ( timer_irq                   ), // async signal
     .debug_req_i          ( debug_req_core              ), // async signal
+    // accelerator socket DMA, as a coherent CCU port
+    .dma_req_i            ( cluster_dma_req             ),
+    .dma_resp_o           ( cluster_dma_resp            ),
     // CVA6 Master
     .data_master_aw_wptr_o( cva6_axi_master_dst.aw_wptr ),
     .data_master_aw_data_o( cva6_axi_master_dst.aw_data ),

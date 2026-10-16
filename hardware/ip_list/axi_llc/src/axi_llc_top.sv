@@ -104,6 +104,7 @@
 /// | `a_x_lock`  | `logic`            | AXI4+ATOP lock signal. Passed further in the miss pipeline when the line gets evicted or refilled.                                                                                                                                                                                                          |
 /// | `a_x_cache` | `axi_pkg::cache_t` | AXI4+ATOP cache signal. The cache only supports write back mode.                                                                                                                                                                                                                                            |
 /// | `a_x_prot`  | `axi_pkg::prot_t`  | AXI4+ATOP protection signal. Passed further in the miss pipeline.                                                                                                                                                                                                                                           |
+/// | `a_x_user`  | `axi_user_t`       | AXI4+ATOP user signal (QoS tag). Passed further in the miss pipeline: refills and evictions carry the user field of the request that caused them. |
 /// | `x_resp`    | `axi_pkg::resp_t`  | AXI4+ATOP response signal. This tells if we try to make un-allowed accesses onto address regions which are not mapped to either SPM nor cache. When this signal gets set somewhere in the pipeline, all following modules will pass the descriptor along and absorb the corresponding beats from the ports. |
 /// | `x_last`    | `logic`            | AXI4+ATOP last flag. Defines if the read or write unit send back the response.                                                                                                                                                                                                                              |
 /// | `spm`       | `logic`            | This field signals that the descriptor is of type SPM. It will not make a lookup in the hit/miss detection and utilize the hit bypass if applicable.                                                                                                                                                        |
@@ -171,6 +172,15 @@ module axi_llc_top #(
   // then set SourceIDStart = 7, SourceIDEnd = 9. (Both inclusive.)
   parameter int unsigned SourceIDStart    = 0,
   parameter int unsigned SourceIDEnd      = AxiIdWidth,
+  /// RISC-V CBQRI capacity allocation (way partitioning by RCID and access type), see `axi_llc_cbqri_cc`.
+  /// Width of the RCID carried in the AXI user field of the slave port; 0 disables it.
+  parameter int unsigned QosRcidWidth     = 0,
+  /// Position of the RCID (lowest bit) and of the access-type bit (0 data, 1 code) in the AXI user field.
+  parameter int unsigned QosRcidLsb       = 0,
+  parameter int unsigned QosAtBit         = 0,
+  /// Offset of the CBQRI capacity controller registers in the configuration port's address space (the
+  /// configuration registers answer below it).
+  parameter int unsigned QosCcOffset      = 32'h800,
   /// AXI4+ATOP request type on the slave port.
   /// Expected format can be defined using `AXI_TYPEDEF_REQ_T.
   parameter type slv_req_t      = logic,
@@ -286,6 +296,7 @@ module axi_llc_top #(
     logic                            a_x_lock; // AXI lock signal
     axi_pkg::cache_t                 a_x_cache;// AXI cache signal
     axi_pkg::prot_t                  a_x_prot; // AXI protection signal
+    axi_user_t                       a_x_user; // AXI user signal (QoS tag), passed on to refills/evictions
     axi_pkg::resp_t                  x_resp;   // AXI response signal, for error propagation
     logic                            x_last;   // Last descriptor of a burst
     // Cache specific descriptor signals
@@ -413,6 +424,77 @@ module axi_llc_top #(
     spm_addr_rule.end_addr      = spm_start_addr_i + axi_addr_t'(Cfg.SPMLength);
   end
 
+  // CBQRI capacity controller: takes the configuration port addresses at and above QosCcOffset
+  localparam int unsigned QosNumRcid = (QosRcidWidth > 0) ? 2**QosRcidWidth : 1;
+  logic [QosNumRcid-1:0][1:0][Cfg.SetAssociativity-1:0] qos_mask;
+  lite_req_t  cfg_conf_req;
+  lite_resp_t cfg_conf_resp;
+
+  if (QosRcidWidth > 0) begin : gen_cbqri_cc
+    typedef logic [AxiLiteAddrWidth-1:0]   lite_addr_t;
+    typedef logic [AxiLiteDataWidth-1:0]   lite_data_t;
+    typedef logic [AxiLiteDataWidth/8-1:0] lite_strb_t;
+    `AXI_LITE_TYPEDEF_AW_CHAN_T(lite_aw_chan_t, lite_addr_t)
+    `AXI_LITE_TYPEDEF_W_CHAN_T(lite_w_chan_t, lite_data_t, lite_strb_t)
+    `AXI_LITE_TYPEDEF_B_CHAN_T(lite_b_chan_t)
+    `AXI_LITE_TYPEDEF_AR_CHAN_T(lite_ar_chan_t, lite_addr_t)
+    `AXI_LITE_TYPEDEF_R_CHAN_T(lite_r_chan_t, lite_data_t)
+
+    lite_req_t  [1:0] conf_reqs;
+    lite_resp_t [1:0] conf_resps;
+    logic aw_sel, ar_sel;
+    assign aw_sel = (conf_req_i.aw.addr & (QosCcOffset * 2 - 1)) >= QosCcOffset;
+    assign ar_sel = (conf_req_i.ar.addr & (QosCcOffset * 2 - 1)) >= QosCcOffset;
+
+    axi_lite_demux #(
+      .aw_chan_t   ( lite_aw_chan_t ),
+      .w_chan_t    ( lite_w_chan_t  ),
+      .b_chan_t    ( lite_b_chan_t  ),
+      .ar_chan_t   ( lite_ar_chan_t ),
+      .r_chan_t    ( lite_r_chan_t  ),
+      .axi_req_t   ( lite_req_t     ),
+      .axi_resp_t  ( lite_resp_t    ),
+      .NoMstPorts  ( 2              ),
+      .MaxTrans    ( 2              ),
+      .FallThrough ( 1'b0           ),
+      .SpillAw     ( 1'b0           ),
+      .SpillW      ( 1'b0           ),
+      .SpillB      ( 1'b0           ),
+      .SpillAr     ( 1'b0           ),
+      .SpillR      ( 1'b0           )
+    ) i_conf_demux (
+      .clk_i,
+      .rst_ni,
+      .test_i,
+      .slv_req_i       ( conf_req_i  ),
+      .slv_aw_select_i ( aw_sel      ),
+      .slv_ar_select_i ( ar_sel      ),
+      .slv_resp_o      ( conf_resp_o ),
+      .mst_reqs_o      ( conf_reqs   ),
+      .mst_resps_i     ( conf_resps  )
+    );
+    assign cfg_conf_req  = conf_reqs[0];
+    assign conf_resps[0] = cfg_conf_resp;
+
+    axi_llc_cbqri_cc #(
+      .NumWays     ( Cfg.SetAssociativity ),
+      .RcidWidth   ( QosRcidWidth         ),
+      .DataWidth   ( AxiLiteDataWidth     ),
+      .lite_req_t  ( lite_req_t           ),
+      .lite_resp_t ( lite_resp_t          )
+    ) i_cbqri_cc (
+      .clk_i,
+      .rst_ni,
+      .req_i  ( conf_reqs[1]  ),
+      .resp_o ( conf_resps[1] ),
+      .mask_o ( qos_mask      )
+    );
+  end else begin : gen_no_cbqri_cc
+    assign cfg_conf_req = conf_req_i;
+    assign conf_resp_o  = cfg_conf_resp;
+    assign qos_mask     = '1;
+  end
+
   // configuration, also has control over bypass logic and flush
   axi_llc_config #(
     .Cfg            ( Cfg           ),
@@ -428,8 +510,8 @@ module axi_llc_top #(
   ) i_llc_config (
     .clk_i             ( clk_i                                  ),
     .rst_ni            ( rst_ni                                 ),
-    .conf_req_i        ( conf_req_i                             ),
-    .conf_resp_o       ( conf_resp_o                            ),
+    .conf_req_i        ( cfg_conf_req                           ),
+    .conf_resp_o       ( cfg_conf_resp                          ),
     .spm_lock_o        ( spm_lock                               ),
     .flushed_o         ( flushed                                ),
     .id_bitmask_o	( id_bitmask			 	  ),
@@ -594,7 +676,10 @@ module axi_llc_top #(
     .bitmask_ind_t  ( bitmask_ind_t ),
     .NumCfgRegcp    ( NumCfgRegcp   ),
     .SourceIDStart  ( SourceIDStart ),
-    .SourceIDEnd    ( SourceIDEnd   )
+    .SourceIDEnd    ( SourceIDEnd   ),
+    .QosRcidWidth   ( QosRcidWidth  ),
+    .QosRcidLsb     ( QosRcidLsb    ),
+    .QosAtBit       ( QosAtBit      )
   ) i_hit_miss_unit (
     .clk_i,
     .rst_ni,
@@ -610,6 +695,7 @@ module axi_llc_top #(
     .spm_lock_i     	( spm_lock      ),
     .flushed_i      	( flushed       ),
     .id_bitmask_i   	( id_bitmask    ),
+    .qos_mask_i     	( qos_mask      ),
     .w_unlock_i     	( w_unlock      ),
     .w_unlock_req_i 	( w_unlock_req  ),
     .w_unlock_gnt_o 	( w_unlock_gnt  ),

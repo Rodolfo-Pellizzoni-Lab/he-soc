@@ -197,7 +197,7 @@ module axi_serializer #(
     assert (MaxWriteTxns  >= 1)
       else $fatal(1, "Maximum number of write transactions must be >= 1!");
   end
-  default disable iff (~rst_ni);
+  // xsim: unsupported -- default disable iff (~rst_ni);
   aw_lost : assert property( @(posedge clk_i)
       (slv_req_i.aw_valid & slv_resp_o.aw_ready |-> mst_req_o.aw_valid & mst_resp_i.aw_ready))
     else $error("AW beat lost.");

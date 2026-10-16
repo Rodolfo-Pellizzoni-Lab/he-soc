@@ -60,7 +60,7 @@ module mock_uart  #(
 
     function void uart_tx(byte ch);
         if(ch==8'h0A) begin
-          $display("Mock uart %d: %s\n", UART_IDX, stringa);
+          $display("Mock uart %0d t=%0t: %s", UART_IDX, $time, stringa); // xsim tools: simulation-time stamp, no trailing newline
           charnum = 0;
           stringa = '0;
         end else begin

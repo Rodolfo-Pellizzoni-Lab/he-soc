@@ -139,6 +139,7 @@ module axi_llc_ax_master #(
     chan_d.lock   = desc_i.a_x_lock;
     chan_d.cache  = desc_i.a_x_cache;
     chan_d.prot   = desc_i.a_x_prot;
+    chan_d.user   = desc_i.a_x_user;   // QoS tag of the request that caused the refill / eviction
     // send the vector over the channel
     if (chan_valid_q) begin
       // transaction happens, go back to free

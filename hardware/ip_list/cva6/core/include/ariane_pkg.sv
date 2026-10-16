@@ -347,6 +347,21 @@ package ariane_pkg;
     localparam FETCH_USER_EN = cva6_config_pkg::CVA6ConfigFetchUserEn;
 
     // ---------------
+    // QoS identifiers (Ssqosid, for CBQRI controllers)
+    // ---------------
+    // srmcfg (0x181) holds the RCID in bits 11:0 and the MCID in bits 27:16. These are the implemented widths
+    // (at most 12 each); the other bits are read-only zero. Every AXI AR and AW the core issues carries
+    // {AT, MCID, RCID} in user[QOS_TAG_WIDTH-1:0], AT being the CBQRI access type (0 data, 1 code).
+    localparam int unsigned QOS_RCID_WIDTH = 4;
+    localparam int unsigned QOS_MCID_WIDTH = 4;
+    localparam int unsigned QOS_TAG_WIDTH  = QOS_RCID_WIDTH + QOS_MCID_WIDTH + 1;
+    typedef struct packed {
+        logic                      at;
+        logic [QOS_MCID_WIDTH-1:0] mcid;
+        logic [QOS_RCID_WIDTH-1:0] rcid;
+    } qos_tag_t;
+
+    // ---------------
     // Fetch Stage
     // ---------------
 

@@ -72,6 +72,7 @@ module pmu_ispm #(
     logic           b_ready;
 
     logic           start_axi4_write;
+    logic           start_axi4_read;
 
     // Signals whether the aw_addr is valid or not.
     logic           aw_dec_valid;
@@ -125,10 +126,10 @@ module pmu_ispm #(
         w_addr   = axi_req_i.aw.addr - START_ADDR;
 
         // Reads are prioritized over writes.
-        if (r_addr < NumBytes && axi_req_i.ar_valid) begin
+        if (r_addr < NumBytes && start_axi4_read) begin
             addr          = addr_t'(r_addr);
             ar_dec_valid  = 1'b1;
-        end else if (w_addr < NumBytes && axi_req_i.aw_valid) begin
+        end else if (w_addr < NumBytes && start_axi4_write) begin
             addr          = addr_t'(w_addr);
             aw_dec_valid  = 1'b1;
         end else if (pmc_addr < NumBytes && pmc_instr_req_i) begin
@@ -145,6 +146,7 @@ module pmu_ispm #(
     // The SPM only starts a write when the aw_addr, w_data are valid;
     // and when the spill registers have space to store another write response.
     assign start_axi4_write = axi_req_i.aw_valid && axi_req_i.w_valid && b_ready;
+    assign start_axi4_read  = axi_req_i.ar_valid && r_ready;
 
     // ReadLatency = 32'd0;
     if (ReadLatency == 32'd0) begin
@@ -175,14 +177,14 @@ module pmu_ispm #(
             };
 
             // PMU core signals
-            pmc_instr_gnt_o    = 1'b1;
+            pmc_instr_gnt_o    = 1'b0;
             pmc_instr_rdata_o  = '0;
             pmc_instr_rvalid_o = 1'b0;
             pmc_instr_err_o    = 1'b0;
             
             // Reads are prioritized over writes.
             // Reads can start even before the Master is ready to claim them.
-            if (axi_req_i.ar_valid && r_ready) begin
+            if (start_axi4_read) begin
                 r_valid = 1'b1;
                 axi_resp_o.ar_ready = 1'b1;
                 pmc_instr_gnt_o     = 1'b0;
@@ -219,6 +221,7 @@ module pmu_ispm #(
                 end
             end else if (pmc_instr_req_i) begin
                 req                = pmc_dec_valid;
+                pmc_instr_gnt_o    = 1'b1;
                 pmc_instr_rvalid_o = pmc_instr_req_i;
                 pmc_instr_err_o    = !pmc_dec_valid;
                 pmc_instr_rdata_o  = r_data_sout;
@@ -257,7 +260,7 @@ module pmu_ispm #(
             };
 
             // PMU core signals
-            pmc_instr_gnt_o    = 1'b1;
+            pmc_instr_gnt_o    = 1'b0;
             pmc_instr_rdata_o  = '0;
             pmc_instr_rvalid_o = 1'b0;
             pmc_instr_err_o    = 1'b0;
@@ -273,10 +276,9 @@ module pmu_ispm #(
                 // Can start the next read or write request.
                 IDLE: begin
                     // Reads are prioritized over writes.
-                    // Reads can start even before the Master is ready to claim them. Do not need to check for r_ready.
-                    // Wait until the previous `axi_resp_o.r_valid` is claimed before starting a new read.
-                    // `axi_resp_o.r_valid` is allowed to be a condition as it comes from a pipelined register.
-                    if (axi_req_i.ar_valid && !axi_resp_o.r_valid) begin
+                    // Start only when the response spill register has room.
+                    // `r_ready` comes from a pipelined register.
+                    if (start_axi4_read) begin
                         axi_fsm_ns       = READ;
                         read_fsm_ns      = LAT_PLUS_ONE;
                         read_requestor_d = AXI4;
@@ -314,6 +316,7 @@ module pmu_ispm #(
                         read_failed_d    = !pmc_dec_valid;
                         req              = pmc_dec_valid;
                         latency[0]       = 1'b1;
+                        pmc_instr_gnt_o  = 1'b1;
                     end    
                 end
 
@@ -347,8 +350,6 @@ module pmu_ispm #(
                                     read_fsm_ns = AWAIT_MRDY;
                                 // If requestor is PMU core.
                                 end else if (read_requestor_q == PMU_CORE) begin                                    
-                                    // To Do: Try and understand why this even matters?
-                                    pmc_instr_gnt_o    = 1'b1;          // Set `core_gnt_i` so that the new request is available in the next clock cycle.
                                     pmc_instr_rvalid_o = 1'b1;
                                     pmc_instr_err_o    = read_failed_q;
                                     axi_fsm_ns         = IDLE;

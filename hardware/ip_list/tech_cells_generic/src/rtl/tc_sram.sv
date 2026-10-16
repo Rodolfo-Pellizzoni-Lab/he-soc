@@ -96,6 +96,9 @@ module tc_sram #(
         "random": init_val[i] = {DataWidth{$urandom()}};
         default:  init_val[i] = {DataWidth{1'bx}};
       endcase
+`ifdef XSIM_SRAM_INIT_ONCE
+      sram[i] = init_val[i]; // xsim: initialise once here instead of a whole-array NBA on every reset-held clock edge
+`endif
     end
   end
 
@@ -108,7 +111,11 @@ module tc_sram #(
   data_t [NumPorts-1:0][Latency-1:0] rdata_q,  rdata_d;
   if (Latency == 32'd0) begin : gen_no_read_lat
     for (genvar i = 0; i < NumPorts; i++) begin : gen_port
+`ifdef XSIM_SRAM_NO_X_WRITE
+      assign rdata_o[i] = (req_i[i] === 1'b1 && we_i[i] === 1'b0) ? ($isunknown(addr_i[i]) ? 'x : sram[addr_i[i]]) : ($isunknown(r_addr_q[i]) ? 'x : sram[r_addr_q[i]]);
+`else
       assign rdata_o[i] = (req_i[i] && !we_i[i]) ? sram[addr_i[i]] : sram[r_addr_q[i]];
+`endif
     end
   end else begin : gen_read_lat
 
@@ -118,7 +125,12 @@ module tc_sram #(
         for (int unsigned j = 0; j < (Latency-1); j++) begin
           rdata_d[i][j] = rdata_q[i][j+1];
         end
+`ifdef XSIM_SRAM_NO_X_WRITE
+        if (req_i[i] === 1'b1 && we_i[i] === 1'b0) rdata_d[i][Latency-1] = $isunknown(addr_i[i]) ? 'x : sram[addr_i[i]];
+        else rdata_d[i][Latency-1] = $isunknown(r_addr_q[i]) ? 'x : sram[r_addr_q[i]]; // xsim: never index the array with X
+`else
         rdata_d[i][Latency-1] = (req_i[i] && !we_i[i]) ? sram[addr_i[i]] : sram[r_addr_q[i]];
+`endif
       end
     end
   end
@@ -143,7 +155,11 @@ module tc_sram #(
         end
         // there is a request for the SRAM, latch the required register
         for (int unsigned i = 0; i < NumPorts; i++) begin
+`ifdef XSIM_SRAM_NO_X_WRITE
+          if (req_i[i] === 1'b1 && !$isunknown(addr_i[i])) begin // xsim: an NBA through an X index is never released by the kernel
+`else
           if (req_i[i]) begin
+`endif
             if (we_i[i]) begin
               // update value when write is set at clock
               for (int unsigned j = 0; j < BeWidth; j++) begin
@@ -163,7 +179,9 @@ module tc_sram #(
     // write memory array
     always_ff @(posedge clk_i or negedge rst_ni) begin
       if (!rst_ni) begin
+`ifndef XSIM_SRAM_INIT_ONCE
         sram <= init_val;
+`endif
         for (int i = 0; i < NumPorts; i++) begin
           r_addr_q[i] <= {AddrWidth{1'b0}};
           // initialize the read output register for each port
@@ -184,7 +202,11 @@ module tc_sram #(
         end
         // there is a request for the SRAM, latch the required register
         for (int unsigned i = 0; i < NumPorts; i++) begin
+`ifdef XSIM_SRAM_NO_X_WRITE
+          if (req_i[i] === 1'b1 && !$isunknown(addr_i[i])) begin // xsim: an NBA through an X index is never released by the kernel
+`else
           if (req_i[i]) begin
+`endif
             if (we_i[i]) begin
               // update value when write is set at clock
               for (int unsigned j = 0; j < BeWidth; j++) begin

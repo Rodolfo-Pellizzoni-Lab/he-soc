@@ -107,6 +107,7 @@ module sdModel(
                tri [3:0] dat
 
                );
+integer sdModel_file_desc; // xsim: hoisted, used before declaration
 
    parameter RAMDISK  = "ramdisk2.hex";
    parameter LOG_FILE = "sd_model.log";
@@ -1003,7 +1004,6 @@ module sdModel(
       endcase
    end
 
-   integer sdModel_file_desc;
 
    initial
      begin

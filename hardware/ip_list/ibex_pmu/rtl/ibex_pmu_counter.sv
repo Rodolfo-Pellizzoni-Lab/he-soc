@@ -13,6 +13,7 @@
 module apmu_ibex_pmu_counter (
     input   logic                   clk_i,
     input   logic                   rst_ni,
+    input   logic                   stall_pmu_i,
 
     // counter interface 
     output  apmu_ibex_pkg::pmc_op_e      counter_op_o,
@@ -105,6 +106,16 @@ module apmu_ibex_pmu_counter (
 
             default: ;
         endcase
+
+        // WFP/WFO may wait indefinitely for an event.  The host must still be
+        // able to quiesce the core for component replacement, so cancel only
+        // an outstanding wait operation when the external stall is asserted.
+        // Regular counter reads/writes retain their normal completion
+        // semantics and cannot leave a late response behind after restart.
+        if (stall_pmu_i && (pmc_fsm_cs == FSM_WFX)) begin
+            pmc_fsm_ns   = FSM_IDLE;
+            counter_op_o = PMC_IDLE;
+        end
     end
 
 

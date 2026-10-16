@@ -115,6 +115,7 @@ sources:
   - host/alsaqr_clk_rst_gen.sv
   - host/rstgen_bypass_ckg.sv
   - host/rstgen_ckg.sv
+  - host/axi_dram_timing.sv
   - host/apb_soc_control.sv
   - host/apb_subsystem.sv
   - host/gpio2padframe.sv
@@ -125,8 +126,15 @@ sources:
   - host/l2_subsystem.sv
   - host/clk_gen_hyper.sv
   - host/axi_lite_subsystem.sv
+  - host/qos_monitor.sv
   - host/host_domain.sv
   - host/pad_frame.sv
+  # accel: begin (managed by alsaqr-mcp; hardware/accel/slots.json)
+  - accel/example/example.sv
+  - accel/crc32/crc32.sv
+  - accel/accel_slots.sv
+  - accel/accel_socket.sv
+  # accel: end
   - host/al_saqr.sv
 
   - target: all(fpga, xilinx, ddr, not(asic))

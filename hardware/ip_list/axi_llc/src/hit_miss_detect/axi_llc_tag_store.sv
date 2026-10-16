@@ -59,6 +59,7 @@ module axi_llc_tag_store #(
   /// BIST output is valid.
   output logic       tbist_valid_o
 );
+  logic ready_o_xc; // xsim: shadow of ready_o
 
   // typedef, because we use in this module many signals with the width of SetAssiciativity
   typedef logic [Cfg.IndexLength-1:0] index_t; // index type (equals the address for sram)
@@ -83,42 +84,56 @@ module axi_llc_tag_store #(
 
   // The module can be busy or not.
   logic       busy_q,      busy_d,       switch_busy;
+  logic switch_busy_xc; // xsim: shadow of switch_busy
 
   // Save the request in state
   store_req_t req_q;
   logic       load_req;
+  logic load_req_xc; // xsim: shadow of load_req
 
   // Macro signals
   // Request for the macros
   way_ind_t   ram_req;
+  way_ind_t ram_req_xc; // xsim: shadow of ram_req
   // Write enable for the macros, active high. (Also functions as byte enable as there is one byte).
   way_ind_t   ram_we;
+  way_ind_t ram_we_xc; // xsim: shadow of ram_we
   // Index is the address.
   index_t     ram_index, ram_index_inp;
+  index_t ram_index_xc; // xsim: shadow of ram_index
+  index_t ram_index_inp_xc; // xsim: shadow of ram_index_inp
   // Write data for the macros.
   tag_data_t  ram_wdata;
+  tag_data_t ram_wdata_xc; // xsim: shadow of ram_wdata
   // Read data is valid
   way_ind_t   ram_rvalid,  ram_rvalid_q, ram_rvalid_d;
   logic       lock_rvalid;
   // Hit indication signals
   way_ind_t   hit, hit_inp, tag_val, tag_dit,     tag_equ;
+  way_ind_t hit_inp_xc; // xsim: shadow of hit_inp
   tag_data_t  [Cfg.SetAssociativity-1:0] stored_tag;
   // Binary representation of the selected output indicator
   bin_ind_t   bin_ind;
   // The pattern generation unit signals
   logic       gen_valid,   gen_ready, plru_gen_ready;
+  logic gen_valid_xc; // xsim: shadow of gen_valid
   index_t     gen_index;
   tag_data_t  gen_pattern, bist_pattern;
   logic       gen_req,     gen_we;
   way_ind_t   bist_res;
   logic       bist_valid,  gen_eoc, plru_gen_eoc;
+  logic bist_valid_xc; // xsim: shadow of bist_valid
   // Evict box signals
   logic       evict_req,   evict_valid;
+  logic evict_req_xc; // xsim: shadow of evict_req
   // PLRU Module Hit/BIST Detection Signals
   logic       hit_req, hit_valid_s, bist_req;
+  logic hit_req_xc; // xsim: shadow of hit_req
+  logic bist_req_xc; // xsim: shadow of bist_req
   // Response output into the spill register
   store_res_t res;
   logic       res_valid,   res_ready;
+  logic res_valid_xc; // xsim: shadow of res_valid
   // Bist Signals for PLRU and Tag Storage SRAMs
   logic       bist_valid_o, plru_bist_valid_o;
   way_ind_t   bist_res_o, plru_bist_res_o;
@@ -126,29 +141,37 @@ module axi_llc_tag_store #(
   
 
   // macro control
+`ifdef XSIM_LLC_DEBUG
+  int unsigned xsim_dbg_cnt = 0;
+  always @(valid_i or gen_valid or gen_ready or plru_gen_ready or ready_o or switch_busy) begin
+    xsim_dbg_cnt++;
+    if (xsim_dbg_cnt <= 60) $display("LLCDBG %m t=%0t n=%0d valid_i=%b mode=%0d gen_valid=%b gen_ready=%b plru_gen_ready=%b ready_o=%b switch_busy=%b busy_q=%b rst_ni=%b", $time, xsim_dbg_cnt, valid_i, req_i.mode, gen_valid, gen_ready, plru_gen_ready, ready_o, switch_busy, busy_q, rst_ni);
+    if (xsim_dbg_cnt == 100000) begin $display("LLCDBG loop limit reached in %m"); $finish; end
+  end
+`endif
   always_comb begin : proc_macro_ctrl
     // default assignments
     // FFs
-    switch_busy  = 1'b0;
-    ready_o      = 1'b0;
-    load_req     = 1'b0;
-    res_valid    = 1'b0;
-    ram_req      = way_ind_t'(0);
-    ram_we       = way_ind_t'(0);
-    ram_index    = way_ind_t'(0);
-    ram_wdata    = tag_data_t'{default: '0};
+    switch_busy_xc  = 1'b0;
+    ready_o_xc      = 1'b0;
+    load_req_xc     = 1'b0;
+    res_valid_xc    = 1'b0;
+    ram_req_xc      = way_ind_t'(0);
+    ram_we_xc       = way_ind_t'(0);
+    ram_index_xc    = way_ind_t'(0);
+    ram_wdata_xc    = tag_data_t'{default: '0};
     // PLRU Module Evict/Miss Request
-    evict_req    = 1'b0;
+    evict_req_xc    = 1'b0;
     // PLRU Module Hit Request
-    hit_req	 = 1'b0;
+    hit_req_xc	 = 1'b0;
     // PLRU Hit_inp/Ram_index_inp Initialization
-    hit_inp     = way_ind_t'(0);
-    ram_index_inp = index_t'(0);
+    hit_inp_xc     = way_ind_t'(0);
+    ram_index_inp_xc = index_t'(0);
     // PLRU Module Bist Req Initialization
-    bist_req    = 1'b0;
+    bist_req_xc    = 1'b0;
     // generation request
-    gen_valid    = 1'b0;
-    bist_valid   = 1'b0;
+    gen_valid_xc    = 1'b0;
+    bist_valid_xc   = 1'b0;
 
     if (busy_q) begin
       
@@ -156,17 +179,17 @@ module axi_llc_tag_store #(
       unique case (req_q.mode)
           axi_llc_pkg::Bist: begin
             // During BIST connect the request to the tag pattern generator.
-            ram_req    = {Cfg.SetAssociativity{gen_req}};
-            ram_we     = {Cfg.SetAssociativity{gen_we}};
-            ram_index  = gen_index;
-            ram_wdata  = gen_pattern;
-            bist_valid = |ram_rvalid;
+            ram_req_xc    = {Cfg.SetAssociativity{gen_req}};
+            ram_we_xc     = {Cfg.SetAssociativity{gen_we}};
+            ram_index_xc  = gen_index;
+            ram_wdata_xc  = gen_pattern;
+            bist_valid_xc = |ram_rvalid;
             
             // To Indicate Bist request to the PLRU Unit
-            bist_req   = 1;
+            bist_req_xc   = 1;
             // If BIST finished, go to idle.
             if (gen_eoc && plru_gen_eoc) begin
-              switch_busy = 1'b1;
+              switch_busy_xc = 1'b1;
             end
           end
           axi_llc_pkg::Lookup: begin
@@ -174,107 +197,122 @@ module axi_llc_tag_store #(
             if ((|ram_rvalid) | (|ram_rvalid_q)) begin
               // We are valid on hit.
               if (|hit) begin
-              	hit_req = 1'b1;
-              	ram_index_inp = req_q.index;
-              	hit_inp = hit;
-                res_valid = hit_valid_s;
+              	hit_req_xc = 1'b1;
+              	ram_index_inp_xc = req_q.index;
+              	hit_inp_xc = hit;
+                res_valid_xc = hit_valid_s;
               end else begin
-                evict_req = 1'b1;
-                ram_index_inp = req_q.index;
-                hit_inp = hit;
-                res_valid = evict_valid;
+                evict_req_xc = 1'b1;
+                ram_index_inp_xc = req_q.index;
+                hit_inp_xc = hit;
+                res_valid_xc = evict_valid;
               end
             end
 
             // Do we have to write back something?
-            if (res_valid && res_ready) begin
+            if (res_valid_xc && res_ready) begin
               if (res.hit) begin
                 // This is a hit
                 if (req_q.dirty && !tag_dit[bin_ind]) begin
                   // Do we have to store a dirty as the hit was not dirty until now?
-                  ram_req   = res.indicator;
-                  ram_we    = res.indicator;
-                  ram_index = req_q.index;
-                  ram_wdata = tag_data_t'{
+                  ram_req_xc   = res.indicator;
+                  ram_we_xc    = res.indicator;
+                  ram_index_xc = req_q.index;
+                  ram_wdata_xc = tag_data_t'{
                                 val: 1'b1,
                                 dit: 1'b1,
                                 tag: req_q.tag
                               };
-                  switch_busy = 1'b1;
+                  switch_busy_xc = 1'b1;
                 end else begin
                   // Noting to write back, do we have a new LOOKUP request?
                   if (valid_i && (req_i.mode == axi_llc_pkg::Lookup)) begin
-                    ready_o = 1'b1;
+                    ready_o_xc = 1'b1;
                     // Do the lookup on the requested macros
-                    ram_req     = req_i.indicator;
-                    ram_index   = req_i.index;
-                    load_req    = 1'b1;
+                    ram_req_xc     = req_i.indicator;
+                    ram_index_xc   = req_i.index;
+                    load_req_xc    = 1'b1;
                   end else begin
                     // Go back to IDLE if no Lookup
-                    switch_busy = 1'b1;
+                    switch_busy_xc = 1'b1;
                   end
                 end
               end else begin
                 // This is a miss!
                 // Write back the new tag, it was a miss.
-                ram_req   = res.indicator;
-                ram_we    = res.indicator;
-                ram_index = req_q.index;
-                ram_wdata = tag_data_t'{
+                ram_req_xc   = res.indicator;
+                ram_we_xc    = res.indicator;
+                ram_index_xc = req_q.index;
+                ram_wdata_xc = tag_data_t'{
                               val: 1'b1,
                               dit: req_q.dirty,
                               tag: req_q.tag
                             };
                 // Go back to idle.
-                switch_busy = 1'b1;
+                switch_busy_xc = 1'b1;
               end
             end
           end
           axi_llc_pkg::Flush: begin
             if ((|ram_rvalid) | (|ram_rvalid_q)) begin
               // We are valid when the read output of the macros is valid!
-              res_valid = 1'b1;
+              res_valid_xc = 1'b1;
             end
 
             // Write back all zeros to the storage if the output is acknowledged.
-            if (res_valid && res_ready) begin
-              ram_req     = req_q.indicator;
-              ram_we      = req_q.indicator;
-              ram_index   = req_q.index;
-              ram_wdata   = tag_data_t'{default: '0};
-              switch_busy = 1'b1;
+            if (res_valid_xc && res_ready) begin
+              ram_req_xc     = req_q.indicator;
+              ram_we_xc      = req_q.indicator;
+              ram_index_xc   = req_q.index;
+              ram_wdata_xc   = tag_data_t'{default: '0};
+              switch_busy_xc = 1'b1;
             end
           end
         default : /* default */;
       endcase
     end else begin
       // we are not busy, so we are ready to get a new request.
-      ready_o = 1'b1;
+      ready_o_xc = 1'b1;
       if (valid_i) begin
         // There is a request to the tag store.
-        switch_busy = 1'b1;
-        load_req    = 1'b1;
+        switch_busy_xc = 1'b1;
+        load_req_xc    = 1'b1;
 
         // Make the requests to the tag macros.
         unique case (req_i.mode)
           axi_llc_pkg::Bist: begin
-            gen_valid   = 1'b1;
-            ready_o     = gen_ready & plru_gen_ready;
+            gen_valid_xc   = 1'b1;
+            ready_o_xc     = gen_ready & plru_gen_ready;
             // Only switch the state, if the request is valid
-            switch_busy = gen_ready & plru_gen_ready;
+            switch_busy_xc = gen_ready & plru_gen_ready;
           end
           axi_llc_pkg::Lookup, axi_llc_pkg::Flush: begin
             // Do the lookup on the requested macros
-            ram_req     = req_i.indicator;
-            ram_index   = req_i.index;
-            load_req    = 1'b1;
-            switch_busy = 1'b1;
+            ram_req_xc     = req_i.indicator;
+            ram_index_xc   = req_i.index;
+            load_req_xc    = 1'b1;
+            switch_busy_xc = 1'b1;
           end
           default : /* do nothing */;
         endcase
       end
     end
-  end
+        switch_busy = switch_busy_xc; // xsim: outputs assigned once
+          ram_req = ram_req_xc; // xsim: outputs assigned once
+          ram_index = ram_index_xc; // xsim: outputs assigned once
+          ram_we = ram_we_xc; // xsim: outputs assigned once
+          ram_wdata = ram_wdata_xc; // xsim: outputs assigned once
+          ready_o = ready_o_xc; // xsim: outputs assigned once
+          load_req = load_req_xc; // xsim: outputs assigned once
+          res_valid = res_valid_xc; // xsim: outputs assigned once
+          hit_inp = hit_inp_xc; // xsim: outputs assigned once
+          ram_index_inp = ram_index_inp_xc; // xsim: outputs assigned once
+          evict_req = evict_req_xc; // xsim: outputs assigned once
+          hit_req = hit_req_xc; // xsim: outputs assigned once
+          bist_req = bist_req_xc; // xsim: outputs assigned once
+          gen_valid = gen_valid_xc; // xsim: outputs assigned once
+          bist_valid = bist_valid_xc; // xsim: outputs assigned once
+    end
   
   
   `FFLARN(req_q, req_i, load_req, store_req_t'{mode: axi_llc_pkg::tag_mode_e'(00), default: '0}, clk_i, rst_ni)
@@ -474,4 +512,7 @@ module axi_llc_tag_store #(
       $fatal(1, "Should not have a request for the evict box, if all ways are flushed!");
   `endif
   // pragma translate_on
+`ifdef XSIM_INIT_REGS
+  initial begin req_q = store_req_t'{mode: axi_llc_pkg::tag_mode_e'(00), default: '0}; busy_q = 1'b0; ram_rvalid_q = way_ind_t'(0); end // xsim: kill time-0 X in the BIST handshake ring
+`endif
 endmodule

@@ -414,12 +414,12 @@ begin
             iDLM <= (others => '0');
         elsif (CLK'event and CLK = '1') then
             if (iDLLWrite = '1') then
-                -- Hardcoded for 38400 baud @ 20 MHz SoC clock:
-                -- divisor = (20_000_000 / 38400) >> 4 = 520 >> 4 = 32 = 0x20
-                -- actual baud = 20_000_000 / (32 * 16) = 39062 (~1.7% error, within UART tolerance)
-                -- DLM = 0x00 (divisor fits in one byte), DLL = 0x20
+                -- Hardcoded for 38400 baud @ 50 MHz SoC clock:
+                -- divisor = 50_000_000 / (16 * 38400) -> 81 = 0x51
+                -- actual baud = 50_000_000 / (81 * 16) = 38580
+                -- (20 MHz build used 0x20 -> 39062 baud)
                 -- iDLL <= PWDATA(7 downto 0); -- original SW-programmable path
-                iDLL <= X"20";
+                iDLL <= X"51";
             end if;
             if (iDLMWrite = '1') then
                 iDLM <= PWDATA(7 downto 0);
