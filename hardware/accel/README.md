@@ -14,6 +14,7 @@ slot 0..7 --irq_o--> OR --> PLIC source 8 = interrupt ID 9 (the cluster end-of-c
 | Registers of slot `s` | `0x1000_0000 + s * 0x1_0000`, 64 KB, 32-bit registers |
 | Empty slot / past slot 7 | DECERR, read data `0xdeadbeef` (CVA6 takes no exception on AXI errors: software just sees the data) |
 | QoS probe `0x103F_0000` (8 bytes) | read `+0x0`: AXI user field of that read; `+0x4`: user field of the last write there (QoS tag, see `hardware/docs/qos.md`) |
+| Tag policy of slot `s`: `0x103F_0100 + 8*s` | `+0` TAG_POLICY (RW): bit 31 FORCE, `[11:0]` the user field to stamp on the slot's DMA while forced; `+4` LAST_USER (R): the user field of the slot's most recent DMA request, after the policy (see "QoS tags" below) |
 | Accelerator does not acknowledge in 4096 cycles | SLVERR, read data `0xdeadbeef` (the simulation does not hang) |
 | 64-bit CPU access | two register accesses, low word first |
 | Atomics (AMO) to the window | refused, SLVERR |
@@ -31,6 +32,7 @@ module <name> (
   input  logic [15:0] reg_addr_i,   // byte offset in the 64 KB window, word aligned
   input  logic [31:0] reg_wdata_i,
   input  logic [3:0]  reg_wstrb_i,
+  input  logic [15:0] reg_user_i,   // who is accessing: the SoC user field (source port, RCID, MCID, AT)
   output logic        reg_ack_o,    // exactly one pulse per strobe, same cycle or later
   output logic [31:0] reg_rdata_o,  // valid in the ack cycle
   // memory port (64-bit, physical byte addresses, 8-byte aligned)
@@ -40,6 +42,7 @@ module <name> (
   output logic [63:0] mem_addr_o,
   output logic [63:0] mem_wdata_o,
   output logic [7:0]  mem_strb_o,
+  output logic [15:0] mem_user_o,   // the QoS tag this request carries (same layout; the port bits are the CCU's)
   input  logic        mem_rvalid_i, // one pulse per granted request (reads AND writes), in request order
   input  logic [63:0] mem_rdata_i,  // read data, valid with mem_rvalid_i
   input  logic        mem_err_i,    // bus error, valid with mem_rvalid_i
@@ -80,6 +83,38 @@ writes do not invalidate the core's copies (the core read stale data), a plain `
 cache (CVA6 `controller.sv`: the write-back cache is coherent, so FENCE skips the flush), and only `fence.i` writes
 back and invalidates the whole L1 (~2000 cycles with 32 dirty lines, ~300 clean). On such a design the recipe is
 `fence.i` before START and after DONE, or buffers in the uncached SRAM (`ACCEL_BUF`).
+
+## QoS tags: I/O on behalf of an RCID
+
+The SoC tags every core request with the hart's QoS IDs (Ssqosid `srmcfg`: RCID, MCID, plus the access type AT
+and the source port, in the AXI user field, `hardware/docs/qos.md`), and the LLC's CBQRI capacity controller
+partitions its ways by (RCID, AT). Work that a hart hands to an accelerator leaves that accounting unless the
+accelerator's DMA is tagged too. The socket supports both ways of tagging I/O traffic, and the policy is selectable:
+
+- **Who sent the request.** Every register strobe carries the requester's user field on `reg_user_i`. The template
+  latches it when START is written (`TAG` register, `0x28`, read-only) and presents it on `mem_user_o` with every
+  DMA request of that run: **the accelerator's traffic is charged to the hart that started the work**, including its
+  source port, so software can read back which hart that was.
+- **The socket decides.** `TAG_POLICY` of the slot (`0x103F_0100 + 8*s`, bit 31 FORCE, `[11:0]` the tag) makes the
+  socket stamp an OS-chosen tag on the slot's DMA instead of whatever the accelerator presents: the device as its
+  own QoS principal, the way an IOMMU's device context assigns IDs to a device. The accelerator still sees the
+  requester on `reg_user_i`; it just cannot choose the tag. `LAST_USER` (`+4`) reads back what the last request
+  carried, so software can verify either policy from the CPU.
+
+The socket is the trusted tagging point: an accelerator can only ask for a tag, and the policy register, which lives
+in the socket's own window, can override it. The CCU writes its port index into the low `QosUserLsb` bits of the
+user field, so the socket clears them; `LAST_USER` therefore shows the tag with source port 0 while `TAG` inside
+the accelerator keeps the requester's port.
+
+An accelerator must keep `mem_user_o` stable with the rest of the request until `mem_gnt_i` (the unit testbench
+checks it, and `set_user()` sets the user field its register driver presents; `last_mem_user` holds the tag of the
+most recent granted request). `software/soc_tests/t_iotag` verifies the mechanism in the SoC (27 checks): TAG and
+LAST_USER against `srmcfg` for runs started by core 0 (`0x0C8` = RCID 9, MCID 1) and by core 1 (`0x5B1` = port 1,
+RCID 6, MCID 11), the forced policy (`LAST_USER 0x160` = RCID 12, MCID 2 while TAG keeps the requester), and that
+the tag reaches the LLC: with the accelerator's DMA as the CBQRI aggressor, 8 victim lines of RCID 1 (ways 0-7)
+are read again with 0 LLC misses when the DMA inherits RCID 2 (ways 8-15) and with 8 misses when the policy forces
+it into RCID 1. In simulation the QoS scoreboard prints the user fields the socket presented at the LLC
+(`[QOS] llc_in socket user=0x14 src=4 rcid=2 ...: 80 requests`).
 
 ## Linux
 

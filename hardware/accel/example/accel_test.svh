@@ -19,3 +19,18 @@ for (int i = 0; i < N; i++)
 wr(16'h04, 32'h2);                       // clear DONE
 cycles(2);
 check(irq == 1'b0, "irq cleared with DONE");
+
+// QoS tag: the user field presented with the START write is latched (TAG register) and put on every DMA request
+set_user(16'h1A8);                       // port 0, RCID 5, MCID 3 (SoC user layout)
+wr(16'h00, 32'h1);                       // START again (same src/dst/len)
+wait_reg(16'h04, 32'h3, 32'h2, 20000);
+rd_check(16'h28, 32'h1A8, "TAG = the user field of the hart that wrote START");
+check(last_mem_user == 16'h1A8, $sformatf("DMA requests carry the requester's tag (last mem_user 0x%0h)", last_mem_user));
+wr(16'h04, 32'h2);
+set_user(16'h0C9);                       // port 1, RCID 9, MCID 1: a different requester
+wr(16'h00, 32'h1);
+wait_reg(16'h04, 32'h3, 32'h2, 20000);
+rd_check(16'h28, 32'h0C9, "TAG follows the new requester");
+check(last_mem_user == 16'h0C9, $sformatf("DMA re-tagged with the new requester (last mem_user 0x%0h)", last_mem_user));
+wr(16'h04, 32'h2);
+set_user(16'h0);

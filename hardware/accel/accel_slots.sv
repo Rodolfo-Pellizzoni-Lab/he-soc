@@ -11,6 +11,7 @@ module accel_slots #(
   input  logic                                       reg_we_i,
   input  logic [31:0]                                reg_wdata_i,
   input  logic [3:0]                                 reg_wstrb_i,
+  input  logic [15:0]                                reg_user_i,
   output logic                                       reg_ack_o,
   output logic                                       reg_err_o,
   output logic [31:0]                                reg_rdata_o,
@@ -20,6 +21,7 @@ module accel_slots #(
   output logic [NumSlots-1:0][63:0]                  mem_addr_o,
   output logic [NumSlots-1:0][63:0]                  mem_wdata_o,
   output logic [NumSlots-1:0][7:0]                   mem_strb_o,
+  output logic [NumSlots-1:0][15:0]                  mem_user_o,
   input  logic [NumSlots-1:0]                        mem_rvalid_i,
   input  logic [63:0]                                mem_rdata_i,
   input  logic [NumSlots-1:0]                        mem_err_i,
@@ -40,6 +42,7 @@ module accel_slots #(
     .reg_addr_i   ( reg_addr_i ),
     .reg_wdata_i  ( reg_wdata_i ),
     .reg_wstrb_i  ( reg_wstrb_i ),
+    .reg_user_i   ( reg_user_i ),
     .reg_ack_o    ( ack[0]          ),
     .reg_rdata_o  ( rdata[0]        ),
     .mem_req_o    ( mem_req_o[0]    ),
@@ -48,6 +51,7 @@ module accel_slots #(
     .mem_addr_o   ( mem_addr_o[0]   ),
     .mem_wdata_o  ( mem_wdata_o[0]  ),
     .mem_strb_o   ( mem_strb_o[0]   ),
+    .mem_user_o   ( mem_user_o[0]   ),
     .mem_rvalid_i ( mem_rvalid_i[0] ),
     .mem_rdata_i  ( mem_rdata_i       ),
     .mem_err_i    ( mem_err_i[0]    ),
@@ -63,6 +67,7 @@ module accel_slots #(
     .reg_addr_i   ( reg_addr_i ),
     .reg_wdata_i  ( reg_wdata_i ),
     .reg_wstrb_i  ( reg_wstrb_i ),
+    .reg_user_i   ( reg_user_i ),
     .reg_ack_o    ( ack[1]          ),
     .reg_rdata_o  ( rdata[1]        ),
     .mem_req_o    ( mem_req_o[1]    ),
@@ -71,6 +76,7 @@ module accel_slots #(
     .mem_addr_o   ( mem_addr_o[1]   ),
     .mem_wdata_o  ( mem_wdata_o[1]  ),
     .mem_strb_o   ( mem_strb_o[1]   ),
+    .mem_user_o   ( mem_user_o[1]   ),
     .mem_rvalid_i ( mem_rvalid_i[1] ),
     .mem_rdata_i  ( mem_rdata_i       ),
     .mem_err_i    ( mem_err_i[1]    ),
@@ -83,41 +89,41 @@ module accel_slots #(
   assign rdata[2] = 32'hdeadbeef;
   assign present[2] = 1'b0;
   assign mem_req_o[2] = 1'b0; assign mem_we_o[2] = 1'b0; assign mem_addr_o[2] = '0;
-  assign mem_wdata_o[2] = '0; assign mem_strb_o[2] = '0; assign irq_o[2] = 1'b0;
+  assign mem_wdata_o[2] = '0; assign mem_strb_o[2] = '0; assign mem_user_o[2] = '0; assign irq_o[2] = 1'b0;
 
   // slot 3: empty
   assign ack[3] = reg_req_i && reg_slot_i == 3;
   assign rdata[3] = 32'hdeadbeef;
   assign present[3] = 1'b0;
   assign mem_req_o[3] = 1'b0; assign mem_we_o[3] = 1'b0; assign mem_addr_o[3] = '0;
-  assign mem_wdata_o[3] = '0; assign mem_strb_o[3] = '0; assign irq_o[3] = 1'b0;
+  assign mem_wdata_o[3] = '0; assign mem_strb_o[3] = '0; assign mem_user_o[3] = '0; assign irq_o[3] = 1'b0;
 
   // slot 4: empty
   assign ack[4] = reg_req_i && reg_slot_i == 4;
   assign rdata[4] = 32'hdeadbeef;
   assign present[4] = 1'b0;
   assign mem_req_o[4] = 1'b0; assign mem_we_o[4] = 1'b0; assign mem_addr_o[4] = '0;
-  assign mem_wdata_o[4] = '0; assign mem_strb_o[4] = '0; assign irq_o[4] = 1'b0;
+  assign mem_wdata_o[4] = '0; assign mem_strb_o[4] = '0; assign mem_user_o[4] = '0; assign irq_o[4] = 1'b0;
 
   // slot 5: empty
   assign ack[5] = reg_req_i && reg_slot_i == 5;
   assign rdata[5] = 32'hdeadbeef;
   assign present[5] = 1'b0;
   assign mem_req_o[5] = 1'b0; assign mem_we_o[5] = 1'b0; assign mem_addr_o[5] = '0;
-  assign mem_wdata_o[5] = '0; assign mem_strb_o[5] = '0; assign irq_o[5] = 1'b0;
+  assign mem_wdata_o[5] = '0; assign mem_strb_o[5] = '0; assign mem_user_o[5] = '0; assign irq_o[5] = 1'b0;
 
   // slot 6: empty
   assign ack[6] = reg_req_i && reg_slot_i == 6;
   assign rdata[6] = 32'hdeadbeef;
   assign present[6] = 1'b0;
   assign mem_req_o[6] = 1'b0; assign mem_we_o[6] = 1'b0; assign mem_addr_o[6] = '0;
-  assign mem_wdata_o[6] = '0; assign mem_strb_o[6] = '0; assign irq_o[6] = 1'b0;
+  assign mem_wdata_o[6] = '0; assign mem_strb_o[6] = '0; assign mem_user_o[6] = '0; assign irq_o[6] = 1'b0;
 
   // slot 7: empty
   assign ack[7] = reg_req_i && reg_slot_i == 7;
   assign rdata[7] = 32'hdeadbeef;
   assign present[7] = 1'b0;
   assign mem_req_o[7] = 1'b0; assign mem_we_o[7] = 1'b0; assign mem_addr_o[7] = '0;
-  assign mem_wdata_o[7] = '0; assign mem_strb_o[7] = '0; assign irq_o[7] = 1'b0;
+  assign mem_wdata_o[7] = '0; assign mem_strb_o[7] = '0; assign mem_user_o[7] = '0; assign irq_o[7] = 1'b0;
 
 endmodule

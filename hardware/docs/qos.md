@@ -56,7 +56,8 @@ and `ariane_axi_soc::qos_user(tag)` to build one.
 | host xbar, CDC FIFOs, ID remapper, AMO/LR-SC adapters | pass `user` through |
 | LLC (`ip_list/axi_llc`) | allocates by the tag's RCID and AT (next section). Refills and evictions carry the tag of the request that caused them (new descriptor field `a_x_user`); config-port flushes carry 0 |
 | DRAM / HyperRAM / peripherals | ignore it |
-| Other masters (debug module, iDMA, uDMA, accelerator socket, cluster) | tag 0 (RCID 0, MCID 0) |
+| Accelerator socket (`hardware/accel`, CCU port 4) | tags each slot's DMA either with the user field the accelerator presents (the template: the tag of the hart that wrote START, so I/O is charged to the hart it works for) or with a tag the OS forces per slot in `TAG_POLICY` (`0x103F_0100 + 8*slot`); `LAST_USER` reads it back. `t_iotag` |
+| Other masters (debug module, iDMA, uDMA, cluster) | tag 0 (RCID 0, MCID 0) |
 
 **The source-port bits also key LR/SC reservations.** Both `axi_riscv_atomics` adapters (L2 and L3,
 `host/cva6_subsystem.sv`) track reservations per `user[2:0]` (`AXI_USER_AS_ID`, one entry per CCU port) instead of per

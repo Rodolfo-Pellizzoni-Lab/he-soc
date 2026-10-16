@@ -40,10 +40,12 @@ module accel_tb;
   logic [15:0] reg_addr = '0;
   logic [31:0] reg_wdata = '0, reg_rdata;
   logic [3:0]  reg_wstrb = '0;
+  logic [15:0] reg_user = '0;            // set_user(): the user field presented with every register access
   // memory port
   logic        mem_req, mem_gnt, mem_we, mem_rvalid, mem_err;
   logic [63:0] mem_addr, mem_wdata, mem_rdata;
   logic [7:0]  mem_strb;
+  logic [15:0] mem_user, last_mem_user = '0;   // the user field of the most recent granted memory request
   logic        irq;
 
   `ACCEL_DUT dut (
@@ -54,6 +56,7 @@ module accel_tb;
     .reg_addr_i   ( reg_addr   ),
     .reg_wdata_i  ( reg_wdata  ),
     .reg_wstrb_i  ( reg_wstrb  ),
+    .reg_user_i   ( reg_user   ),
     .reg_ack_o    ( reg_ack    ),
     .reg_rdata_o  ( reg_rdata  ),
     .mem_req_o    ( mem_req    ),
@@ -62,6 +65,7 @@ module accel_tb;
     .mem_addr_o   ( mem_addr   ),
     .mem_wdata_o  ( mem_wdata  ),
     .mem_strb_o   ( mem_strb   ),
+    .mem_user_o   ( mem_user   ),
     .mem_rvalid_i ( mem_rvalid ),
     .mem_rdata_i  ( mem_rdata  ),
     .mem_err_i    ( mem_err    ),
@@ -90,6 +94,8 @@ module accel_tb;
   endtask
 
   task automatic cycles(int n); repeat (n) @(posedge clk); endtask
+  // the user field (SoC layout: port [2:0], RCID [6:3], MCID [10:7], AT [11]) the register driver presents from now on
+  task automatic set_user(input logic [15:0] u); reg_user = u; endtask
 
   // ------------------------------------------------------------------ register driver (strobe / ack)
   // acks are sampled at every rising edge; an ack while no access is outstanding is a protocol error
@@ -169,6 +175,7 @@ module accel_tb;
   rsp_t rsp_q [$];
   logic        pend = 1'b0;
   logic [63:0] p_addr, p_wdata;
+  logic [15:0] p_user;
   logic [7:0]  p_strb;
   logic        p_we;
 
@@ -182,10 +189,10 @@ module accel_tb;
     if (rst_n) begin
       if (mem_req) begin
         if (pend) begin
-          proto(mem_addr === p_addr && mem_we === p_we && (!p_we || (mem_wdata === p_wdata && mem_strb === p_strb)),
+          proto(mem_addr === p_addr && mem_we === p_we && mem_user === p_user && (!p_we || (mem_wdata === p_wdata && mem_strb === p_strb)),
                 $sformatf("mem request changed before gnt (addr 0x%0h -> 0x%0h)", p_addr, mem_addr));
         end
-        pend = !mem_gnt; p_addr = mem_addr; p_we = mem_we; p_wdata = mem_wdata; p_strb = mem_strb;
+        pend = !mem_gnt; p_addr = mem_addr; p_we = mem_we; p_wdata = mem_wdata; p_strb = mem_strb; p_user = mem_user;
       end else begin
         proto(!pend, $sformatf("mem_req dropped before gnt (addr 0x%0h)", p_addr));
         pend = 1'b0;
@@ -194,6 +201,7 @@ module accel_tb;
         rsp_t r;
         proto(mem_addr[2:0] == 3'b0, $sformatf("unaligned mem address 0x%0h", mem_addr));
         proto(!mem_we || mem_strb != '0, $sformatf("mem write with zero strobes at 0x%0h", mem_addr));
+        last_mem_user = mem_user;
         if (mem_we) begin
           logic [63:0] o = mem_read(mem_addr);
           for (int b = 0; b < 8; b++) if (mem_strb[b]) o[8*b +: 8] = mem_wdata[8*b +: 8];

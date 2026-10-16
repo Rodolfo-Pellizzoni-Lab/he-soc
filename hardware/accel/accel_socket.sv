@@ -15,6 +15,15 @@
 // (ariane_axi_soc user layout): a 32-bit read of +0x0 returns the AR user field of that read itself, +0x4 the AW
 // user field of the last write to the probe (a 64-bit read of +0x0 returns both). Writes are only recorded.
 //
+// QoS tags of the accelerators' DMA ("I/O on behalf of an RCID"): every register strobe hands the slot the SoC user
+// field of the access (reg_user_i: source port, RCID, MCID, AT of the requesting hart), and every memory request
+// of a slot carries the user field the slot asks for (mem_user_o; the template latches reg_user_i at START, so its
+// DMA is tagged with the hart that started the work). The socket is the trusted tagging point: per slot, the
+// policy register at 0x103F_0100 + 8*s can FORCE a tag the OS chose instead (the IOMMU device-context model):
+//   +0  TAG_POLICY  RW  bit 31 FORCE; [11:0] the user field to stamp on the slot's DMA while FORCE is set
+//   +4  LAST_USER   R   the user field of the slot's most recent DMA request, after the policy
+// The CCU writes its port index into the low QosUserLsb bits of the user field, so those bits are cleared here.
+//
 // Register port protocol (see accel_slots.sv): reg_req is a one-cycle strobe; the slot answers with exactly one
 // reg_ack pulse in the same or a later cycle, with reg_rdata valid in the ack cycle.
 
@@ -47,12 +56,19 @@ module accel_socket #(
   logic [3:0]       reg_wstrb_q;
   logic             reg_ack, reg_err;
   logic [31:0]      reg_rdata;
+  logic [15:0]      reg_user_q;
 
   // memory side, per slot
   logic [NumSlots-1:0]       m_req, m_gnt, m_we, m_rvalid, m_err, irqs;
   logic [NumSlots-1:0][63:0] m_addr, m_wdata;
   logic [NumSlots-1:0][7:0]  m_strb;
+  logic [NumSlots-1:0][15:0] m_user;
   logic [63:0]               m_rdata;
+
+  // per-slot QoS tag policy (0x103F_0100 + 8*slot) and the user field of the slot's last DMA request
+  logic [NumSlots-1:0][31:0] pol_q;
+  logic [NumSlots-1:0][15:0] last_user_q;
+  localparam logic [15:0] PortBitsMask = 16'((1 << ariane_axi_soc::QosUserLsb) - 1);
 
   accel_slots #(.NumSlots(NumSlots)) i_slots (
     .clk_i, .rst_ni,
@@ -62,6 +78,7 @@ module accel_socket #(
     .reg_we_i     ( reg_we_q    ),
     .reg_wdata_i  ( reg_wdata_q ),
     .reg_wstrb_i  ( reg_wstrb_q ),
+    .reg_user_i   ( reg_user_q  ),
     .reg_ack_o    ( reg_ack     ),
     .reg_err_o    ( reg_err     ),
     .reg_rdata_o  ( reg_rdata   ),
@@ -71,6 +88,7 @@ module accel_socket #(
     .mem_addr_o   ( m_addr      ),
     .mem_wdata_o  ( m_wdata     ),
     .mem_strb_o   ( m_strb      ),
+    .mem_user_o   ( m_user      ),
     .mem_rvalid_i ( m_rvalid    ),
     .mem_rdata_i  ( m_rdata     ),
     .mem_err_i    ( m_err       ),
@@ -101,6 +119,18 @@ module accel_socket #(
   endfunction
   function automatic logic is_probe(logic [63:0] a);
     return a[21:3] == {6'h3F, 13'h0};
+  endfunction
+  // per-slot tag policy registers: 0x103F_0100 + 8*slot (+0 TAG_POLICY, +4 LAST_USER)
+  function automatic logic is_policy(logic [63:0] a);
+    return a[21:16] == 6'h3F && a[15:8] == 8'h01 && a[7:3] < NumSlots;
+  endfunction
+  function automatic logic [SlotW-1:0] policy_slot(logic [63:0] a);
+    return a[3 +: SlotW];
+  endfunction
+  function automatic logic [31:0] policy_write(logic [31:0] old, logic [31:0] wd, logic [3:0] be);
+    logic [31:0] v = old;
+    for (int b = 0; b < 4; b++) if (be[b]) v[8*b +: 8] = wd[8*b +: 8];
+    return {v[31], 19'b0, v[11:0]};   // bit 31 FORCE, [11:0] the user field; the rest reads as 0
   endfunction
   function automatic logic [63:0] next_addr(logic [63:0] a, logic [2:0] size, logic [1:0] burst);
     return (burst == axi_pkg::BURST_FIXED) ? a : ((a >> size) + 64'd1) << size;
@@ -142,15 +172,18 @@ module accel_socket #(
     reg_we_q    <= wr;
     reg_wdata_q <= hi ? wd[63:32] : wd[31:0];
     reg_wstrb_q <= wr ? (hi ? ws[7:4] : ws[3:0]) : 4'h0;
+    reg_user_q  <= user_q[15:0];   // who is accessing the slot (SoC user layout)
     hi_q        <= hi;
     wait_q      <= '0;
   endtask
 
-  // start a read beat at address a (or answer the probe / DECERR without an access)
+  // start a read beat at address a (or answer the probe / policy registers / DECERR without an access)
   task automatic start_read(input logic [63:0] a, input logic [2:0] size, input logic [31:0] user);
     rdata_q <= '0;
     if (is_probe(a)) begin
       rdata_q <= {probe_aw_user_q, user}; state_q <= S_RDATA;
+    end else if (is_policy(a)) begin
+      rdata_q <= {16'b0, last_user_q[policy_slot(a)], pol_q[policy_slot(a)]}; state_q <= S_RDATA;
     end else if (!slot_ok(a)) begin
       resp_q <= axi_pkg::RESP_DECERR; rdata_q <= 64'hdeadbeef_deadbeef; state_q <= S_RDATA;
     end else begin
@@ -165,8 +198,9 @@ module accel_socket #(
       state_q <= S_IDLE; is_write_q <= 1'b0; atop_q <= 1'b0; hi_q <= 1'b0; need_hi_q <= 1'b0;
       id_q <= '0; addr_q <= '0; beats_q <= '0; size_q <= '0; burst_q <= '0;
       wdata_q <= '0; rdata_q <= '0; wstrb_q <= '0; resp_q <= '0; wait_q <= '0;
-      user_q <= '0; probe_aw_user_q <= '0;
+      user_q <= '0; probe_aw_user_q <= '0; pol_q <= '0;
       reg_req_q <= 1'b0; reg_slot_q <= '0; reg_addr_q <= '0; reg_we_q <= 1'b0; reg_wdata_q <= '0; reg_wstrb_q <= '0;
+      reg_user_q <= '0;
     end else begin
       reg_req_q <= 1'b0;   // one-cycle strobe; issue() overrides
       case (state_q)
@@ -190,6 +224,11 @@ module accel_socket #(
             // refused, probe or empty beat: no register access
             if (atop_q)                resp_q <= axi_pkg::RESP_SLVERR;
             else if (is_probe(addr_q)) probe_aw_user_q <= user_q;
+            else if (is_policy(addr_q)) begin
+              // TAG_POLICY is the low word; LAST_USER (high word) is read-only
+              if (!addr_q[2] || size_q == 3'd3)
+                pol_q[policy_slot(addr_q)] <= policy_write(pol_q[policy_slot(addr_q)], slv_req_i.w.data[31:0], slv_req_i.w.strb[3:0]);
+            end
             else if (!slot_ok(addr_q)) resp_q <= axi_pkg::RESP_DECERR;
             if (beats_q == 8'd0) state_q <= S_BRESP;
             else begin beats_q <= beats_q - 8'd1; addr_q <= next_addr(addr_q, size_q, burst_q); end
@@ -264,17 +303,48 @@ module accel_socket #(
   end
   assign m_rdata = dn_rdata;
 
+  // the user field of the request being granted: the slot's own tag, or the one the policy register forces;
+  // the port bits are the CCU's to write
+  logic [15:0] sel_user;
+  assign sel_user = (pol_q[sel][31] ? {4'b0, pol_q[sel][11:0]} : m_user[sel]) & ~PortBitsMask;
+
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
-      rr_q <= '0; ord_q <= '0; cnt_q <= '0; wp_q <= '0; rp_q <= '0;
+      rr_q <= '0; ord_q <= '0; cnt_q <= '0; wp_q <= '0; rp_q <= '0; last_user_q <= '0;
     end else begin
       if (dn_req && dn_gnt) begin
         ord_q[wp_q] <= sel; wp_q <= wp_q + 1'b1;
         rr_q <= SlotW'((sel + 1) % NumSlots);
+        last_user_q[sel] <= sel_user;
       end
       if (dn_rvalid) rp_q <= rp_q + 1'b1;
       cnt_q <= cnt_q + (dn_req && dn_gnt) - dn_rvalid;
     end
+  end
+
+  // axi_from_mem ties the AXI user fields to 0: carry the granted requests' user fields alongside it, in per-channel
+  // FIFOs (it issues one AW+W or one AR per granted request, in grant order on each channel), and put them on the
+  // channels at their handshakes. Fall-through, so a request issued in its grant cycle sees its own user field.
+  axi_req_t    afm_req;
+  logic [15:0] u_aw, u_w, u_ar;
+  logic        push_w, push_r;
+  assign push_w = dn_req && dn_gnt &&  m_we[sel];
+  assign push_r = dn_req && dn_gnt && !m_we[sel];
+  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_aw (
+    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
+    .data_i(sel_user), .push_i(push_w), .data_o(u_aw), .pop_i(afm_req.aw_valid && mst_resp_i.aw_ready));
+  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_w (
+    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
+    .data_i(sel_user), .push_i(push_w), .data_o(u_w), .pop_i(afm_req.w_valid && mst_resp_i.w_ready));
+  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_ar (
+    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
+    .data_i(sel_user), .push_i(push_r), .data_o(u_ar), .pop_i(afm_req.ar_valid && mst_resp_i.ar_ready));
+
+  always_comb begin
+    mst_req_o         = afm_req;
+    mst_req_o.aw.user = $bits(mst_req_o.aw.user)'(u_aw);
+    mst_req_o.w.user  = $bits(mst_req_o.w.user)'(u_w);
+    mst_req_o.ar.user = $bits(mst_req_o.ar.user)'(u_ar);
   end
 
   axi_from_mem #(
@@ -298,7 +368,7 @@ module accel_socket #(
     .mem_rsp_error_o ( dn_err       ),
     .slv_aw_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
     .slv_ar_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
-    .axi_req_o       ( mst_req_o    ),
+    .axi_req_o       ( afm_req      ),
     .axi_rsp_i       ( mst_resp_i   )
   );
 

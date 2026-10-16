@@ -13,6 +13,16 @@
 #define ACCEL_BASE(s)    (ACCEL_WINDOW + (unsigned long)(s) * 0x10000UL)
 #define ACCEL_IRQ_ID     9
 #define ACCEL_BUF        SOC_SRAM
+// QoS tags ("I/O on behalf of an RCID", hardware/accel/README.md): an accelerator learns the requester's user
+// field with every register access and tags its DMA (the template: with the hart that wrote START); the socket
+// can force a tag per slot instead. SoC user layout (ariane_axi_soc, QosUserLsb = 3): port [2:0], RCID [6:3],
+// MCID [10:7], AT [11]; the CCU writes the port bits.
+#define ACCEL_USER(port, rcid, mcid) ((uint32_t)(port) | ((uint32_t)(rcid) << 3) | ((uint32_t)(mcid) << 7))
+#define ACCEL_TAG_REG        0x28                                          // template: user field latched at START (R)
+#define ACCEL_QOS_PROBE      (ACCEL_WINDOW + 0x3F0000UL)                   // returns the user field of the read itself
+#define ACCEL_TAG_POLICY(s)  (ACCEL_WINDOW + 0x3F0100UL + (unsigned long)(s) * 8)   // RW: bit 31 FORCE, [11:0] tag
+#define ACCEL_LAST_USER(s)   (ACCEL_TAG_POLICY(s) + 4)                     // R: user field of the slot's last DMA request
+#define ACCEL_POLICY_FORCE   0x80000000u
 
 static inline void     accel_wr(int s, unsigned off, uint32_t v) { REG32(ACCEL_BASE(s) + off) = v; }
 static inline uint32_t accel_rd(int s, unsigned off)             { return REG32(ACCEL_BASE(s) + off); }

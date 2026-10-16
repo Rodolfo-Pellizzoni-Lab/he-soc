@@ -63,6 +63,7 @@ module qos_monitor #(
   int unsigned ar_n [int unsigned];
   int unsigned aw_n [int unsigned];
   int unsigned n_ok, n_ccu, n_other, n_evict, n_err;
+  int unsigned sock_tags[int unsigned];   // llc_in: user fields seen from the socket's CCU port (src >= NumCVA6)
 
   initial begin n_ok = 0; n_ccu = 0; n_other = 0; n_evict = 0; n_err = 0; end
 
@@ -121,6 +122,7 @@ module qos_monitor #(
       end
       if (!found) begin
         if (u == 0 || src >= ariane_soc::NumCVA6) n_other++;   // not from a core: the socket's DMA port of the CCU
+        if (src >= ariane_soc::NumCVA6) sock_tags[u] = sock_tags.exists(u) ? sock_tags[u] + 1 : 1;
         else                                       error(is_w ? 1 : 0, addr, u);
       end
       h = llc_line.exists(line) ? llc_line[line] : '0;
@@ -186,10 +188,19 @@ module qos_monitor #(
     end
     if (Role == "core")
       $display("[QOS] check %s%0d: %0d requests, %0d errors%s", Name, Core, n_ok, n_err, n_err ? " ERROR" : "");
-    else if (Role == "llc_in")
+    else if (Role == "llc_in") begin
       $display("[QOS] check %s: %0d ok, %0d ccu, %0d other, %0d errors%s", Name, n_ok, n_ccu, n_other, n_err,
                n_err ? " ERROR" : "");
-    else
+      foreach (sock_tags[k]) begin   // fields decoded inline: xsim mis-evaluates function calls in loop bodies
+        int unsigned kk, k_src, k_rcid, k_mcid, k_at;
+        kk     = k;
+        k_src  = kk % (1 << SrcBits);
+        k_rcid = (kk >> SrcBits) % (1 << ariane_pkg::QOS_RCID_WIDTH);
+        k_mcid = (kk >> (SrcBits + ariane_pkg::QOS_RCID_WIDTH)) % (1 << ariane_pkg::QOS_MCID_WIDTH);
+        k_at   = (kk >> (SrcBits + ariane_pkg::QOS_RCID_WIDTH + ariane_pkg::QOS_MCID_WIDTH)) % 2;
+        $display("[QOS] %s socket user=0x%0h src=%0d rcid=%0d mcid=%0d at=%0d: %0d requests", Name, kk, k_src, k_rcid, k_mcid, k_at, sock_tags[k]);
+      end
+    end else
       $display("[QOS] check %s: %0d ok, %0d evict, %0d errors%s", Name, n_ok, n_evict, n_err, n_err ? " ERROR" : "");
   end
 `endif

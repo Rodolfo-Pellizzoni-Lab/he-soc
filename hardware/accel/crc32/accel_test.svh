@@ -49,3 +49,16 @@ for (int t = 0; t < 9; t++) begin
   $display("[crc32] len %4d  crc %08h  cycles %0d", lens[t], ref_crc, v);
   wr(16'h04, 32'h2);
 end
+
+// QoS tag: the user field presented with the START write is latched (TAG register) and put on every DMA request
+set_user(16'h1A8);                       // port 0, RCID 5, MCID 3 (SoC user layout)
+src = 64'h8000_0100;
+wr(16'h08, src[31:0]); wr(16'h0C, src[63:32]);
+wr(16'h10, 32'd9);
+wr(16'h00, 32'h1);
+wait_reg(16'h04, 32'h3, 32'h2, 50000);
+rd_check(16'h14, 32'hCBF43926, "CRC still right with a tagged requester");
+rd_check(16'h28, 32'h1A8, "TAG = the user field of the hart that wrote START");
+check(last_mem_user == 16'h1A8, $sformatf("DMA requests carry the requester's tag (last mem_user 0x%0h)", last_mem_user));
+wr(16'h04, 32'h2);
+set_user(16'h0);

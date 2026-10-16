@@ -20,6 +20,7 @@
 //   0x1C ARG     operand for compute()
 //   0x20 ID      R  0x__ID__
 //   0x24 CYCLES  R  clock cycles taken by the last run
+//   0x28 TAG     R  user field latched at START (the hart that started the run): the tag on this run's DMA
 
 module __NAME__ (
   input  logic        clk_i,
@@ -30,6 +31,7 @@ module __NAME__ (
   input  logic [15:0] reg_addr_i,
   input  logic [31:0] reg_wdata_i,
   input  logic [3:0]  reg_wstrb_i,
+  input  logic [15:0] reg_user_i,   // who is accessing: SoC user field (port, RCID, MCID, AT)
   output logic        reg_ack_o,
   output logic [31:0] reg_rdata_o,
   // memory port
@@ -39,6 +41,7 @@ module __NAME__ (
   output logic [63:0] mem_addr_o,
   output logic [63:0] mem_wdata_o,
   output logic [7:0]  mem_strb_o,
+  output logic [15:0] mem_user_o,   // QoS tag of this request (SoC user layout)
   input  logic        mem_rvalid_i,
   input  logic [63:0] mem_rdata_i,
   input  logic        mem_err_i,
@@ -55,6 +58,7 @@ module __NAME__ (
   logic [63:0] src_q, dst_q;
   logic [31:0] len_q, arg_q, cycles_q;
   logic        irq_en_q, done_q, err_q;
+  logic [15:0] tag_q;   // the requester's user field, latched at START
 
   typedef enum logic [2:0] { IDLE, RD_REQ, RD_WAIT, WR_REQ, WR_WAIT } state_e;
   state_e      state_q;
@@ -84,6 +88,7 @@ module __NAME__ (
       16'h1C:  reg_rdata_o = arg_q;
       16'h20:  reg_rdata_o = 32'h__ID__;
       16'h24:  reg_rdata_o = cycles_q;
+      16'h28:  reg_rdata_o = {16'b0, tag_q};
       default: reg_rdata_o = 32'h0;
     endcase
   end
@@ -94,12 +99,13 @@ module __NAME__ (
   assign mem_addr_o  = (state_q == WR_REQ) ? dst_q + {idx_q, 3'b000} : src_q + {idx_q, 3'b000};
   assign mem_wdata_o = data_q;
   assign mem_strb_o  = 8'hff;
+  assign mem_user_o = tag_q;
   assign irq_o       = irq_en_q && done_q;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       src_q <= '0; dst_q <= '0; len_q <= '0; arg_q <= '0; cycles_q <= '0;
-      irq_en_q <= 1'b0; done_q <= 1'b0; err_q <= 1'b0;
+      irq_en_q <= 1'b0; done_q <= 1'b0; err_q <= 1'b0; tag_q <= '0;
       state_q <= IDLE; idx_q <= '0; data_q <= '0;
     end else begin
       // register writes
@@ -120,6 +126,7 @@ module __NAME__ (
       // engine
       case (state_q)
         IDLE: if (start) begin
+          tag_q <= reg_user_i;   // DMA of this run is tagged with the hart that started it
           done_q <= 1'b0; err_q <= 1'b0; idx_q <= '0; cycles_q <= '0;
           state_q <= (len_q == 0) ? IDLE : RD_REQ;
           if (len_q == 0) done_q <= 1'b1;
