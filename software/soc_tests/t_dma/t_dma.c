@@ -13,6 +13,9 @@
 //   3. source in DRAM, fence.i before the start: the device reads the new data
 //   4. destination in DRAM already in the L1: the core reads its stale copy until a fence.i
 //   5. the full recipe for DRAM buffers: fence.i before the start, fence.i after completion
+//   6. DRAM above the cacheable region
+//   7. the DRAM timing model applies to the device: DMA from DRAM outside the LLC window slows down by the
+//      configured latency when the model is enabled, an SRAM-to-SRAM copy does not
 // The stale cases are reported as the observed behaviour (either outcome passes, corruption fails) and the
 // summary line says whether the socket's DMA is coherent with the L1, so a change of the hardware shows up here.
 #include "accel.h"
@@ -21,6 +24,16 @@
 #define N    64                      // 64-bit words per buffer: 512 bytes = 32 L1 lines
 #define ARG  0x11u
 #define HI_BASE 0x98000000UL         // DRAM outside the cores' cacheable region (0x8000_0000 + 256 MB)
+#define NOLLC_BASE 0x81000000UL      // DRAM outside the LLC's cached window (0x8000_0000-0x807F_FFFF): every access reaches the memory
+// DRAM timing model registers (hardware/docs/dram_model.md), present when ID reads DM_ID_VAL
+#define DM           0x1A106100UL
+#define DM_CTRL      0x00
+#define DM_LAT_RD    0x04
+#define DM_LAT_WR    0x08
+#define DM_OCC16     0x0C
+#define DM_RD_COUNT  0x10
+#define DM_ID        0x24
+#define DM_ID_VAL    0xD2A30001u
 
 ACCEL_BUF static volatile uint64_t src_sram[N], dst_sram[N];
 static volatile uint64_t src_dram[N] __attribute__((aligned(64)));
@@ -148,6 +161,31 @@ int main(void) {
   } else {
     printf("DRAM above 0x%x is not usable: device %s (STATUS 0x%x), core read back %s: the crossbar routes 256 MB of DRAM\r\n",
            (unsigned)HI_BASE, done ? "finished" : "hung", status, core_sees ? "its data" : "something else");
+  }
+
+  // ---- 7. the DRAM timing model (hardware/docs/dram_model.md) applies to the device's DRAM traffic: it sits on the
+  //         memory side of the LLC, so every DMA word to DRAM outside the LLC's cached window is a memory request
+  //         that pays the modelled latency, while an SRAM-to-SRAM copy never reaches it
+  if (REG32(DM + DM_ID) == DM_ID_VAL) {
+    volatile uint64_t *src_nl = (volatile uint64_t *)NOLLC_BASE;   // DRAM outside the LLC window, never written: read from DDR
+    for (int i = 0; i < N; i++) src_sram[i] = pat(9, i);
+    REG32(DM + DM_CTRL) = 0;
+    int c_dram_off = run((uintptr_t)src_nl, (uintptr_t)dst_sram, N);
+    int c_sram_off = run((uintptr_t)src_sram, (uintptr_t)dst_sram, N);
+    REG32(DM + DM_LAT_RD) = 256; REG32(DM + DM_LAT_WR) = 256; REG32(DM + DM_OCC16) = 0;
+    REG32(DM + DM_CTRL) = 3;                                       // enable, counters cleared
+    int c_dram_on = run((uintptr_t)src_nl, (uintptr_t)dst_sram, N);
+    int c_sram_on = run((uintptr_t)src_sram, (uintptr_t)dst_sram, N);
+    uint32_t dm_reads = REG32(DM + DM_RD_COUNT);
+    REG32(DM + DM_CTRL) = 0;
+    printf("DRAM timing model: DMA from DRAM outside the LLC window %d -> %d cycles per word with LAT_RD 256 (%u reads seen by the model), "
+           "SRAM to SRAM %d -> %d\r\n", c_dram_off / N, c_dram_on / N, dm_reads, c_sram_off / N, c_sram_on / N);
+    CHECK(c_dram_off > 0 && c_dram_on > 0 && c_sram_off > 0 && c_sram_on > 0, "DMA runs with the model on and off finished");
+    CHECK(c_dram_on >= c_dram_off + 200 * N, "DMA from DRAM pays the model's latency: %d -> %d cycles for %d words", c_dram_off, c_dram_on, N);
+    CHECK(dm_reads >= (uint32_t)N, "the model saw the device's %d reads (%u counted)", N, dm_reads);
+    CHECK(c_sram_on < c_sram_off + c_sram_off / 10 + 64, "SRAM to SRAM does not pay the model: %d -> %d cycles", c_sram_off, c_sram_on);
+  } else {
+    printf("DRAM timing model absent: its effect on the device's DRAM traffic not measured\r\n");
   }
 
   printf("socket DMA vs the L1 data cache: source %s, destination %s\r\n",

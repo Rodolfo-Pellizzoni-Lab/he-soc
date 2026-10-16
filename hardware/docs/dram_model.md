@@ -15,6 +15,14 @@ The L1 data and instruction caches of CVA6 have 16-byte lines, the LLC 64-byte l
 window reaches the model as an 8-beat refill, while DRAM outside that window (the LLC passes it through) comes
 as the L1's own 2-beat fills, so the bandwidth term is felt there as 2 beats of bus time rather than 8.
 
+The model is on the memory side of the LLC, so it applies to every master whose DRAM traffic gets past the LLC,
+not only to the cores: the accelerator socket's DMA (`hardware/accel`, a port of the coherence unit) pays the same
+modelled latency and bandwidth on LLC misses and on DRAM outside the LLC's cached window, and nothing on LLC hits or
+on the on-chip SRAM. `software/soc_tests/t_dma` measures it (step 7): DMA from DRAM outside the LLC window with
+`LAT_RD = 256` against the same copy with the model off, and an SRAM-to-SRAM copy that must not change. In
+simulation the device's copy from such DRAM goes from 75 to 320 cycles per 64-bit word (every word is one memory
+read, and the model counted all 64 of them) while the SRAM copy stays at 63 cycles per word.
+
 ## Model
 
 | Parameter | Meaning |
