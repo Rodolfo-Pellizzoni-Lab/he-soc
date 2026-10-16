@@ -19,7 +19,7 @@
 
 #define NC        4
 #define QOS_PROBE 0x103F0000UL
-#define SRC_BITS  2                       // ariane_axi_soc::QosUserLsb
+#define SRC_BITS  3                       // ariane_axi_soc::QosUserLsb = clog2(NumCVA6 + 1): 4 cores + the socket DMA port
 #define BUF_WORDS (16 * 1024 / 8)
 #define ITERS     20
 #define REGION    0x80400000UL           // LLC-cached DRAM not used by the program

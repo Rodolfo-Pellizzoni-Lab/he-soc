@@ -1,8 +1,10 @@
 // Accelerator socket: register access from software (see hardware/accel/README.md).
 //   slot s registers: ACCEL_BASE(s) + offset (32-bit registers, 64 KB window per slot)
 //   interrupt: PLIC ID 9 (all slots share it)
-//   buffers the accelerator reads/writes: put them in the on-chip SRAM (ACCEL_BUF) - the accelerator's memory
-//   traffic is not coherent with the cores' data caches, and DRAM is cached. 32 KB total, shared with tohost.
+//   buffers the accelerator reads/writes: anywhere (DRAM included): the socket's memory port is a port of the
+//   coherence unit, so the device sees the cores' dirty L1 lines and its writes invalidate the cores' copies.
+//   ACCEL_BUF places a buffer in the on-chip SRAM (32 KB, uncached, shared with tohost) when a test wants it there.
+//   Write the buffer, then `fence`, then START; read the result after DONE (software/soc_tests/t_dma measures this).
 #ifndef ACCEL_H
 #define ACCEL_H
 #include "soc_test.h"

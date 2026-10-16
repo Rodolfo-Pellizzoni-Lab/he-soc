@@ -34,14 +34,17 @@ Inside CVA6, every AR and AW leaving the core gets `user[QOS_TAG_WIDTH-1:0] = {A
 - Data covers loads, stores, AMOs, page-table walks, D$ refills and write-backs, and uncached accesses.
 - The W, R and B channels are not tagged.
 
-On the SoC buses (`ariane_axi_soc` package), the user field is 11 bits:
+On the SoC buses (`ariane_axi_soc` package), the user field is 12 bits:
 
 ```
-user[1:0]   source port: index of the core whose request it is (written by the CCU)
-user[2+:4]  RCID
-user[6+:4]  MCID
-user[10]    AT
+user[2:0]   source port of the CCU (written by the CCU): 0-3 the cores, 4 the accelerator socket's DMA port
+user[3+:4]  RCID
+user[7+:4]  MCID
+user[11]    AT
 ```
+
+(`QosUserLsb` is `$clog2(NumCVA6 + 1)`: the CCU writes its port index into the low bits, and the socket's DMA is its
+fifth port, see `hardware/accel/README.md`.)
 
 Use `ariane_axi_soc::qos_tag(user)` to decode a SoC user field into an `ariane_pkg::qos_tag_t {at, mcid, rcid}`,
 and `ariane_axi_soc::qos_user(tag)` to build one.
@@ -56,7 +59,7 @@ and `ariane_axi_soc::qos_user(tag)` to build one.
 | Other masters (debug module, iDMA, uDMA, accelerator socket, cluster) | tag 0 (RCID 0, MCID 0) |
 
 **The source-port bits also key LR/SC reservations.** Both `axi_riscv_atomics` adapters (L2 and L3,
-`host/cva6_subsystem.sv`) track reservations per `user[1:0]` (`AXI_USER_AS_ID`, one entry per core) instead of per
+`host/cva6_subsystem.sv`) track reservations per `user[2:0]` (`AXI_USER_AS_ID`, one entry per CCU port) instead of per
 AXI ID. The core-side ID remapper (`cva6_axi_id_remap`, separate read and write tables) does not keep the LR's AR ID
 and the SC's AW ID equal when other transactions are in flight, so an ID-keyed table only worked by timing luck: on the
 VCU118 every SC to the uncached L2 failed while simulation (instant UART / L2 responses) passed. The address-based clear

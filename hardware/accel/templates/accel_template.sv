@@ -7,7 +7,7 @@
 //   memory port (64-bit, physical byte addresses, 8-byte aligned): hold mem_req_o and the request fields stable
 //     until mem_gnt_i; every granted request (read or write) gets one mem_rvalid_i pulse, in order; mem_rdata_i
 //     is valid with it for reads; mem_err_i flags a bus error. mem_req_o must not depend combinationally on
-//     mem_gnt_i. Traffic is not coherent with the cores' data caches (see README).
+//     mem_gnt_i. Traffic goes through a port of the coherence unit: coherent with the cores' caches (see README).
 //   irq_o: level, routed to PLIC interrupt ID 9 (shared by all slots).
 //
 // Template behaviour: dst[i] = compute(src[i], ARG) for i < LEN (64-bit words), one word in flight.

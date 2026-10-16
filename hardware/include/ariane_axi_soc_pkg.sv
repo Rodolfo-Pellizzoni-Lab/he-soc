@@ -21,10 +21,11 @@ package ariane_axi_soc;
     typedef enum logic { SINGLE_REQ, CACHE_LINE_REQ } ad_req_t;
 
     // AXI user field of the SoC buses:
-    //   [QosUserLsb-1:0]                       source port of a core request, written by the CCU
+    //   [QosUserLsb-1:0]                       source port of a CCU request, written by the CCU: 0-3 the cores,
+    //                                          4 the accelerator socket's DMA port (cva6_synth_wrap)
     //   [QosUserLsb +: ariane_pkg::QOS_TAG_WIDTH] QoS tag {AT, MCID, RCID} of the requesting hart (Ssqosid srmcfg,
     //                                          for CBQRI capacity / bandwidth controllers); 0 from other masters
-    localparam int unsigned QosUserLsb = 2;
+    localparam int unsigned QosUserLsb = $clog2(ariane_soc::NumCVA6 + 1);
     localparam UserWidth = QosUserLsb + ariane_pkg::QOS_TAG_WIDTH;
     localparam AddrWidth = 64;
     localparam DataWidth = 64;

@@ -3,7 +3,7 @@
 //   Role "core"    at core i's AXI port (cva6_synth_wrap): every new AR/AW must carry RCID / MCID = the hart's srmcfg
 //                  (csr_rcid_i / csr_mcid_i) and AT = 1 exactly for instruction fetches (AR ID 4'b0000); records,
 //                  per 64-byte line, the tags core i put on its requests (the last 8 per line).
-//   Role "llc_in"  at the LLC slave port: every AR/AW must carry the tag its source core (user[1:0]) used for that
+//   Role "llc_in"  at the LLC slave port: every AR/AW must carry the tag its source core (user[QosUserLsb-1:0]) used for that
 //                  line. A tag that another core used for the line counts as "ccu" (a write-back the CCU issues for
 //                  dirty data snooped from that core carries the requester's tag); a user field of 0 that matches
 //                  no core request counts as "other" (masters other than the cores tag 0). Anything else is an error.
@@ -120,8 +120,8 @@ module qos_monitor #(
         if (found) n_ccu++;
       end
       if (!found) begin
-        if (u == 0) n_other++;
-        else        error(is_w ? 1 : 0, addr, u);
+        if (u == 0 || src >= ariane_soc::NumCVA6) n_other++;   // not from a core: the socket's DMA port of the CCU
+        else                                       error(is_w ? 1 : 0, addr, u);
       end
       h = llc_line.exists(line) ? llc_line[line] : '0;
       llc_line[line] = push(h, u);
