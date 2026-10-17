@@ -65,6 +65,17 @@ module alsaqr_xilinx
     inout wire  pad_periphs_cva6_uart_01_pad,
     `endif
 
+    `ifdef XILINX_ETHERNET
+    input  wire       xeth_sgmii_rxp  ,
+    input  wire       xeth_sgmii_rxn  ,
+    output wire       xeth_sgmii_txp  ,
+    output wire       xeth_sgmii_txn  ,
+    input  wire       xeth_lvds_clk_p ,
+    input  wire       xeth_lvds_clk_n ,
+    output wire       xeth_mdc        ,
+    inout  wire       xeth_mdio       ,
+    output wire       xeth_phy_rst_n  ,
+    `endif
     `ifdef ETH2FMC_NO_PADFRAME
     output wire       fmc_eth_rst_n   ,
     input  wire       fmc_eth_rxck    ,
@@ -388,6 +399,17 @@ ddr4_0 u_ddr4_0
         .pad_periphs_a_16_pad(pad_periphs_cva6_uart_01_pad),
         `endif
 
+        `ifdef XILINX_ETHERNET
+        .xeth_sgmii_rxp   ( xeth_sgmii_rxp     ),
+        .xeth_sgmii_rxn   ( xeth_sgmii_rxn     ),
+        .xeth_sgmii_txp   ( xeth_sgmii_txp     ),
+        .xeth_sgmii_txn   ( xeth_sgmii_txn     ),
+        .xeth_lvds_clk_p  ( xeth_lvds_clk_p    ),
+        .xeth_lvds_clk_n  ( xeth_lvds_clk_n    ),
+        .xeth_mdc         ( xeth_mdc           ),
+        .xeth_mdio        ( xeth_mdio          ),
+        .xeth_phy_rst_n   ( xeth_phy_rst_n     ),
+        `endif
         `ifdef ETH2FMC_NO_PADFRAME
         .clk_125MHz     ( s_clk_125MHz    ),
         .clk_125MHz90   ( s_clk_125MHz90  ),

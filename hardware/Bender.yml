@@ -76,6 +76,8 @@ sources:
   - include/tcdm_macros.sv
   - host/axi2tcdm_wrap.sv
   - host/tcdm_demux.sv
+  - host/axi_id_width_adapt.sv
+  - host/xilinx_eth_subsys.sv
   - host/ariane_peripherals.sv
   - host/udma_subsystem.sv
   - host/dma_core_wrap.sv
@@ -293,6 +295,8 @@ sources:
 
   - target: test
     files:
+      - tb/eth_sgmii_model.sv
+      - tb/axi_x_monitor.sv
       - tb/common/uart.sv
       - tb/common/SimDTM.sv
       - tb/common/SimJTAG.sv

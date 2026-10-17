@@ -14,7 +14,11 @@ fi
 BENDER_TARGETS="-t rtl -t use_idma -t test -t tb -t vip -t cva6 -t scm_use_latch_scm -t aia_msi -t aia_embedded -t cv64a6_imafdc_sv39_wb"
 
 # SoC configuration (every block is compiled with these)
-SOC_DEFINES="WT_DCACHE USE_LOCAL_JTAG NO_L3_CONNECTION CODE_IN_L2 EXCLUDE_CLUSTER EXCLUDE_ETHERNET COMMON_CELLS_ASSERTS_OFF"
+SOC_DEFINES="WT_DCACHE USE_LOCAL_JTAG NO_L3_CONNECTION CODE_IN_L2 EXCLUDE_CLUSTER EXCLUDE_ETHERNET XILINX_ETHERNET COMMON_CELLS_ASSERTS_OFF"
+# Xilinx IP simulated with the IP's own sources (xilinx_ip.sh generates them from Vivado into $WORK/xilinx_ip):
+# the AXI DMA of the Ethernet subsystem. Its libraries are listed in $WORK/xilinx_ip/libs.txt for xelab -L.
+XILINX_IP_DIR=$WORK/xilinx_ip
+xilinx_ip_libs() { [ -f "$XILINX_IP_DIR/libs.txt" ] && sed 's/^/-L /' "$XILINX_IP_DIR/libs.txt" | tr '\n' ' '; }
 # xsim-specific switches in the RTL/tb (see README.md, section 2)
 XSIM_DEFINES="XSIM_TICK XSIM_NO_TRACER XSIM_NO_FREQMETER XSIM_SIM_DRAM XSIM_SRAM_INIT_ONCE XSIM_SRAM_NO_X_WRITE XSIM_RST_NO_REWRITE XSIM_FLL_IDLE_IN_RESET"
 

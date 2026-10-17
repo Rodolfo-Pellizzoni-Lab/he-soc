@@ -228,9 +228,16 @@ ifdef exclude-rot
 endif
 
 ifdef exclude-ethernet
-	questa-cmd += +EXCLUDE_ETHERNET=$(include-ethernet)
+	questa-cmd += +EXCLUDE_ETHERNET=$(exclude-ethernet)
     compile_flag +=  +define+EXCLUDE_ETHERNET
     compile_fpga += EXCLUDE_ETHERNET
+endif
+
+# Xilinx AXI Ethernet + AXI DMA on the host's Ethernet port (VCU118 on-board PHY); use with exclude-ethernet=1
+ifdef xilinx-ethernet
+    questa-cmd += +XILINX_ETHERNET=$(xilinx-ethernet)
+    compile_flag +=  +define+XILINX_ETHERNET
+    compile_fpga += XILINX_ETHERNET
 endif
 
 ifdef exclude-llc

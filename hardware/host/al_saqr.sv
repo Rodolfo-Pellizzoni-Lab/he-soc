@@ -192,6 +192,18 @@ module al_saqr
   output wire        eth_mdc,
  `endif
 
+ `ifdef XILINX_ETHERNET   // the VCU118's on-board 1G PHY (SGMII over LVDS), Xilinx AXI Ethernet in the host domain
+  input  wire        xeth_sgmii_rxp,
+  input  wire        xeth_sgmii_rxn,
+  output wire        xeth_sgmii_txp,
+  output wire        xeth_sgmii_txn,
+  input  wire        xeth_lvds_clk_p,   // 625 MHz from the PHY
+  input  wire        xeth_lvds_clk_n,
+  output wire        xeth_mdc,
+  inout  wire        xeth_mdio,
+  output wire        xeth_phy_rst_n,
+ `endif
+
   // JTAG
   inout wire          jtag_TCK,
   inout wire          jtag_TMS,
@@ -412,6 +424,8 @@ module al_saqr
 
   eth_to_pad_t s_eth_to_pad;
   pad_to_eth_t s_pad_to_eth;
+  xeth_to_pad_t s_xeth_to_pad;
+  pad_to_xeth_t s_pad_to_xeth;
 
   fll_to_pad_t    s_fll_to_pad;
 
@@ -559,6 +573,8 @@ module al_saqr
       `endif
       .eth_to_pad             ( s_eth_to_pad                    ),
       .pad_to_eth             ( s_pad_to_eth                    ),
+      .xeth_to_pad            ( s_xeth_to_pad                   ),
+      .pad_to_xeth            ( s_pad_to_xeth                   ),
 
       .can_to_pad             ( s_can_to_pad                    ),
       .pad_to_can             ( s_pad_to_can                    ),
@@ -1151,6 +1167,30 @@ module al_saqr
      // PWMs
      `ASSIGN_PERIPHS_PWM0_SOC2PAD(s_port_signals_soc2pad.periphs.pwm0,s_pwm_nano_to_pad[0])
      `ASSIGN_PERIPHS_PWM1_SOC2PAD(s_port_signals_soc2pad.periphs.pwm1,s_pwm_nano_to_pad[1])
+     // Xilinx Ethernet: straight to the pins; MDIO through an IOBUF on the FPGA
+     `ifdef XILINX_ETHERNET
+        assign s_pad_to_xeth.sgmii_rxp  = xeth_sgmii_rxp;
+        assign s_pad_to_xeth.sgmii_rxn  = xeth_sgmii_rxn;
+        assign s_pad_to_xeth.lvds_clk_p = xeth_lvds_clk_p;
+        assign s_pad_to_xeth.lvds_clk_n = xeth_lvds_clk_n;
+        assign xeth_sgmii_txp = s_xeth_to_pad.sgmii_txp;
+        assign xeth_sgmii_txn = s_xeth_to_pad.sgmii_txn;
+        assign xeth_mdc       = s_xeth_to_pad.mdc;
+        assign xeth_phy_rst_n = s_xeth_to_pad.phy_rst_n;
+        `ifdef FPGA_EMUL
+          IOBUF i_xeth_mdio_iobuf (
+            .O  ( s_pad_to_xeth.mdio_i  ),
+            .IO ( xeth_mdio             ),
+            .I  ( s_xeth_to_pad.mdio_o  ),
+            .T  ( s_xeth_to_pad.mdio_t  )   // 1 = input
+          );
+        `else
+          assign s_pad_to_xeth.mdio_i = xeth_mdio;
+          assign xeth_mdio = s_xeth_to_pad.mdio_t ? 1'bz : s_xeth_to_pad.mdio_o;
+        `endif
+     `else
+        assign s_pad_to_xeth = '0;
+     `endif
      //ETHERNET
      `ifdef ETH2FMC_NO_PADFRAME
         `ifndef FPGA_EMUL

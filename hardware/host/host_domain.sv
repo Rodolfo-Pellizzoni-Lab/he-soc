@@ -130,6 +130,8 @@ module host_domain
   //ETHERNET
   output                      eth_to_pad_t eth_to_pad,
   input                       pad_to_eth_t pad_to_eth,
+  output                      xeth_to_pad_t xeth_to_pad,   // Xilinx AXI Ethernet (XILINX_ETHERNET)
+  input                       pad_to_xeth_t pad_to_xeth,
 
   `ifdef ETH2FMC_NO_PADFRAME
   input logic                   clk_200MHz,
@@ -377,6 +379,10 @@ module host_domain
    XBAR_TCDM_BUS udma_2_tcdm_channels[NB_UDMA_TCDM_CHANNEL]();
 
 
+`ifndef SYNTHESIS
+   axi_x_monitor #(.req_t(ariane_axi_soc::req_slv_t), .resp_t(ariane_axi_soc::resp_slv_t), .NAME("llc_in")) i_xmon_llc_in (.clk_i(s_soc_clk), .req_i(axi_cpu_req), .resp_i(axi_cpu_res));
+   axi_x_monitor #(.req_t(ariane_axi_soc::req_slv_mem_t), .resp_t(ariane_axi_soc::resp_slv_mem_t), .NAME("llc_mem")) i_xmon_llc_mem (.clk_i(s_soc_clk), .req_i(axi_mem_req), .resp_i(axi_mem_res));
+`endif
   `ifdef XSIM_SIM_DRAM
    // xsim: with NO_L3_CONNECTION no HyperRAM model sits on the pads, so an LLC refill never returns and the
    // CCU FSM blocks every core. Terminate mem_axi_bus (LLC -> SPU -> HyperBus path) in a simulation memory
@@ -1051,6 +1057,8 @@ axi_spu_top #(
         .eth_clk_200MHz_i     ( s_eth_clk_200MHz_i   ),
         .eth_to_pad           ( eth_to_pad           ),
         .pad_to_eth           ( pad_to_eth           ),
+        .xeth_to_pad          ( xeth_to_pad          ),
+        .pad_to_xeth          ( pad_to_xeth          ),
 
         .cluster_axi_master   ( cluster_axi_master   ),
         .cluster_axi_slave    ( cluster_axi_slave    ),

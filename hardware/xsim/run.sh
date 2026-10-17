@@ -19,7 +19,7 @@ if [ -z "$NO_ELAB" ]; then
   tbopts=$(grep -E "^xvlog .*[ /]ariane_tb\.sv( |$)" compile.sh | head -1 | grep -oE "(-i|-d) [^ ]+" | tr "\n" " ")
   xvlog -sv -work work -L uvm $tbopts $tbdefs "$HW/tb/ariane_tb.sv" > xvlog_$name.log 2>&1 \
     || { grep ERROR xvlog_$name.log | head -3; exit 1; }
-  xelab -relax -L uvm -timescale 1ps/1ps --ignore_assertions --snapshot $snap work.ariane_tb \
+  xelab -relax -L uvm $(xilinx_ip_libs) -timescale 1ps/1ps --ignore_assertions --snapshot $snap work.ariane_tb \
         -sv_root "$WORK" -sv_lib libdpi $GENERICS > xelab_$name.log 2>&1 \
     || { grep ERROR xelab_$name.log | head -3; exit 1; }
   echo "[$name] xelab ok $(date +%T)"

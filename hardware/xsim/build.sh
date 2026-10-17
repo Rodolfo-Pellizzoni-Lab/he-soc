@@ -17,6 +17,8 @@ xsc --gcc_compile_options "-std=c++11 -I$HW/tb/dpi" --gcc_link_options "-std=c++
   || { tail -20 xsc.log; exit 1; }
 
 [ "$1" = "-j" ] && exit 0
+echo "### Xilinx IP simulation sources (AXI DMA)"
+"$XSIM_DIR/xilinx_ip.sh" || exit 1
 echo "### compiling RTL into $WORK/xsim.dir/work (log: compile.log)"
 start=$(date +%s)
 ./compile.sh > compile.log 2>&1 || { grep -E 'ERROR|FAILED' compile.log | head -5; exit 1; }

@@ -1207,6 +1207,17 @@ module ariane_tb;
         .jtag_TRSTn           ( s_jtag_to_alsaqr_trstn ),
         .jtag_TDO_data        ( s_jtag_to_alsaqr_tdo   ),
 
+        `ifdef XILINX_ETHERNET   // the model ignores the pins
+        .xeth_sgmii_rxp       ( 1'b0                   ),
+        .xeth_sgmii_rxn       ( 1'b1                   ),
+        .xeth_sgmii_txp       (                        ),
+        .xeth_sgmii_txn       (                        ),
+        .xeth_lvds_clk_p      ( 1'b0                   ),
+        .xeth_lvds_clk_n      ( 1'b1                   ),
+        .xeth_mdc             (                        ),
+        .xeth_mdio            (                        ),
+        .xeth_phy_rst_n       (                        ),
+        `endif
         .jtag_ot_TCK          ( s_jtag2ot_tck          ),
         .jtag_ot_TMS          ( s_jtag2ot_tms          ),
         .jtag_ot_TDI          ( s_jtag2ot_tdi          ),

@@ -14,6 +14,7 @@
 //              Instantiates an AXI-Bus and memories
 
 `include "axi/assign.svh"
+`include "axi/typedef.svh"
 `include "register_interface/typedef.svh"
 `include "register_interface/assign.svh"
 `define APMU_IP
@@ -94,6 +95,8 @@ module cva6_subsystem
 
   output eth_to_pad_t     eth_to_pad,
   input  pad_to_eth_t     pad_to_eth,
+  output xeth_to_pad_t    xeth_to_pad,   // Xilinx AXI Ethernet (XILINX_ETHERNET)
+  input  pad_to_xeth_t    pad_to_xeth,
 
   // OpenTitan axi master
   input  axi_req_t        ot_axi_req,
@@ -600,11 +603,64 @@ module cva6_subsystem
   // AXI CLUSTER Master: the accelerator socket's DMA. It enters the SoC through a port of the coherence unit
   // (cva6_synth_wrap), so it is snooped against the cores' L1 data caches; its old xbar port is left idle.
   // ---------------
-  ariane_axi_soc::req_slv_t  cluster_dma_req;
-  ariane_axi_soc::resp_slv_t cluster_dma_resp;
+  // The Xilinx Ethernet's DMA (ariane_peripherals) shares that port. Both are single-beat masters with small IDs
+  // (socket: 0; Ethernet: 0/2/4), so they are muxed on 3-bit IDs into a 4-bit one, which is exactly the port's
+  // ariane_axi::id_t: the mux's select bit survives the round trip and routes the responses back.
+  ariane_axi_soc::req_slv_t  cluster_dma_req, socket_dma_req, eth_dma_req;
+  ariane_axi_soc::resp_slv_t cluster_dma_resp, socket_dma_resp, eth_dma_resp;
   ariane_axi_soc::req_t      cluster_xbar_idle_req;
-  `AXI_ASSIGN_TO_REQ(cluster_dma_req, cluster_axi_slave)
-  `AXI_ASSIGN_FROM_RESP(cluster_axi_slave, cluster_dma_resp)
+  `AXI_ASSIGN_TO_REQ(socket_dma_req, cluster_axi_slave)
+  `AXI_ASSIGN_FROM_RESP(cluster_axi_slave, socket_dma_resp)
+
+  typedef logic [2:0] dma_id3_t;
+  typedef logic [3:0] dma_id4_t;
+  `AXI_TYPEDEF_ALL(dma3, ariane_axi_soc::addr_t, dma_id3_t, ariane_axi_soc::data_t, ariane_axi_soc::strb_t, ariane_axi_soc::user_t)
+  `AXI_TYPEDEF_ALL(dma4, ariane_axi_soc::addr_t, dma_id4_t, ariane_axi_soc::data_t, ariane_axi_soc::strb_t, ariane_axi_soc::user_t)
+  dma3_req_t  [1:0] dma3_req;     // 0: socket, 1: Ethernet
+  dma3_resp_t [1:0] dma3_resp;
+  dma4_req_t        dma4_req;
+  dma4_resp_t       dma4_resp;
+
+  axi_id_width_adapt #(
+    .slv_req_t ( ariane_axi_soc::req_slv_t ), .slv_resp_t ( ariane_axi_soc::resp_slv_t ), .mst_req_t ( dma3_req_t ), .mst_resp_t ( dma3_resp_t )
+  ) i_socket_dma_id (
+    .slv_req_i ( socket_dma_req ), .slv_resp_o ( socket_dma_resp ), .mst_req_o ( dma3_req[0] ), .mst_resp_i ( dma3_resp[0] )
+  );
+  axi_id_width_adapt #(
+    .slv_req_t ( ariane_axi_soc::req_slv_t ), .slv_resp_t ( ariane_axi_soc::resp_slv_t ), .mst_req_t ( dma3_req_t ), .mst_resp_t ( dma3_resp_t )
+  ) i_eth_dma_id (
+    .slv_req_i ( eth_dma_req ), .slv_resp_o ( eth_dma_resp ), .mst_req_o ( dma3_req[1] ), .mst_resp_i ( dma3_resp[1] )
+  );
+
+  axi_mux #(
+    .SlvAxiIDWidth ( 3              ),
+    .slv_aw_chan_t ( dma3_aw_chan_t ), .mst_aw_chan_t ( dma4_aw_chan_t ),
+    .w_chan_t      ( dma3_w_chan_t  ),
+    .slv_b_chan_t  ( dma3_b_chan_t  ), .mst_b_chan_t  ( dma4_b_chan_t  ),
+    .slv_ar_chan_t ( dma3_ar_chan_t ), .mst_ar_chan_t ( dma4_ar_chan_t ),
+    .slv_r_chan_t  ( dma3_r_chan_t  ), .mst_r_chan_t  ( dma4_r_chan_t  ),
+    .slv_req_t     ( dma3_req_t     ), .slv_resp_t    ( dma3_resp_t    ),
+    .mst_req_t     ( dma4_req_t     ), .mst_resp_t    ( dma4_resp_t    ),
+    .NoSlvPorts    ( 2 ), .MaxWTrans ( 4 ), .FallThrough ( 1'b0 ),
+    .SpillAw ( 1'b1 ), .SpillW ( 1'b0 ), .SpillB ( 1'b0 ), .SpillAr ( 1'b1 ), .SpillR ( 1'b0 )
+  ) i_dma_port_mux (
+    .clk_i,
+    .rst_ni      ( ndmreset_n ),
+    .test_i      ( 1'b0       ),
+    .slv_reqs_i  ( dma3_req   ),
+    .slv_resps_o ( dma3_resp  ),
+    .mst_req_o   ( dma4_req   ),
+    .mst_resp_i  ( dma4_resp  )
+  );
+
+  axi_id_width_adapt #(
+    .slv_req_t ( dma4_req_t ), .slv_resp_t ( dma4_resp_t ), .mst_req_t ( ariane_axi_soc::req_slv_t ), .mst_resp_t ( ariane_axi_soc::resp_slv_t )
+  ) i_dma_port_id (
+    .slv_req_i ( dma4_req ), .slv_resp_o ( dma4_resp ), .mst_req_o ( cluster_dma_req ), .mst_resp_i ( cluster_dma_resp )
+  );
+`ifndef SYNTHESIS
+  axi_x_monitor #(.req_t(ariane_axi_soc::req_slv_t), .resp_t(ariane_axi_soc::resp_slv_t), .NAME("ccu_dma_port")) i_xmon_dma (.clk_i(clk_i), .req_i(cluster_dma_req), .resp_i(cluster_dma_resp));
+`endif
   assign cluster_xbar_idle_req = '0;
   `AXI_ASSIGN_FROM_REQ(slave[ariane_soc::CLUSTER_MST], cluster_xbar_idle_req)
 
@@ -863,6 +919,11 @@ module cva6_subsystem
 `else
     .InclEthernet ( 1'b1                     ),
 `endif
+`ifdef XILINX_ETHERNET
+    .InclXilinxEth ( 1'b1                    ),
+`else
+    .InclXilinxEth ( 1'b0                    ),
+`endif
     .InclSDMA     ( 1'b1                     ),
     .InclIOMMU    ( 1'b1                     ),
     .InclMDMA     ( 1'b0                     ),
@@ -907,6 +968,10 @@ module cva6_subsystem
 
     .eth_to_pad       ( eth_to_pad                    ),
     .pad_to_eth       ( pad_to_eth                    ),
+    .xeth_to_pad      ( xeth_to_pad                   ),
+    .pad_to_xeth      ( pad_to_xeth                   ),
+    .eth_dma_req_o    ( eth_dma_req                   ),
+    .eth_dma_resp_i   ( eth_dma_resp                  ),
 
     .iommu_lock_xor_key_i ( iommu_lock_xor_key_i      ),
     .aia_lock_xor_key_i   ( aia_lock_xor_key_i        ),

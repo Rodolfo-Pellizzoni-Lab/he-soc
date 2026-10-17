@@ -27,6 +27,8 @@ ips:
 		$(MAKE) -C alsaqr/tcl/ips/qspi     clean all
 		$(MAKE) -C alsaqr/tcl/ips/otp_ot   clean all
 		$(MAKE) -C alsaqr/tcl/ips/rom_ot   clean all
+		$(MAKE) -C alsaqr/tcl/ips/eth      clean all
+		$(MAKE) -C alsaqr/tcl/ips/eth_dma  clean all
 
 constr:
 		rm -f ./timing_constr.xdc

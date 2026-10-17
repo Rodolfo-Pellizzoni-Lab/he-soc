@@ -31,6 +31,7 @@ module ariane_peripherals
     parameter  bit InclUART     = 1,
     parameter  bit InclSPI      = 0,
     parameter  bit InclEthernet = 1,
+    parameter  bit InclXilinxEth = 0,   // Xilinx AXI Ethernet + DMA on the Ethernet port (VCU118 SGMII)
     parameter  bit InclGPIO     = 0,
     parameter  bit InclTimer    = 1,
     parameter  bit InclSDMA     = 0,
@@ -89,6 +90,10 @@ module ariane_peripherals
 
     output eth_to_pad_t                                       eth_to_pad       ,
     input  pad_to_eth_t                                       pad_to_eth       ,
+    output xeth_to_pad_t                                      xeth_to_pad      , // Xilinx Ethernet pins
+    input  pad_to_xeth_t                                      pad_to_xeth      ,
+    output ariane_axi_soc::req_slv_t                          eth_dma_req_o    , // its DMA, for the CCU's DMA port
+    input  ariane_axi_soc::resp_slv_t                         eth_dma_resp_i   ,
 
     input logic                                               iopmp_irq_i      ,
 
@@ -127,14 +132,15 @@ module ariane_peripherals
     // ---------------
     logic [ariane_soc::NumSources-1:0] irq_sources;
 
+    logic eth_tx_irq, eth_rx_irq;   // from the Xilinx Ethernet branch below
     assign irq_sources[7]                            = c2h_irq_i;
     assign irq_sources[8]                            = cluster_eoc_i;
     assign irq_sources[9]                            = irq_mbox_i;
-    assign irq_sources[10]                           = '0;// reserved for future use;
+    assign irq_sources[10]                           = eth_tx_irq;   // Xilinx Ethernet DMA TX (MM2S), else 0
     assign irq_sources[11]                           = cfi_trigger_irq_i;
     assign irq_sources[12]                           = cfi_watermark_irq_i;
     assign irq_sources[13]                           = iopmp_irq_i;
-    assign irq_sources[14]                           = '0; // reserved for future use
+    assign irq_sources[14]                           = eth_rx_irq;   // Xilinx Ethernet DMA RX (S2MM), else 0
     assign irq_sources[138:15]                       = udma_evt_i[123:0];
     assign irq_sources[139]                          = cl_dma_pe_evt_i;
     assign irq_sources[140]                          = can_irq_i[0];
@@ -804,6 +810,10 @@ module ariane_peripherals
         );
 
       end
+    else if (InclXilinxEth)
+      begin
+        assign eth_to_pad     = '0;   // irq_sources[2] is driven by gen_xilinx_eth
+      end
     else
       begin
         ariane_axi_soc::req_t axi_req_i;
@@ -838,6 +848,34 @@ module ariane_peripherals
           .slv_req_i  ( axi_req_i           ),
           .slv_resp_o ( axi_rsp_o           )
         );
+    end
+
+    // 4b. Xilinx AXI Ethernet + AXI DMA on the same port (the PULP ethernet above is then excluded)
+    if (InclXilinxEth) begin : gen_xilinx_eth
+        xilinx_eth_subsys #(
+          .AxiAddrWidth ( AxiAddrWidth               ),
+          .AxiDataWidth ( AxiDataWidth               ),
+          .AxiIdWidth   ( AxiIdWidth                 ),
+          .AxiUserWidth ( AxiUserWidth               ),
+          .dma_req_t    ( ariane_axi_soc::req_slv_t  ),
+          .dma_resp_t   ( ariane_axi_soc::resp_slv_t )
+        ) i_xilinx_eth (
+          .clk_i,
+          .rst_ni,
+          .slv         ( ethernet       ),
+          .dma_req_o   ( eth_dma_req_o  ),
+          .dma_resp_i  ( eth_dma_resp_i ),
+          .mac_irq_o   ( irq_sources[2] ),
+          .tx_irq_o    ( eth_tx_irq     ),
+          .rx_irq_o    ( eth_rx_irq     ),
+          .xeth_to_pad ( xeth_to_pad    ),
+          .pad_to_xeth ( pad_to_xeth    )
+        );
+    end else begin
+        assign eth_dma_req_o = '0;
+        assign eth_tx_irq    = 1'b0;
+        assign eth_rx_irq    = 1'b0;
+        assign xeth_to_pad   = '0;
     end
 
     // ---------------

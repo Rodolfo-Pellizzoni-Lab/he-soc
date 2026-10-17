@@ -132,7 +132,7 @@ package ariane_soc;
   localparam logic[63:0] TimerLength    = 64'h1000;
   localparam logic[63:0] SPILength      = 64'h800000;
   localparam logic[63:0] IMSICLength    = 64'h800_0000;
-  localparam logic[63:0] EthernetLength = 64'h10000;
+  localparam logic[63:0] EthernetLength = 64'h10_0000;   // Xilinx AXI Ethernet (256 KB) + AXI DMA at +0x4_0000
   `ifdef HYPER_FPGA_DDR
   localparam logic[63:0] HYAXILength    = 64'h2000000;  //32MB of hyperrams
   `else
@@ -229,6 +229,25 @@ package ariane_soc;
     logic eth_md_o;
     logic eth_md_oe;
   } eth_to_pad_t;
+
+  // Xilinx AXI 1G Ethernet on the VCU118 (SGMII over LVDS to the on-board DP83867, hardware/host/xilinx_eth_subsys.sv)
+  localparam logic[63:0] XEthDmaOffset = 64'h4_0000;   // AXI DMA registers inside the Ethernet window
+  typedef struct packed {
+    logic sgmii_rxp;
+    logic sgmii_rxn;
+    logic lvds_clk_p;   // 625 MHz from the PHY
+    logic lvds_clk_n;
+    logic mdio_i;
+  } pad_to_xeth_t;
+
+  typedef struct packed {
+    logic sgmii_txp;
+    logic sgmii_txn;
+    logic mdc;
+    logic mdio_o;
+    logic mdio_t;       // 1 = input (release the line)
+    logic phy_rst_n;
+  } xeth_to_pad_t;
 
   typedef struct packed {
     logic clk_soc_o;
