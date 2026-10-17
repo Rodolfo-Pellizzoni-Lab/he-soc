@@ -124,6 +124,53 @@ START; Linux leaves `srmcfg` at 0, so RCID = MCID = 0) and `LAST_USER` `0x0`; wr
 it to `0x0`. Charging Linux processes to RCIDs needs the kernel to write `srmcfg` on context switch (not in the 5.10
 kernel of the bundle); until then the FORCE policy is the way to give a device an RCID from Linux.
 
+## LLC way partitioning between an accelerator and the cores, as performance
+
+`software/soc_tests/t_part` (in the `soc` suites) gives the LLC's 16 ways to three principals with CBQRI way masks
+and measures what each of them gets: the **app** (core 0, RCID 1) chases a dependent chain through 8 lines of every
+LLC set (512 KB on the board: fits in 8 ways), the **streamer** (core 1, RCID 2) reads 16 lines per set over and over,
+and the **accelerator** (slot 0, started by core 2 with `srmcfg` RCID 3, so its DMA inherits that tag) runs in place
+over 4 lines per set, the same lines again every 4 runs. Each phase sets the masks, flushes the LLC, runs the actors,
+measures the app in cycles per hop and the accelerator in cycles per word, and then probes with the aggressors
+stopped: a chain pass and 4 accelerator runs with the LLC read-miss counter (`0x1A10_6008`) tell how much of its
+working set each principal still holds. The phases run with the DRAM timing model off and on (1 GHz LPDDR4 settings,
+`hardware/docs/dram_model.md`). On the VCU118 (bitstream `iotag`, 202 checks):
+
+| Phase (ways: app / streamer / accel) | app cycles/hop, model off / on | accel cycles/word under load, off / on | after the window: app lines lost, accel lines lost (of 8192, 2048), accel cycles/word alone |
+|---|---|---|---|
+| A0 app alone, 16 | 45.0 / 45.0 | | 0, |
+| B0 accel alone, 16 | | 76.1 / 76.1 | 2 |
+| B1 accel alone, 1 | | 81.2 / 98.8 | 2560 |
+| S everyone shares 16 | 141.0 / 254.0 | 285 / 508 | 985, 1667, 78.0 |
+| P 8 / 2 / 6 (all fit) | 129.9 / 198.0 | 265 / 396 | 16, 0, 76.2 |
+| Q 4 / 2 / 6 (app too small) | 151.1 / 288.1 | 302 / 576 | 8192, 0, 76.2 |
+| R 8 / 2 / 1 (accel too small) | 129.9 / 209.2 | 266 / 419 | 16, 2560, 81.2 / 98.9 |
+
+What the masks decide is **capacity**, and that works exactly: with its own ways the app keeps its working set
+(16 of 8192 lines refetched after a window of the streamer hammering the cache, against 985 when everything is
+shared and all 8192 when 8 lines per set get 4 ways), and the accelerator keeps its 4 lines per set in 6 ways
+(0 lost, 1667 when shared, all 2048 in 1 way). The accelerator's own speed follows: 76 cycles per word when its
+lines hit, 81 when they miss on the FPGA's DDR (99 with the modelled memory latency), and the app's chase costs
+45 per hop when its lines hit and 85 to 150 when they miss.
+
+What the masks cannot decide is **latency under load**: the coherence unit serializes every transaction, so a
+principal pays its own access plus one of each other active principal's. The app's hit behind the streamer costs
+45 + 85 = 130 cycles with the model off and 45 + 150 = 198 with it on, whatever the masks, and in P the LLC
+counter shows one streamer miss per app hop (65527 misses in 65536 hops). The accelerator's word, two transactions
+(read and write), pays twice. Partitioning still orders the cases the right way (P below S, Q and R above P), and
+the test holds the design to that ordering plus the capacity numbers; with the memory model on it also requires the
+capacity effects to be large (20% or more). In xsim the test shrinks to 8 LLC sets (64 app lines, 32
+accelerator lines, 1024-hop windows; 90 minutes of simulation) and shows the same picture: app alone 45.1 cycles per
+hop, 147.7 shared, 132.0 in P, 175.6 in Q with every app line lost; the accelerator 105.8 cycles per word alone
+on the simulated memory, 115.2 in 1 way, 0 of its lines lost in P. The "lines survived" checks tolerate 4 stray
+misses, which is what first-touch code fetches on the other cores add to the global counter at that scale.
+
+One observation is open: after the chain build (512 KB of writes) and the first LLC flush, core 0's LLC hits cost
+61 cycles instead of 45 for as long as it chases, until it has been idle on the bus for about 1.5 M cycles after a
+few million cycles of reads; the switch is a single event that refetches about 20 lines, and the fast state then
+persists. UART polling does not count as idle. The test settles itself before measuring (chase, idle, re-measure
+until a chain pass costs 47 or less; 2 rounds on the board). The cause is not identified.
+
 ## Linux
 
 The socket is exposed to Linux by the device tree (alsaqr-software `linux/cva6-sdk/alsaqr-socket.dts`) and the
