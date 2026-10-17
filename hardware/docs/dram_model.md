@@ -21,7 +21,8 @@ modelled latency and bandwidth on LLC misses and on DRAM outside the LLC's cache
 on the on-chip SRAM. `software/soc_tests/t_dma` measures it (step 7): DMA from DRAM outside the LLC window with
 `LAT_RD = 256` against the same copy with the model off, and an SRAM-to-SRAM copy that must not change. In
 simulation the device's copy from such DRAM goes from 75 to 320 cycles per 64-bit word (every word is one memory
-read, and the model counted all 64 of them) while the SRAM copy stays at 63 cycles per word.
+read, and the model counted all 64 of them) while the SRAM copy stays at 63 cycles per word; on the VCU118 (bitstream `iotag`) the same step measures 120 to 364
+and 106 to 106.
 
 ## Model
 

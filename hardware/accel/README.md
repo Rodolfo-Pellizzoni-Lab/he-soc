@@ -116,6 +116,14 @@ are read again with 0 LLC misses when the DMA inherits RCID 2 (ways 8-15) and wi
 it into RCID 1. In simulation the QoS scoreboard prints the user fields the socket presented at the LLC
 (`[QOS] llc_in socket user=0x14 src=4 rcid=2 ...: 80 requests`).
 
+On the VCU118 (bitstream `iotag`, 50 MHz, timing gate OK) `t_iotag` passes the same 27 checks with the same values
+(TAG/LAST_USER `0xc8`, forced `0x160`, core 1 `0x5b1`, victims 0 misses inherited vs 8 forced). Under Linux the
+registers are reachable with `devmem`: after `taskset 0x2 socket_dma pool` the slot's `TAG` reads `0x1` (hart 1 wrote
+START; Linux leaves `srmcfg` at 0, so RCID = MCID = 0) and `LAST_USER` `0x0`; writing `0x80000160` to the slot's
+`TAG_POLICY` makes the next run's `LAST_USER` read `0x160` while `TAG` stays `0x1`, and clearing the policy returns
+it to `0x0`. Charging Linux processes to RCIDs needs the kernel to write `srmcfg` on context switch (not in the 5.10
+kernel of the bundle); until then the FORCE policy is the way to give a device an RCID from Linux.
+
 ## Linux
 
 The socket is exposed to Linux by the device tree (alsaqr-software `linux/cva6-sdk/alsaqr-socket.dts`) and the
