@@ -68,6 +68,10 @@ on any write is unchanged. Masters other than the cores share entry 0.
 
 ## LLC capacity controller (CBQRI)
 
+What way partitioning buys an accelerator and the cores, measured on the VCU118 (capacity: exactly what the masks
+say; latency under load: set by the coherence unit's serialization, not by the masks): `hardware/accel/README.md`,
+"LLC way partitioning", `software/soc_tests/t_part`.
+
 The registers sit at **`0x1040_1800`**, the upper half of the LLC configuration window. The LLC's own
 configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_llc_cbqri_cc.sv`.
 
