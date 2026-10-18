@@ -31,6 +31,7 @@ static const uint8_t our_mac[6] = { 0x00, 0x0A, 0x35, 0x01, 0x02, 0x03 };
 static const uint8_t bcast[6]   = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 static uint32_t our_ip, our_mask, our_gw, server_ip;
 static uint8_t  server_mac[6];
+static uint16_t tftp_port;                               // the transfer in progress listens here too
 static int      have_server_mac;
 
 // ---------------------------------------------------------------- byte helpers (big-endian on the wire)
@@ -102,7 +103,7 @@ static int poll_rx(udp_rx_t *u) {
       memcpy(u->src_mac, rx + 6, 6);
       u->data = l4 + 8; u->len = rd16(l4 + 4) >= 8 ? rd16(l4 + 4) - 8 : 0;
       if (u->len > tot - ihl - 8) u->len = tot - ihl - 8;
-      if (u->dport == OUR_PORT || u->dport == 68) ret = (int)u->len ? (int)u->len : -1;
+      if (u->dport == OUR_PORT || u->dport == 68 || (tftp_port && u->dport == tftp_port)) ret = (int)u->len ? (int)u->len : -1;
     }
   }
   if (ret == 0) xeth_rx_done(&eth);                                            // a UDP datagram stays until used
@@ -187,6 +188,7 @@ static int discover(void) {                             // "ALSAQR-NETBOOT?" bro
 static long tftp_get(const char *name, uint8_t *dst, unsigned long max) {
   uint8_t *f = txf[0];
   uint16_t sport = (uint16_t)(OUR_PORT + 1 + (now() & 0xFF)), tid = 0;
+  tftp_port = sport;
   unsigned long got = 0; uint32_t block = 0; unsigned blk = 512; int retries = 0;
   // RRQ with blksize
   {
@@ -224,9 +226,9 @@ static long tftp_get(const char *name, uint8_t *dst, unsigned long max) {
     if (op != 3) { rx_release(); continue; }
     uint16_t bn = rd16(u.data + 2); unsigned dlen = (unsigned)n - 4;
     if (bn == (uint16_t)(block + 1)) {
-      if (got + dlen > max) { printf("tftp: %s larger than %lu bytes\n", name, max); rx_release(); return -1; }
+      if (got + dlen > max) { printf("tftp: %s larger than %u bytes\n", name, (unsigned)max); rx_release(); return -1; }
       memcpy(dst + got, u.data + 4, dlen); got += dlen; block++;
-      if ((block & 1023) == 0) printf("  %s: %lu KB\r", name, got >> 10);
+      if ((block & 1023) == 0) printf("  %s: %u KB\r", name, (unsigned)(got >> 10));
     }
     rx_release();
     wr16(f + 42, 4); wr16(f + 44, (uint16_t)block);
@@ -235,15 +237,51 @@ static long tftp_get(const char *name, uint8_t *dst, unsigned long max) {
     if (dlen < blk) break;
   }
   int ms = elapsed_ms(t0);
-  printf("  %s: %lu bytes in %d ms (%d KB/s)        \n", name, got, ms, ms ? (int)(got / 1024 * 1000 / (unsigned long)ms) : 0);
+  printf("  %s: %u bytes in %d ms (%d KB/s)        \n", name, (unsigned)got, ms, ms ? (int)(got / 1024 * 1000 / (unsigned long)ms) : 0);
   return (long)got;
 }
 
-// ---------------------------------------------------------------- go
+// ---------------------------------------------------------------- go, all four harts
+// Hart 0 loads; the others follow it into the payload so that OpenSBI (and Linux) get all four harts, like the JTAG
+// flow: hart 1 was parked here by the start-up code (thread_entry below), harts 2 and 3 are still in the boot ROM,
+// which wakes them with the APMU interrupts (soc_wake_all) and jumps them to the address in the mailbox, set to
+// enter_payload. Every hart arrives in OpenSBI with a0 = hart id and a1 = the DTB; hart 0 goes first and is the
+// cold-boot hart, the others wait for hart_go and a little longer (OpenSBI parks warm harts until the cold boot).
+static volatile uint32_t hart_go;
+static void __attribute__((noreturn, naked)) enter_payload(void) {
+  __asm__ volatile(
+    "   .option push\n\t"
+    "   .option norelax\n\t"                                                 // no gp: the ROM's harts bring their own
+    "   la   t2, hart_go\n\t"
+    "   .option pop\n\t"
+    "1: lw   t0, 0(t2)\n\t"
+    "   beqz t0, 1b\n\t"
+    "   li   t1, 400000\n\t"
+    "2: addi t1, t1, -1\n\t"
+    "   bnez t1, 2b\n\t"
+    "   csrw mie, zero\n\t"
+    "   fence\n\t"
+    "   fence.i\n\t"
+    "   csrr a0, mhartid\n\t"
+    "   li   a1, %0\n\t"
+    "   li   t0, %1\n\t"
+    "   jr   t0\n\t"
+    :: "i"(DTB_ADDR), "i"(PAYLOAD_ADDR));
+}
+int thread_entry(int cid, int nc) {                                             // harts 1-3 (overrides the weak one)
+  (void)nc;
+  if (cid == 0) return 0;
+  enter_payload();
+}
 static void __attribute__((noreturn)) jump(void) {
   xeth_wr(XAE_RCW1, xeth_rd(XAE_RCW1) & ~XAE_RCW1_RX);                        // no more DMA into memory
   xdma_reset(XDMA_RX); xdma_reset(XDMA_TX);
+  REG32(0x10404000) = (uint32_t)(uintptr_t)enter_payload;                      // the boot ROM's harts jump here
+  REG32(0x10404024) = 1;                                                       // hart 1: the mailbox doorbell
+  soc_wake_all();                                                              // harts 2 and 3: the APMU interrupts
   uart_wait_tx_done();
+  __asm__ volatile("fence");
+  hart_go = 1;
   __asm__ volatile("csrw mie, zero\n\tfence\n\tfence.i\n\tcsrr a0, mhartid\n\tli a1, %0\n\tli t0, %1\n\tjr t0"
                    :: "i"(DTB_ADDR), "i"(PAYLOAD_ADDR) : "a0", "a1", "t0");
   for (;;);
@@ -267,16 +305,24 @@ int main(void) {
   while (dhcp()) printf("netboot: DHCP failed, retrying\n");
 #endif
   printf("netboot: address "); print_ip(our_ip); printf(" / "); print_ip(our_mask); printf(" gw "); print_ip(our_gw); printf("\n");
-  int found = discover();
+  int found;
+  for (unsigned round = 1;; round++) {                                    // keep looking for the server, however long
+    found = discover();
 #ifdef SERVER_IP
-  if (found) { printf("netboot: no answer to the broadcast, using the configured server\n"); found = resolve(SERVER_IP); }
+    if (found) { printf("netboot: no answer to the broadcast, using the configured server\n"); found = resolve(SERVER_IP); }
 #endif
-  if (found) { printf("netboot: no server\n"); return 1; }
+    if (!found) break;
+    printf("netboot: no server (round %u)\n", round); xeth_stats_dump("after discovery/ARP");
+  }
   printf("netboot: server "); print_ip(server_ip); printf(" port %d\n", NETBOOT_PORT);
   long dtb = tftp_get(DTB_FILE, (uint8_t *)DTB_ADDR, 0x100000);
   if (dtb <= 0) return 1;
   long pl = tftp_get(PAYLOAD_FILE, (uint8_t *)PAYLOAD_ADDR, DTB_ADDR - PAYLOAD_ADDR);
   if (pl <= 0) return 1;
-  printf("netboot: payload %ld bytes at 0x80000000, DTB %ld bytes at 0x81800000, jumping\n", pl, dtb);
+  uint32_t sum = 0;                                                       // additive checksum, printed so the host can compare
+  for (long i = 0; i < pl; i++) sum += ((const uint8_t *)PAYLOAD_ADDR)[i];
+  uint32_t dsum = 0;
+  for (long i = 0; i < dtb; i++) dsum += ((const uint8_t *)DTB_ADDR)[i];
+  printf("netboot: payload %u bytes at 0x80000000 (sum %08x), DTB %u bytes at 0x81800000 (sum %08x), jumping\n", (unsigned)pl, (unsigned)sum, (unsigned)dtb, (unsigned)dsum);
   jump();
 }
