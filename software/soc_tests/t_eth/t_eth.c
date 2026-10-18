@@ -71,10 +71,21 @@ int main(void) {
   xeth_mac_init(&eth, mac, 1);
   printf("MDIO scan: DP83867 at %d, PCS/PMA at %d\n", eth.phy_addr, eth.pcs_addr);
   CHECK(eth.phy_addr >= 0, "the DP83867 answers on MDIO");
-  CHECK(eth.pcs_addr >= 0, "the PCS/PMA answers on MDIO");
 #ifdef FPGA_EMULATION
   CHECK(xeth_phy_init(&eth) == 0, "PHY: SGMII clock output + reset");
   CHECK(xeth_phy_ext_read(eth.phy_addr, 0x00D3) == 0x4000, "PHY SGMIICTL reads back 0x4000");
+  if (eth.pcs_addr < 0) xeth_pcs_probe(&eth);                           // its management runs on the PHY's clock
+  printf("MAC IS 0x%08x (RxDcmLock %d MgtRdy %d PhyRstCmplt %d AutoNeg %d) after the PHY clock enable\n", xeth_rd(XAE_IS),
+         (xeth_rd(XAE_IS) >> 6) & 1, (xeth_rd(XAE_IS) >> 7) & 1, (xeth_rd(XAE_IS) >> 8) & 1, (xeth_rd(XAE_IS) >> 1) & 1);
+  for (int a = 0; a < 32; a++) {                                        // who answers on MDIO now
+    int r0 = xeth_mdio_read(a, 0), r1 = xeth_mdio_read(a, 1), r2 = xeth_mdio_read(a, 2), r3 = xeth_mdio_read(a, 3);
+    if (!(r0 == 0xFFFF && r1 == 0xFFFF && r2 == 0xFFFF && r3 == 0xFFFF)) printf("  MDIO %2d: r0 %04x r1 %04x id %04x %04x\n", a, r0, r1, r2, r3);
+  }
+  printf("PHY: BMCR %04x BMSR %04x PHYSTS %04x CFG2 %04x SGMIICTL %04x\n", xeth_mdio_read(eth.phy_addr, 0), xeth_mdio_read(eth.phy_addr, 1),
+         xeth_mdio_read(eth.phy_addr, 0x11), xeth_mdio_read(eth.phy_addr, 0x14), xeth_phy_ext_read(eth.phy_addr, 0x00D3));
+#endif
+  CHECK(eth.pcs_addr >= 0, "the PCS/PMA answers on MDIO");
+#ifdef FPGA_EMULATION
   for (unsigned i = 0; i < 50; i++) { if (xeth_phy_link(&eth)) break; for (volatile int d = 0; d < 1000000; d++); }
   printf("PHY link %s, %d Mb/s (BMSR 0x%04x)\n", eth.link ? "up" : "down", eth.speed, xeth_mdio_read(eth.phy_addr, 1));
   CHECK(xeth_pcs_loopback(&eth, 1) == 0, "PCS/PMA loopback on");

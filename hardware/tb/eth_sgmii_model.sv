@@ -147,7 +147,7 @@ module eth_sgmii (
       RCW1:     return r_rcw1;
       TC:       return r_tc;
       EMMC:     return r_emmc;
-      ID:       return 32'h0009_0000;
+      ID:       return 32'h0900_0000;   // what the 7.2 IP reads on the board
       MDIO_MC:  return r_mdio_mc;
       MDIO_MCR: return r_mdio_mcr | 32'h80;      // always ready
       MDIO_MWD: return r_mdio_mwd;
@@ -176,7 +176,7 @@ module eth_sgmii (
       for (int i = 0; i < 32; i++) begin phy3[i] = 16'h0; phy1[i] = 16'h0; end
       phy3[0] = 16'h1140; phy3[1] = 16'h796D; phy3[2] = 16'h2000; phy3[3] = 16'hA231; phy3[4] = 16'h01E1;
       phy3[5] = 16'hCDE1; phy3[6] = 16'h006D; phy3[9] = 16'h0200; phy3[5'h0A] = 16'h3800; phy3[5'h11] = 16'hAC00;
-      phy1[0] = 16'h1140; phy1[1] = 16'h016D; phy1[4] = 16'h0001; phy1[5] = 16'h4001; phy1[6] = 16'h0004; phy1[5'h0F] = 16'h8000;
+      phy1[0] = 16'h1140; phy1[1] = 16'h01EC; phy1[2] = 16'h0174; phy1[3] = 16'h0C00; phy1[4] = 16'h0001;   // IDs/BMSR as the board reads them phy1[5] = 16'h4001; phy1[6] = 16'h0004; phy1[5'h0F] = 16'h8000;
     end else begin
       // write address / data
       if (s_axi_awvalid && s_axi_awready) begin aw_got <= 1'b1; aw_addr_q <= s_axi_awaddr; end

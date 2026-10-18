@@ -256,13 +256,15 @@ int main(void) {
   if (eth.phy_addr < 0) { printf("netboot: no PHY on MDIO\n"); return 1; }
   xeth_phy_init(&eth);
   uint64_t t0 = now();
-  while (!xeth_phy_link(&eth) && elapsed_ms(t0) < 15000) for (volatile int d = 0; d < 100000; d++);
-  if (!eth.link) { printf("netboot: no link after 15 s\n"); return 1; }
+  while (!xeth_phy_link(&eth)) {                                          // wait for a cable, however long
+    if (elapsed_ms(t0) >= 15000) { printf("netboot: no link yet (cable?)\n"); t0 = now(); }
+    for (volatile int d = 0; d < 100000; d++);
+  }
   printf("netboot: link up, %d Mb/s\n", eth.speed);
 #ifdef STATIC_IP
   our_ip = STATIC_IP; our_mask = STATIC_MASK; our_gw = STATIC_GW;
 #else
-  if (dhcp()) { printf("netboot: DHCP failed\n"); return 1; }
+  while (dhcp()) printf("netboot: DHCP failed, retrying\n");
 #endif
   printf("netboot: address "); print_ip(our_ip); printf(" / "); print_ip(our_mask); printf(" gw "); print_ip(our_gw); printf("\n");
   int found = discover();

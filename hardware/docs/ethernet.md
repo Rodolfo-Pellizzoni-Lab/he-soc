@@ -70,7 +70,11 @@ claimed, so the test clears the DMA status register and then claims and complete
 the board a listen window on the LAN.
 In xsim the loopback is the stand-in's; on the VCU118 it is the PCS/PMA's own loopback bit, so no cable is needed
 for the checks. The test first writes the PHY's SGMIICTL register (0x4000: 6-wire mode) because the DP83867 only
-drives the 625 MHz clock the PCS needs once that bit is set, as the IP's own example design does.
+drives the 625 MHz clock the PCS needs once that bit is set, as the IP's own example design does; only then does the
+PCS/PMA answer on MDIO (at address 1, and at 0, with the identifier 0x0174/0x0C00), and the MAC's interrupt status
+shows RxDcmLock, MgtRdy and PhyRstCmplt. On the board (bitstream `ethernet`, 2026-10-17): TEST PASS 37 checks, round
+trips 2332 cycles for 14 bytes to 27981 for 1514. The test needs about 60 s on the board (`board_regress
+sleep_ms=90000`).
 
 `software/netboot`: the network boot loader. Linked at 0x8F00_0000 (`netboot.ld`), it brings the link up, gets
 an address with DHCP (or `STATIC_IP=`), finds the server with a UDP broadcast (`ALSAQR-NETBOOT?` on port 6969,

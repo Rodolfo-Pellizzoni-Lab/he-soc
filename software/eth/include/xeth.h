@@ -243,7 +243,7 @@ static inline void xeth_mac_init(xeth_t *e, const uint8_t mac[6], int promiscuou
   for (int a = 0; a < 32; a++) {
     int id1 = xeth_mdio_read(a, 2), id2 = xeth_mdio_read(a, 3);
     if (id1 == 0x2000 && (id2 & 0xFFF0) == 0xA230) e->phy_addr = a;        // TI DP83867
-    else if (a == 1 && id1 == 0 && id2 == 0) e->pcs_addr = a;                // the PCS/PMA has no ID
+    else if (id1 == 0x0174 && id2 == 0x0C00) e->pcs_addr = a;                // Xilinx PCS/PMA (also answers at 0)
   }
   e->link = 0; e->speed = 0;
   xeth_wr(XAE_RCW1, xeth_rd(XAE_RCW1) | XAE_RCW1_RX);
@@ -256,6 +256,15 @@ static inline int xeth_phy_init(xeth_t *e) {
   if (xeth_mdio_write(e->phy_addr, 0, 0x9140)) return -1;                    // reset, AN, 1000, full duplex
   for (unsigned i = 0; i < 100000; i++) { int r = xeth_mdio_read(e->phy_addr, 0); if (r >= 0 && !(r & 0x8000)) break; }
   return 0;
+}
+// The PCS/PMA's management interface only answers once its SGMII clock runs (from the PHY, after SGMIICTL): look
+// for it again, for a while. Returns 0 once it answers.
+static inline int xeth_pcs_probe(xeth_t *e) {
+  for (unsigned i = 0; i < 20000; i++) {
+    int id1 = xeth_mdio_read(1, 2), id2 = xeth_mdio_read(1, 3);
+    if (id1 == 0x0174 && id2 == 0x0C00) { e->pcs_addr = 1; return 0; }
+  }
+  return -1;
 }
 // Read the link state; sets e->link / e->speed and the MAC speed. Returns the link state.
 static inline int xeth_phy_link(xeth_t *e) {
