@@ -40,8 +40,8 @@
 #define XAE_RCW1_RX        0x10000000u
 #define XAE_RCW1_FCS       0x20000000u             // pass the FCS to the stream
 #define XAE_TC_TX          0x10000000u
-#define XAE_EMMC_1000      0x40000000u
-#define XAE_EMMC_100       0x80000000u
+#define XAE_EMMC_1000      0x80000000u             // [31:30]: 10 = 1 Gb/s, 01 = 100 Mb/s, 00 = 10 Mb/s
+#define XAE_EMMC_100       0x40000000u
 #define XAE_FMI_PM         0x80000000u             // promiscuous
 #define XAE_MDIO_MC_EN     0x40u
 #define XAE_MDIO_MCR_INIT  0x800u
@@ -224,6 +224,13 @@ static inline int xeth_rx_wait(xeth_t *e, uint8_t **buf, unsigned long max_polls
 static inline void xeth_set_mac(const uint8_t m[6]) {
   xeth_wr(XAE_UAW0, (uint32_t)m[0] | ((uint32_t)m[1] << 8) | ((uint32_t)m[2] << 16) | ((uint32_t)m[3] << 24));
   xeth_wr(XAE_UAW1, (xeth_rd(XAE_UAW1) & 0xFFFF0000u) | (uint32_t)m[4] | ((uint32_t)m[5] << 8));
+}
+// Print the MAC's non-zero statistics counters (Statistics_Counters on: 0x200-0x33C, 64-bit each, low word
+// first; the names are PG138's: 0x200 RX bytes, 0x208 TX bytes, 0x290 RX frames ok, 0x2D0 TX frames ok ...).
+static inline void xeth_stats_dump(const char *tag) {
+  printf("MAC stats %s:", tag);
+  for (unsigned off = 0x200; off < 0x340; off += 8) { uint32_t v = xeth_rd(off); if (v) printf(" %03x=%u", off, (unsigned)v); }
+  printf("\n");
 }
 static inline void xeth_set_speed(int mbps) {
   xeth_wr(XAE_EMMC, mbps == 1000 ? XAE_EMMC_1000 : mbps == 100 ? XAE_EMMC_100 : 0);

@@ -15,7 +15,7 @@
 static const unsigned sizes[NSIZES] = { 14, 60, 61, 64, 100, 257, 1000, 1514 };
 #ifdef FPGA_EMULATION
 #define POLLS     2000000UL
-#define LISTEN_S  4
+#define LISTEN_S  8
 #else
 #define POLLS     200000UL
 #endif
@@ -86,7 +86,7 @@ int main(void) {
 #endif
   CHECK(eth.pcs_addr >= 0, "the PCS/PMA answers on MDIO");
 #ifdef FPGA_EMULATION
-  for (unsigned i = 0; i < 50; i++) { if (xeth_phy_link(&eth)) break; for (volatile int d = 0; d < 1000000; d++); }
+  { uint64_t t0 = soc_cycles(); while (!xeth_phy_link(&eth) && soc_cycles() - t0 < 50000000ULL * 10) for (volatile int d = 0; d < 100000; d++); }  // the copper link takes a few s after the PHY reset
   printf("PHY link %s, %d Mb/s (BMSR 0x%04x)\n", eth.link ? "up" : "down", eth.speed, xeth_mdio_read(eth.phy_addr, 1));
   CHECK(xeth_pcs_loopback(&eth, 1) == 0, "PCS/PMA loopback on");
   int pcs0 = xeth_mdio_read(eth.pcs_addr, 0);
@@ -145,6 +145,7 @@ int main(void) {
       if (n) xeth_rx_done(&eth);
     }
     printf("LAN: %u frames, %u bytes in %d s at %d Mb/s\n", frames, bytes, LISTEN_S, eth.speed);
+    xeth_stats_dump("after the LAN listen");
   } else {
     printf("LAN: no link (no cable?), skipped\n");
   }
