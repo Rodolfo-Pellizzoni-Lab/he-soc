@@ -76,16 +76,38 @@ shows RxDcmLock, MgtRdy and PhyRstCmplt. On the board (bitstream `ethernet`, 202
 trips 2332 cycles for 14 bytes to 27981 for 1514. The test needs about 60 s on the board (`board_regress
 sleep_ms=90000`).
 
-`software/netboot`: the network boot loader. Linked at 0x8F00_0000 (`netboot.ld`), it brings the link up, gets
-an address with DHCP (or `STATIC_IP=`), finds the server with a UDP broadcast (`ALSAQR-NETBOOT?` on port 6969,
+`software/netboot`: the network boot loader. Linked at 0x8F00_0000 (`netboot.ld`), it brings the link up, takes
+its address (`STATIC_IP=`, or DHCP), finds the server with a UDP broadcast (`ALSAQR-NETBOOT?` on port 6969,
 fallback `SERVER_IP=`), fetches `alsaqr.dtb` to 0x8180_0000 and `fw_payload.bin` to 0x8000_0000 with TFTP
-(blksize 1428) and jumps to the payload with a0 = hart id, a1 = the DTB, which is what the JTAG flow sets up.
-It answers ARP and ping meanwhile. The server is `alsaqr-mcp/scripts/netboot_server.py --dir <install64>`,
-unprivileged (port 6969). Build: `make fpga=1 SERVER_IP=<host>`.
+(blksize 1428; 19.5 MB in 25.6 s, 0.76 MB/s, lock-step), prints an additive checksum of both (compare with
+`sum(open(f,'rb').read()) & 0xffffffff` on the host) and jumps to the payload with a0 = hart id, a1 = the DTB.
+It answers ARP and ping meanwhile and keeps retrying discovery for ever (printing the MAC's statistics counters
+each round: 0x200 RX bytes, 0x208 TX bytes, 0x290 RX frames, 0x2D8 TX frames). All four harts enter OpenSBI, as
+with the JTAG flow: hart 1, parked by the start-up code, and harts 2-3, parked in the boot ROM, wait in
+`enter_payload` (the ROM's mailbox at 0x1040_4000 points there; hart 1 is rung through the mailbox doorbell, harts
+2-3 through the APMU interrupts as t_smp does) and follow hart 0 into the payload a moment later, so hart 0 is the
+cold-boot hart. The loader has its own copy of the start-up `syscalls.c` only because the common one sends hart 1
+to 0x8000_0000 before anything is loaded there. The server is `alsaqr-mcp/scripts/netboot_server.py --dir <dir>`
+(symlinks to the bundle's `install64` files are fine), unprivileged (port 6969). Build:
+`make fpga=1 SERVER_IP=10.42.0.1 STATIC_IP=10.42.0.2 STATIC_MASK=255.255.255.0 STATIC_GW=10.42.0.1`.
 
-**Linux** (alsaqr-software bundle): `configs/linux64_defconfig` now enables networking, `XILINX_AXI_EMAC`
-(phylink) and `DP83867_PHY`; `alsaqr-socket.dts` has the `ethernet@30000000` node (phy-mode sgmii, the PHY at
-MDIO 3 with `ti,sgmii-ref-clock-output-enable`) and `dma@30040000` (`axistream-connected`, interrupts TX 11, RX
-15); busybox gets ifconfig/ip/ping/route/udhcpc/tftp/nc/arp/netstat/wget/telnetd, and `rootfs/etc/init.d/S45eth`
-brings eth0 up with DHCP at boot. The 5.10 axienet driver does not manage the PCS/PMA itself; the PCS's SGMII
-auto-negotiation with the PHY is on by default and the MAC speed follows the PHY through phylink.
+**The link to the PC.** The board is never on a wider network: a USB Ethernet adapter of the host PC is cabled
+straight to the VCU118's RJ45, the PC is 10.42.0.1/24 (a NetworkManager profile with a manual address; the
+default DHCP profile grabs the adapter and drops a hand-set address) and the board is 10.42.0.2 in the loader and
+in Linux (`S45eth` sets it, no DHCP). The PC's firewall must let the link's traffic in (`ufw allow in on <adapter>`).
+The MAC's EMMC register encodes 1 Gb/s as 0x8000_0000 and 100 Mb/s as 0x4000_0000 (bits 31:30 = 10 / 01); with them
+swapped the MAC replicates every byte ten times and the PC counts 631-byte frames that it drops.
+
+**Linux** (alsaqr-software bundle): `configs/linux64_defconfig` enables networking, `XILINX_AXI_EMAC` (phylink)
+and `DP83867_PHY`; `alsaqr-socket.dts` has the `ethernet@30000000` node (phy-mode sgmii, the PHY at MDIO 3 with
+`ti,sgmii-ref-clock-output-enable`) and `dma@30040000` (`axistream-connected`, interrupts TX 11, RX 15); busybox
+gets ifconfig/ip/ping/route/udhcpc/tftp/nc/arp/netstat/wget/telnetd, and `rootfs/etc/init.d/S45eth` gives eth0
+10.42.0.2 at boot. The 5.10 axienet driver does not manage the PCS/PMA itself; the PCS's SGMII auto-negotiation
+with the PHY is on by default and the MAC speed follows the PHY through phylink ("Link is Up - 1Gbps/Full").
+Two properties of that DTS had never been booted and cost a day: `timebase-frequency` must be 25 MHz (0x17D7840,
+the CLINT's mtime rate; OpenSBI's banner says "aclint-mtimer @ 1000000Hz" but that is its own notion), or the
+kernel's timer waits are 25x off and it hangs silently at `clocksource_done_booting` with the harts in WFI, where
+the debugger cannot halt them; and the console is `console=ttyS0,115200` with `clock-frequency` 50 MHz (what the
+JTAG flow and OpenSBI use, and what the host reads at 38400), not 38400. cpu@1-3 are `status = "okay"`; OpenSBI
+disables the ones that did not enter it. Over Ethernet (alsaqr-mcp `linux_boot netboot=true`): link, transfer
+~26 s, OpenSBI, kernel, shell in about 2 min from the start of the loader; `smp: Brought up 1 node, 4 CPUs`.
