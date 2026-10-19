@@ -110,4 +110,15 @@ kernel's timer waits are 25x off and it hangs silently at `clocksource_done_boot
 the debugger cannot halt them; and the console is `console=ttyS0,115200` with `clock-frequency` 50 MHz (what the
 JTAG flow and OpenSBI use, and what the host reads at 38400), not 38400. cpu@1-3 are `status = "okay"`; OpenSBI
 disables the ones that did not enter it. Over Ethernet (alsaqr-mcp `linux_boot netboot=true`): link, transfer
-~26 s, OpenSBI, kernel, shell in about 2 min from the start of the loader; `smp: Brought up 1 node, 4 CPUs`.
+~29 s (22 MB), OpenSBI, kernel, shell in about 95 s from the release of the loader; `smp: Brought up 1 node, 4 CPUs`.
+
+Since 2026-10-19 the bundle's kernel is 6.1.183 (Abdur Rahman's series). Its axienet driver manages the SGMII
+PCS/PMA itself through phylink and takes it from `pcs-handle`, falling back to `phy-handle` (the copper PHY, which it
+would then misprogram): the DTS gives the PCS/PMA an MDIO node at address 1 with `compatible =
+"ethernet-phy-id0174.0c00"`, so the kernel registers it without reading it (it answers on MDIO only once the DP83867
+drives the SGMII clock, i.e. after eth0 is opened), and `managed = "in-band-status"` keeps the SGMII auto-negotiation
+on; the log then shows "configuring for phy/sgmii link mode" and "Link is Up - 1Gbps/Full". The rootfs runs dropbear
+(`ssh root@10.42.0.2`, no password, host keys regenerated each boot), busybox has `nc` with `-l`/`-u`, `dd`, `head`,
+`tail`, `id`, and `apmuctl` drives the APMU through `/dev/mem` (`apmuctl example_bubble` passes). Measured from the
+PC: ping 4-8 ms, scp 1 MiB ~9 s either way (SSH ciphers at 50 MHz), `wget` 1 MiB 3.4 s, plain TCP with `nc` about
+the same, UDP datagrams both ways.
