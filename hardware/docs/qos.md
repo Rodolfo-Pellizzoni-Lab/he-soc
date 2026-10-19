@@ -160,3 +160,14 @@ thrash of 48 dirty lines in one LLC set pass in that mode with 0 checker errors 
   (`llc_out`).
 - Capacity usage monitoring (`cc_mon_ctl`), which would need an occupancy count per MCID kept with the LLC
   tags.
+
+## The LLC's cached address range under Linux (2026-10-19)
+
+The LLC caches only `0x8000_0000-0x8080_0000` out of reset (SoC control `0x1A10_6018/1C`): under Linux that is the
+kernel image, nothing else. The netboot loader now sets the end to the top of RAM before the payload runs. Widening
+the range on a running system is safe (the new region has no lines in the LLC), but **shrinking it is not**: the
+dropped region's lines, dirty ones included, stay in the LLC while new accesses to those addresses bypass it, and the
+SoC wedges shortly after. Reproduced from a kernel module three times, once with a flush first and every hart
+quiesced under `stop_machine`. Set the range once, at boot. `alsaqr-software/linux/llcpart` (the way-partitioning
+test module) widens it if needed and never restores it. The probe at `0x103F_0000` reads fine from Linux with any
+`srmcfg`; the 3-bit source-port field (`QosUserLsb` = 3 with four cores) puts the RCID at bits [6:3] of the value.

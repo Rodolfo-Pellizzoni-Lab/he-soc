@@ -9,6 +9,9 @@ RISCV_FLAGS += -I$(SW_HOME)/eth/include -I$(SW_HOME)/soc_tests/include -I$(inc_d
 ip2hex = $(shell python3 -c "import sys; p=[int(x) for x in '$(1)'.split('.')]; print('0x%02x%02x%02x%02xU' % tuple(p))")
 ifdef SERVER_IP
 RISCV_FLAGS += -DSERVER_IP=$(call ip2hex,$(SERVER_IP))
+ifdef LLC_CACHED_END
+RISCV_FLAGS += -DLLC_CACHED_END=$(LLC_CACHED_END)
+endif
 endif
 ifdef STATIC_IP
 RISCV_FLAGS += -DSTATIC_IP=$(call ip2hex,$(STATIC_IP)) -DSTATIC_MASK=$(call ip2hex,$(STATIC_MASK)) -DSTATIC_GW=$(call ip2hex,$(STATIC_GW))

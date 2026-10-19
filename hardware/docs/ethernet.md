@@ -81,7 +81,10 @@ its address (`STATIC_IP=`, or DHCP), finds the server with a UDP broadcast (`ALS
 fallback `SERVER_IP=`), fetches `alsaqr.dtb` to 0x8180_0000 and `fw_payload.bin` to 0x8000_0000 with TFTP
 (blksize 1428; 19.5 MB in 25.6 s, 0.76 MB/s, lock-step), prints an additive checksum of both (compare with
 `sum(open(f,'rb').read()) & 0xffffffff` on the host) and jumps to the payload with a0 = hart id, a1 = the DTB.
-It answers ARP and ping meanwhile and keeps retrying discovery for ever (printing the MAC's statistics counters
+Before anything else it widens the LLC's cached address range (SoC control 0x1A10_6018/1C, 8 MB out of reset: the
+kernel image only) to all of RAM (`LLC_CACHED_END`, default 0xA000_0000; `make LLC_CACHED_END=0` keeps the ROM's),
+so Linux and its buffers are LLC-cached; it must be done here, while nothing runs, because shrinking that range on a
+running system wedges the SoC (hardware/docs/qos.md). It answers ARP and ping meanwhile and keeps retrying discovery for ever (printing the MAC's statistics counters
 each round: 0x200 RX bytes, 0x208 TX bytes, 0x290 RX frames, 0x2D8 TX frames). All four harts enter OpenSBI, as
 with the JTAG flow: hart 1, parked by the start-up code, and harts 2-3, parked in the boot ROM, wait in
 `enter_payload` (the ROM's mailbox at 0x1040_4000 points there; hart 1 is rung through the mailbox doorbell, harts

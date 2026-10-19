@@ -287,8 +287,19 @@ static void __attribute__((noreturn)) jump(void) {
   for (;;);
 }
 
+#ifndef LLC_CACHED_END
+#define LLC_CACHED_END 0xA0000000u     // top of the 512 MB DRAM; 0 keeps the boot ROM's 8 MB (the kernel image only)
+#endif
+
 int main(void) {
   printf("netboot: Xilinx Ethernet, MAC %02x:%02x:%02x:%02x:%02x:%02x\n", our_mac[0], our_mac[1], our_mac[2], our_mac[3], our_mac[4], our_mac[5]);
+  // The LLC caches only 0x8000_0000-0x8080_0000 out of reset (SoC control 0x1A10_6018/1C). Widen it to all of RAM
+  // now, while nothing else runs: Linux and its buffers are then LLC-cached (the LLC is the single path to DRAM, so
+  // every master stays coherent). Shrinking the range later, on a running system, wedges the SoC, so it is set once here.
+  if (LLC_CACHED_END && REG32(0x1A10601C) < LLC_CACHED_END) {
+    REG32(0x1A10601C) = LLC_CACHED_END;
+    printf("netboot: LLC cached range 0x%x-0x%x\n", REG32(0x1A106018), REG32(0x1A10601C));
+  }
   if (xeth_dma_init(&eth)) { printf("netboot: DMA reset failed\n"); return 1; }
   xeth_mac_init(&eth, our_mac, 0);
   if (eth.phy_addr < 0) { printf("netboot: no PHY on MDIO\n"); return 1; }
