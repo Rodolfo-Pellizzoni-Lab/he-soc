@@ -9,7 +9,7 @@ source "$(dirname "$0")/env.sh"
 IPDIR=$XILINX_IP_DIR
 CFG=$HW/fpga/alsaqr/tcl/ips/eth_dma/config.tcl
 stamp=$(md5sum "$CFG" | cut -c1-8)
-if [ "$1" != "-f" ] && [ -f "$IPDIR/libs.txt" ] && [ "$(cat "$IPDIR/stamp" 2>/dev/null)" = "$stamp" ] \
+if [ "$1" != "-f" ] && [ -f "$IPDIR/libs.txt" ] && [ -f "$IPDIR/xsim_ip.ini" ] && [ "$(cat "$IPDIR/stamp" 2>/dev/null)" = "$stamp" ] \
    && [ -d "$WORK/xsim.dir/axi_dma_v7_1_34" -o -d "$WORK/xsim.dir/$(tail -2 "$IPDIR/libs.txt" | head -1)" ]; then
   echo "xilinx_ip: up to date ($IPDIR)"; exit 0
 fi
@@ -34,11 +34,13 @@ vivado -mode batch -nojournal -nolog -source gen.tcl > gen.log 2>&1 || { grep -E
 # compile, one library at a time, in the IP's compile order; the top (xil_defaultlib) goes into work
 cd "$WORK"
 : > "$IPDIR/libs.txt"
+INI=$IPDIR/xsim_ip.ini
+awk '$1 != "xil_defaultlib" && !seen[$1]++ { print $1 "=" w "/xsim.dir/" $1 }' w="$WORK" "$IPDIR/files.txt" > "$INI"
 while read -r lib type path; do
   [ "$lib" = "xil_defaultlib" ] && lib=work
   case "$type" in
-    VHDL*)    xvhdl -work "$lib" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
-    Verilog*) xvlog -work "$lib" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
+    VHDL*)    xvhdl --initfile "$INI" -work "$lib" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
+    Verilog*) xvlog --initfile "$INI" -work "$lib" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
     *) echo "xilinx_ip: skipping $type $path" ;;
   esac
   [ "$lib" != "work" ] && ! grep -qx "$lib" "$IPDIR/libs.txt" && echo "$lib" >> "$IPDIR/libs.txt"

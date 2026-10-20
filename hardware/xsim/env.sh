@@ -18,7 +18,8 @@ SOC_DEFINES="WT_DCACHE USE_LOCAL_JTAG NO_L3_CONNECTION CODE_IN_L2 EXCLUDE_CLUSTE
 # Xilinx IP simulated with the IP's own sources (xilinx_ip.sh generates them from Vivado into $WORK/xilinx_ip):
 # the AXI DMA of the Ethernet subsystem. Its libraries are listed in $WORK/xilinx_ip/libs.txt for xelab -L.
 XILINX_IP_DIR=$WORK/xilinx_ip
-xilinx_ip_libs() { [ -f "$XILINX_IP_DIR/libs.txt" ] && sed 's/^/-L /' "$XILINX_IP_DIR/libs.txt" | tr '\n' ' '; }
+# xsim_ip.ini maps those libraries to $WORK/xsim.dir (not to Vivado's precompiled IP in the install).
+xilinx_ip_libs() { [ -f "$XILINX_IP_DIR/libs.txt" ] && { [ -f "$XILINX_IP_DIR/xsim_ip.ini" ] && echo -n "--initfile $XILINX_IP_DIR/xsim_ip.ini "; sed 's/^/-L /' "$XILINX_IP_DIR/libs.txt" | tr '\n' ' '; }; }
 # xsim-specific switches in the RTL/tb (see README.md, section 2)
 XSIM_DEFINES="XSIM_TICK XSIM_NO_TRACER XSIM_NO_FREQMETER XSIM_SIM_DRAM XSIM_SRAM_INIT_ONCE XSIM_SRAM_NO_X_WRITE XSIM_RST_NO_REWRITE XSIM_FLL_IDLE_IN_RESET"
 
