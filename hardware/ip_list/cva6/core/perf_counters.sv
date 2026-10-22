@@ -19,6 +19,7 @@ module perf_counters import ariane_pkg::*; #(
   input  logic                                    clk_i,
   input  logic                                    rst_ni,
   input  logic                                    debug_mode_i, // debug mode
+  input  logic [31:0]                             mcountinhibit_i,
   // SRAM like interface
   input  logic [11:0]                             addr_i,   // read/write address (up to 6 counters possible)
   input  logic                                    we_i,     // write enable
@@ -60,7 +61,9 @@ module perf_counters import ariane_pkg::*; #(
   //internal signal to keep track of exception
   logic read_access_exception,update_access_exception;
 
-  logic events[6:1];
+  localparam int unsigned EventIncrWidth = $clog2(NR_COMMIT_PORTS + 1);
+  typedef logic [EventIncrWidth-1:0] event_incr_t;
+  event_incr_t event_incr[6:1];
   //internal signal for  MUX select line input
   logic [4:0] mhpmevent_d[6:1];
   logic [4:0] mhpmevent_q[6:1];
@@ -72,10 +75,22 @@ module perf_counters import ariane_pkg::*; #(
   logic [NR_COMMIT_PORTS-1:0] return_event;
   logic [NR_COMMIT_PORTS-1:0] int_event;
   logic [NR_COMMIT_PORTS-1:0] fp_event;
+  logic [NR_COMMIT_PORTS-1:0] retired_event;
+
+  function automatic event_incr_t count_commit_events(
+    input logic [NR_COMMIT_PORTS-1:0] commit_events
+  );
+    event_incr_t count;
+    count = '0;
+    for (int unsigned i = 0; i < NR_COMMIT_PORTS; i++) begin
+      count = count + commit_events[i];
+    end
+    return count;
+  endfunction
 
   //Multiplexer
    always_comb begin : Mux
-      events[6:1]='{default:0};
+      event_incr[6:1]='{default:0};
       load_event = '0;
       store_event = '0;
       branch_event = '0;
@@ -83,6 +98,7 @@ module perf_counters import ariane_pkg::*; #(
       return_event = '0;
       int_event = '0;
       fp_event = '0;
+      retired_event = '0;
 
       for (int unsigned j = 0; j < NR_COMMIT_PORTS; j++) begin
          load_event[j] = commit_ack_i[j] & (commit_instr_i[j].fu == LOAD);
@@ -92,36 +108,39 @@ module perf_counters import ariane_pkg::*; #(
          return_event[j] = commit_ack_i[j] & (commit_instr_i[j].op == JALR && commit_instr_i[j].rd == 'd0);
          int_event[j] = commit_ack_i[j] & (commit_instr_i[j].fu == ALU || commit_instr_i[j].fu == MULT);
          fp_event[j] = commit_ack_i[j] & (commit_instr_i[j].fu == FPU || commit_instr_i[j].fu == FPU_VEC);
+         retired_event[j] = commit_ack_i[j] & !ex_i.valid;
       end
 
       for(int unsigned i = 1; i <= 6; i++) begin
         case(mhpmevent_q[i])
-           5'b00000 : events[i] = 0;
-           5'b00001 : events[i] = l1_icache_miss_i;//L1 I-Cache misses
-           5'b00010 : events[i] = l1_dcache_miss_i;//L1 D-Cache misses
-           5'b00011 : events[i] = itlb_miss_i;//ITLB misses
-           5'b00100 : events[i] = dtlb_miss_i;//DTLB misses
-           5'b00101 : events[i] = |load_event;
-           5'b00110 : events[i] = |store_event;
-           5'b00111 : events[i] = ex_i.valid;//Exceptions
-           5'b01000 : events[i] = eret_i;//Exception handler returns
-           5'b01001 : events[i] = |branch_event;
-           5'b01010 : events[i] = resolved_branch_i.valid && resolved_branch_i.is_mispredict;//Branch mispredicts
-           5'b01011 : events[i] = branch_exceptions_i.valid;//Branch exceptions
+           5'b00000 : event_incr[i] = '0;
+           5'b00001 : event_incr[i] = event_incr_t'(l1_icache_miss_i);//L1 I-Cache misses
+           5'b00010 : event_incr[i] = event_incr_t'(l1_dcache_miss_i);//L1 D-Cache misses
+           5'b00011 : event_incr[i] = event_incr_t'(itlb_miss_i);//ITLB misses
+           5'b00100 : event_incr[i] = event_incr_t'(dtlb_miss_i);//DTLB misses
+           5'b00101 : event_incr[i] = count_commit_events(load_event);
+           5'b00110 : event_incr[i] = count_commit_events(store_event);
+           5'b00111 : event_incr[i] = event_incr_t'(ex_i.valid);//Exceptions
+           5'b01000 : event_incr[i] = event_incr_t'(eret_i);//Exception handler returns
+           5'b01001 : event_incr[i] = count_commit_events(branch_event);
+           5'b01010 : event_incr[i] = event_incr_t'(resolved_branch_i.valid && resolved_branch_i.is_mispredict);//Branch mispredicts
+           5'b01011 : event_incr[i] = event_incr_t'(branch_exceptions_i.valid);//Branch exceptions
                    // The standard software calling convention uses register x1 to hold the return address on a call
                    // the unconditional jump is decoded as ADD op
-           5'b01100 : events[i] = |call_event;
-           5'b01101 : events[i] = |return_event;
-           5'b01110 : events[i] = sb_full_i;//MSB Full
-           5'b01111 : events[i] = if_empty_i;//Instruction fetch Empty
-           5'b10000 : events[i] = l1_icache_access_i.req;//L1 I-Cache accesses
-           5'b10001 : events[i] = l1_dcache_access_i[0].data_req || l1_dcache_access_i[1].data_req || l1_dcache_access_i[2].data_req;//L1 D-Cache accesses
-           5'b10010 : events[i] = (l1_dcache_miss_i && miss_vld_bits_i[0] == 8'hFF) || (l1_dcache_miss_i && miss_vld_bits_i[1] == 8'hFF) || (l1_dcache_miss_i && miss_vld_bits_i[2] == 8'hFF);//eviction
-           5'b10011 : events[i] = i_tlb_flush_i;//I-TLB flush
-           5'b10100 : events[i] = |int_event;
-           5'b10101 : events[i] = |fp_event;
-           5'b10110 : events[i] = stall_issue_i;//Pipeline bubbles
-           default:   events[i] = 0;
+           5'b01100 : event_incr[i] = count_commit_events(call_event);
+           5'b01101 : event_incr[i] = count_commit_events(return_event);
+           5'b01110 : event_incr[i] = event_incr_t'(sb_full_i);//MSB Full
+           5'b01111 : event_incr[i] = event_incr_t'(if_empty_i);//Instruction fetch Empty
+           5'b10000 : event_incr[i] = event_incr_t'(l1_icache_access_i.req);//L1 I-Cache accesses
+           5'b10001 : event_incr[i] = event_incr_t'(l1_dcache_access_i[0].data_req || l1_dcache_access_i[1].data_req || l1_dcache_access_i[2].data_req);//L1 D-Cache accesses
+           5'b10010 : event_incr[i] = event_incr_t'((l1_dcache_miss_i && miss_vld_bits_i[0] == 8'hFF) || (l1_dcache_miss_i && miss_vld_bits_i[1] == 8'hFF) || (l1_dcache_miss_i && miss_vld_bits_i[2] == 8'hFF));//eviction
+           5'b10011 : event_incr[i] = event_incr_t'(i_tlb_flush_i);//I-TLB flush
+           5'b10100 : event_incr[i] = count_commit_events(int_event);
+           5'b10101 : event_incr[i] = count_commit_events(fp_event);
+           5'b10110 : event_incr[i] = event_incr_t'(stall_issue_i);//Pipeline bubbles
+           5'b10111 : event_incr[i] = event_incr_t'(1'b1);//Cycles
+           5'b11000 : event_incr[i] = count_commit_events(retired_event);//Instructions retired
+           default:   event_incr[i] = '0;
          endcase
        end
 
@@ -135,9 +154,9 @@ module perf_counters import ariane_pkg::*; #(
 	    update_access_exception =  1'b0;
 
       for(int unsigned i = 1; i <= 6; i++) begin
-         if ((!debug_mode_i) && (!we_i)) begin
-             if (events[i] == 1)begin
-                generic_counter_d[i] = generic_counter_q[i] + 1'b1;
+         if ((!debug_mode_i) && (!mcountinhibit_i[i+2])) begin
+             if (event_incr[i] != '0) begin
+                generic_counter_d[i] = generic_counter_q[i] + event_incr[i];
              end
         end
       end
@@ -150,6 +169,15 @@ module perf_counters import ariane_pkg::*; #(
             riscv::CSR_MHPM_COUNTER_6,
             riscv::CSR_MHPM_COUNTER_7,
             riscv::CSR_MHPM_COUNTER_8  :begin if (riscv::XLEN == 32) data_o = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3 + 1][31:0]; else data_o = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3 + 1];end
+            riscv::CSR_L1_ICACHE_MISS,
+            riscv::CSR_L1_DCACHE_MISS,
+            riscv::CSR_ITLB_MISS,
+            riscv::CSR_DTLB_MISS,
+            riscv::CSR_LOAD,
+            riscv::CSR_STORE : begin
+              if (riscv::XLEN == 32) data_o = generic_counter_q[addr_i-riscv::CSR_L1_ICACHE_MISS + 1][31:0];
+              else data_o = generic_counter_q[addr_i-riscv::CSR_L1_ICACHE_MISS + 1];
+            end
             riscv::CSR_MHPM_COUNTER_3H,
             riscv::CSR_MHPM_COUNTER_4H,
             riscv::CSR_MHPM_COUNTER_5H,

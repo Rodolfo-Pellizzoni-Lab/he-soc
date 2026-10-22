@@ -246,6 +246,7 @@ module cva6 import ariane_pkg::*; #(
   logic [11:0]              addr_csr_perf;
   riscv::xlen_t             data_csr_perf, data_perf_csr;
   logic                     we_csr_perf;
+  logic [31:0]              mcountinhibit_csr_perf;
 
   logic                     icache_flush_ctrl_cache;
   logic                     itlb_miss_ex_perf;
@@ -745,6 +746,7 @@ module cva6 import ariane_pkg::*; #(
     .perf_data_o            ( data_csr_perf                 ),
     .perf_data_i            ( data_perf_csr                 ),
     .perf_we_o              ( we_csr_perf                   ),
+    .mcountinhibit_o        ( mcountinhibit_csr_perf        ),
     .pmpcfg_o               ( pmpcfg                        ),
     .pmpaddr_o              ( pmpaddr                       ),
     .qos_rcid_o             ( qos_rcid                      ),
@@ -769,6 +771,7 @@ module cva6 import ariane_pkg::*; #(
     .clk_i               ( clk_i                     ),
     .rst_ni              ( rst_ni                    ),
     .debug_mode_i        ( debug_mode                ),
+    .mcountinhibit_i     ( mcountinhibit_csr_perf     ),
     .addr_i              ( addr_csr_perf             ),
     .we_i                ( we_csr_perf               ),
     .data_i              ( data_csr_perf             ),

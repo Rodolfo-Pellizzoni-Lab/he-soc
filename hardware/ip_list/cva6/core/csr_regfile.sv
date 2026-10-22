@@ -109,6 +109,7 @@ module csr_regfile import ariane_pkg::*; #(
     output logic[riscv::XLEN-1:0] perf_data_o,                // write data to performance counter module
     input  logic[riscv::XLEN-1:0] perf_data_i,                // read data from performance counter module
     output logic                  perf_we_o,
+    output logic [31:0]           mcountinhibit_o,
     // PMPs
     output riscv::pmpcfg_t [15:0] pmpcfg_o,   // PMP configuration containing pmpcfg for max 16 PMPs
     output logic [15:0][riscv::PLEN-3:0] pmpaddr_o,           // PMP addresses
@@ -163,6 +164,7 @@ module csr_regfile import ariane_pkg::*; #(
     riscv::intstatus_rv_t mintstatus_q, mintstatus_d;
     riscv::intthresh_rv_t mintthresh_q, mintthresh_d;
     riscv::xlen_t mcounteren_q,mcounteren_d;
+    logic [31:0] mcountinhibit_q, mcountinhibit_d;
     riscv::xlen_t mscratch_q,  mscratch_d;
     riscv::xlen_t mepc_q,      mepc_d;
     riscv::xlen_t mcause_q,    mcause_d;
@@ -224,6 +226,7 @@ module csr_regfile import ariane_pkg::*; #(
     // ----------------
     assign csr_addr = riscv::csr_t'(csr_addr_i);
     assign conv_csr_addr = riscv::convert_vs_access_csr((riscv::csr_t'(csr_addr_i)),v_q);
+    assign mcountinhibit_o = mcountinhibit_q;
     assign fs_o = mstatus_q.fs;
     assign vfs_o = (ariane_pkg::RVH) ? vsstatus_q.fs : riscv::Off;
     // ----------------
@@ -475,6 +478,7 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_MIE:                csr_rdata = clic_mode_o ? '0 : mie_q;
                 riscv::CSR_MTVEC:              csr_rdata = mtvec_q;
                 riscv::CSR_MCOUNTEREN:         csr_rdata = mcounteren_q;
+                riscv::CSR_MCOUNTINHIBIT:      csr_rdata = {{riscv::XLEN-32{1'b0}}, mcountinhibit_q};
                 riscv::CSR_MTVT:               csr_rdata = mtvt_q;
                 riscv::CSR_MSCRATCH:           csr_rdata = mscratch_q;
                 riscv::CSR_MEPC:               csr_rdata = mepc_q;
@@ -534,6 +538,35 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_CYCLEH:             if (riscv::XLEN == 32) csr_rdata = cycle_q[63:32]; else read_access_exception = 1'b1;
                 riscv::CSR_INSTRET:            csr_rdata = instret_q[riscv::XLEN-1:0];
                 riscv::CSR_INSTRETH:           if (riscv::XLEN == 32) csr_rdata = instret_q[63:32]; else read_access_exception = 1'b1;
+                riscv::CSR_L1_ICACHE_MISS,
+                riscv::CSR_L1_DCACHE_MISS,
+                riscv::CSR_ITLB_MISS,
+                riscv::CSR_DTLB_MISS,
+                riscv::CSR_LOAD,
+                riscv::CSR_STORE,
+                riscv::CSR_EXCEPTION,
+                riscv::CSR_EXCEPTION_RET,
+                riscv::CSR_BRANCH_JUMP,
+                riscv::CSR_CALL,
+                riscv::CSR_RET,
+                riscv::CSR_MIS_PREDICT,
+                riscv::CSR_SB_FULL,
+                riscv::CSR_IF_EMPTY,
+                riscv::CSR_HPM_COUNTER_17,
+                riscv::CSR_HPM_COUNTER_18,
+                riscv::CSR_HPM_COUNTER_19,
+                riscv::CSR_HPM_COUNTER_20,
+                riscv::CSR_HPM_COUNTER_21,
+                riscv::CSR_HPM_COUNTER_22,
+                riscv::CSR_HPM_COUNTER_23,
+                riscv::CSR_HPM_COUNTER_24,
+                riscv::CSR_HPM_COUNTER_25,
+                riscv::CSR_HPM_COUNTER_26,
+                riscv::CSR_HPM_COUNTER_27,
+                riscv::CSR_HPM_COUNTER_28,
+                riscv::CSR_HPM_COUNTER_29,
+                riscv::CSR_HPM_COUNTER_30,
+                riscv::CSR_HPM_COUNTER_31:     csr_rdata = perf_data_i;
                 //Event Selector
                 riscv::CSR_MHPM_EVENT_3,
                 riscv::CSR_MHPM_EVENT_4,
@@ -668,15 +701,18 @@ module csr_regfile import ariane_pkg::*; #(
         // --------------------
         cycle_d = cycle_q;
         instret_d = instret_q;
+        mcountinhibit_d = mcountinhibit_q;
         if (!debug_mode_q) begin
             // increase instruction retired counter
             for (int i = 0; i < NrCommitPorts; i++) begin
                 if (commit_ack_i[i] && !ex_i.valid) instret++;
             end
-            instret_d = instret;
+            if (!mcountinhibit_q[2]) instret_d = instret;
             // increment the cycle count
-            if (ENABLE_CYCLE_COUNT) cycle_d = cycle_q + 1'b1;
-            else cycle_d = instret;
+            if (!mcountinhibit_q[0]) begin
+                if (ENABLE_CYCLE_COUNT) cycle_d = cycle_q + 1'b1;
+                else cycle_d = instret;
+            end
         end
 
         eret_o                  = 1'b0;
@@ -1207,6 +1243,7 @@ module csr_regfile import ariane_pkg::*; #(
                     if (ariane_pkg::RVSCLIC && &csr_wdata[1:0]) mtvec_d = {csr_wdata[riscv::XLEN-1:8], 6'b0, csr_wdata[1:0]};
                 end
                 riscv::CSR_MCOUNTEREN:         mcounteren_d = {{riscv::XLEN-32{1'b0}}, csr_wdata[31:0]};
+                riscv::CSR_MCOUNTINHIBIT:      mcountinhibit_d = csr_wdata[31:0] & 32'h0000_01fd;
                 riscv::CSR_MTVT: begin
                     if (ariane_pkg::RVSCLIC) begin
                         // Writes are legal but ignored in CLINT mode
@@ -1898,7 +1935,7 @@ module csr_regfile import ariane_pkg::*; #(
                             if(v_q) begin
                                 privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] & ~scounteren_q[csr_addr_i[4:0]] & hcounteren_q[csr_addr_i[4:0]];
                             end else begin
-                                privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] & ~scounteren_q[csr_addr_i[4:0]];
+                                privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] | ~scounteren_q[csr_addr_i[4:0]];
                             end
                         end
                     endcase
@@ -1925,7 +1962,7 @@ module csr_regfile import ariane_pkg::*; #(
                     unique case (priv_lvl_o)
                         riscv::PRIV_LVL_M: privilege_violation = 1'b0;
                         riscv::PRIV_LVL_S: privilege_violation = ~mcounteren_q[csr_addr_i[4:0]];
-                        riscv::PRIV_LVL_U: privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] & ~scounteren_q[csr_addr_i[4:0]];
+                        riscv::PRIV_LVL_U: privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] | ~scounteren_q[csr_addr_i[4:0]];
                     endcase
                 end
             end
@@ -2131,6 +2168,7 @@ module csr_regfile import ariane_pkg::*; #(
             mepc_q                 <= {riscv::XLEN{1'b0}};
             mcause_q               <= {riscv::XLEN{1'b0}};
             mcounteren_q           <= {riscv::XLEN{1'b0}};
+            mcountinhibit_q        <= 32'b0;
             mtvt_q                 <= {riscv::XLEN{1'b0}};
             mscratch_q             <= {riscv::XLEN{1'b0}};
             mtval_q                <= {riscv::XLEN{1'b0}};
@@ -2206,6 +2244,7 @@ module csr_regfile import ariane_pkg::*; #(
             mepc_q                 <= mepc_d;
             mcause_q               <= mcause_d;
             mcounteren_q           <= mcounteren_d;
+            mcountinhibit_q        <= mcountinhibit_d;
             mtvt_q                 <= mtvt_d;
             mscratch_q             <= mscratch_d;
             mtval_q                <= mtval_d;
