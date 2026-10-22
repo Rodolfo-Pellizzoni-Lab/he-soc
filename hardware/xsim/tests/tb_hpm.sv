@@ -18,10 +18,18 @@ module tb_hpm;
   dcache_req_i_t [2:0] dc_access;
   logic [2:0][DCACHE_SET_ASSOC-1:0] miss_bits;
   int checks = 0;
+  int irq_requests = 0;
+  logic overflow_irq;
+  logic [31:0] overflow;
+  riscv::priv_lvl_t mode = riscv::PRIV_LVL_M;
+  logic virtual_mode = 0;
+
+  always @(posedge clk) if (rst_n && overflow_irq) irq_requests++;
 
   perf_counters dut (
     .clk_i(clk), .rst_ni(rst_n), .debug_mode_i(debug_mode),
     .mcountinhibit_i(inhibit), .addr_i(addr), .we_i(we),
+    .priv_lvl_i(mode), .v_i(virtual_mode), .overflow_o(overflow), .overflow_irq_o(overflow_irq),
     .data_i(wdata), .data_o(rdata), .commit_instr_i(instr), .commit_ack_i(ack),
     .l1_icache_miss_i(ic_miss), .l1_dcache_miss_i(dc_miss),
     .itlb_miss_i(itlb_miss), .dtlb_miss_i(dtlb_miss),
@@ -58,8 +66,26 @@ module tb_hpm;
     miss_bits = '0; tlb_flush = 0; stall = 0;
   endtask
 
+  task automatic set_mode(input int index);
+    virtual_mode = index >= 3;
+    case (index)
+      0: mode = riscv::PRIV_LVL_M;
+      1, 3: mode = riscv::PRIV_LVL_S;
+      2, 4: mode = riscv::PRIV_LVL_U;
+      default: $fatal(1, "Invalid mode index");
+    endcase
+  endtask
+
+  task automatic check_overflow(input logic [31:0] status, input int requests);
+    #1; checks++;
+    if (overflow !== status || irq_requests != requests)
+      $fatal(1, "Overflow status %h expected %h; IRQ requests %0d expected %0d",
+             overflow, status, irq_requests, requests);
+  endtask
+
   initial begin
     int expected;
+    int requests;
     clear_events();
     repeat (2) step();
     rst_n = 1;
@@ -162,6 +188,89 @@ module tb_hpm;
     step();
     inhibit[3] = 1;
     check_csr(12'hb03, riscv::xlen_t'(NR_COMMIT_PORTS - 2));
+
+    // WARL: only OF, five privilege filters, and five selector bits stick.
+    requests = irq_requests;
+    write_csr(12'h323, '1);
+    check_csr(12'h323, 64'hfc00_0000_0000_001f);
+    check_overflow(32'h8, requests);
+    write_csr(12'h323, 0);
+
+    // Every filter acts only in its own execution mode, for cycles and retirements.
+    for (int event_id = 23; event_id <= 24; event_id++) begin
+      for (int filter = 0; filter < 5; filter++) begin
+        for (int current = 0; current < 5; current++) begin
+          inhibit = '1;
+          set_mode(current);
+          write_csr(12'h323, (64'h1 << (62-filter)) | 64'(event_id));
+          write_csr(12'hb03, 0);
+          inhibit[3] = 0;
+          step();
+          inhibit[3] = 1;
+          expected = current == filter ? 0 : (event_id == 24 ? NR_COMMIT_PORTS : 1);
+          check_csr(12'hb03, expected);
+        end
+      end
+    end
+    for (int current = 0; current < 5; current++) begin
+      set_mode(current);
+      write_csr(12'h323, 64'h7c00_0000_0000_0017);
+      write_csr(12'hb03, 0);
+      inhibit[3] = 0; step(); inhibit[3] = 1;
+      check_csr(12'hb03, 0);
+    end
+    set_mode(0);
+
+    // A write does not overflow. OF=1 suppresses requests, not counting.
+    write_csr(12'h323, 24);
+    write_csr(12'hb03, 64'hffff_ffff_ffff_fffe);
+    check_overflow(0, requests);
+    inhibit[3] = 0; step(); inhibit[3] = 1;
+    requests++;
+    check_csr(12'hb03, 0);
+    check_csr(12'h323, 64'h8000_0000_0000_0018);
+    check_overflow(8, requests);
+    write_csr(12'hb03, 64'hffff_ffff_ffff_fffe);
+    inhibit[3] = 0; step(); inhibit[3] = 1;
+    check_csr(12'hb03, 0);
+    check_overflow(8, requests);
+
+    // Simultaneous wraps aggregate into one request with both status bits.
+    write_csr(12'h323, 24); write_csr(12'h324, 24);
+    write_csr(12'hb03, 64'hffff_ffff_ffff_fffe);
+    write_csr(12'hb04, 64'hffff_ffff_ffff_fffe);
+    inhibit[3] = 0; inhibit[4] = 0; step(); inhibit = '1;
+    requests++;
+    check_overflow(32'h18, requests);
+    check_csr(12'hb03, 0); check_csr(12'hb04, 0);
+
+    // Inhibit and debug stop overflow as well as counting.
+    write_csr(12'h323, 24); write_csr(12'h324, 0);
+    write_csr(12'hb03, 64'hffff_ffff_ffff_fffe);
+    step();
+    check_overflow(0, requests);
+    debug_mode = 1; inhibit[3] = 0; step(); inhibit[3] = 1; debug_mode = 0;
+    check_csr(12'hb03, 64'hffff_ffff_ffff_fffe);
+    check_overflow(0, requests);
+
+    // A counter write wins while a different counter can still overflow.
+    write_csr(12'h323, 23); write_csr(12'h324, 23);
+    write_csr(12'hb03, '1); write_csr(12'hb04, '1);
+    inhibit[3] = 0; inhibit[4] = 0;
+    write_csr(12'hb03, 100);
+    inhibit = '1;
+    requests++;
+    check_csr(12'hb03, 100);
+    check_overflow(32'h10, requests);
+
+    // Selector-write priority controls OF/request while old-selector counting continues.
+    write_csr(12'h324, 0); write_csr(12'h323, 23);
+    write_csr(12'hb03, '1);
+    inhibit[3] = 0;
+    write_csr(12'h323, 64'h8000_0000_0000_0017);
+    inhibit = '1;
+    check_csr(12'hb03, 0);
+    check_overflow(8, requests);
     $display("HPM UNIT PASS %0d checks", checks);
     $finish;
   end

@@ -1368,12 +1368,34 @@ module decoder import ariane_pkg::*; #(
     // Exception handling
     // ---------------------
     riscv::xlen_t interrupt_cause;
+    riscv::xlen_t eligible_interrupts;
 
     // this instruction has already executed if the exception is valid
     assign instruction_o.valid   = instruction_o.ex.valid;
 
     always_comb begin : exception_handling
         interrupt_cause       = '0;
+        eligible_interrupts = irq_ctrl_i.mip;
+        eligible_interrupts[riscv::IRQ_S_EXT] |= irq_i[ariane_pkg::SupervisorIrq];
+        eligible_interrupts &= irq_ctrl_i.mie;
+        // Filter masked destinations before applying fixed source priority.
+        // In particular, a delegated interrupt cannot block a machine LCOFI.
+        for (int unsigned irq = 0; irq < riscv::XLEN; irq++) begin
+            if (irq_ctrl_i.mideleg[irq]) begin
+                if (priv_lvl_i == riscv::PRIV_LVL_M)
+                    eligible_interrupts[irq] = 1'b0;
+                else if (ariane_pkg::RVH && !v_i && irq_ctrl_i.hideleg[irq])
+                    eligible_interrupts[irq] = 1'b0;
+                else if (!v_i || (ariane_pkg::RVH && irq_ctrl_i.hideleg[irq]))
+                    eligible_interrupts[irq] &= irq_ctrl_i.sie || priv_lvl_i == riscv::PRIV_LVL_U;
+            end
+        end
+        // A trap to a higher privilege mode wins even if its source normally
+        // has lower fixed priority than a pending lower-mode interrupt.
+        if (|(eligible_interrupts & ~irq_ctrl_i.mideleg))
+            eligible_interrupts &= ~irq_ctrl_i.mideleg;
+        else if (ariane_pkg::RVH && v_i && |(eligible_interrupts & ~irq_ctrl_i.hideleg))
+            eligible_interrupts &= ~irq_ctrl_i.hideleg;
         instruction_o.ex      = ex_i;
         // look if we didn't already get an exception in any previous
         // stage - we should not overwrite it as we retain order regarding the exception
@@ -1428,47 +1450,51 @@ module decoder import ariane_pkg::*; #(
                 // we have three interrupt sources: external interrupts, software interrupts, timer interrupts (order of precedence)
                 // for two privilege levels: Supervisor and Machine Mode
                 // Virtual Supervisor Interrupt
+                // LCOFI has the lowest standard local interrupt priority.
+                if (eligible_interrupts[riscv::IRQ_LCOF]) begin
+                    interrupt_cause = riscv::LCOF_INTERRUPT;
+                end
                 if(ariane_pkg::RVH) begin
-                    if (irq_ctrl_i.mie[riscv::VS_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mip[riscv::VS_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                    if (eligible_interrupts[riscv::VS_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                         interrupt_cause = riscv::VS_TIMER_INTERRUPT;
                     end
                     // Virtual Supervisor Software Interrupt
-                    if (irq_ctrl_i.mie[riscv::VS_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mip[riscv::VS_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                    if (eligible_interrupts[riscv::VS_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                         interrupt_cause = riscv::VS_SW_INTERRUPT;
                     end
                     // Virtual Supervisor External Interrupt
-                    if (irq_ctrl_i.mie[riscv::VS_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mip[riscv::VS_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                    if (eligible_interrupts[riscv::VS_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                         interrupt_cause = riscv::VS_EXT_INTERRUPT;
                     end
                     // Hypervisor Guest External Interrupts
-                    if (irq_ctrl_i.mie[riscv::HS_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mip[riscv::HS_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                    if (eligible_interrupts[riscv::HS_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                         interrupt_cause = riscv::HS_EXT_INTERRUPT;
                     end
                 end
                 // Supervisor Timer Interrupt
-                if (irq_ctrl_i.mie[riscv::S_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mip[riscv::S_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                if (eligible_interrupts[riscv::S_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                     interrupt_cause = riscv::S_TIMER_INTERRUPT;
                 end
                 // Supervisor Software Interrupt
-                if (irq_ctrl_i.mie[riscv::S_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mip[riscv::S_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                if (eligible_interrupts[riscv::S_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                     interrupt_cause = riscv::S_SW_INTERRUPT;
                 end
                 // Supervisor External Interrupt
                 // The logical-OR of the software-writable bit and the signal from the external interrupt controller is
                 // used to generate external interrupts to the supervisor
-                if (irq_ctrl_i.mie[riscv::S_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && (irq_ctrl_i.mip[riscv::S_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]] | irq_i[ariane_pkg::SupervisorIrq])) begin
+                if (eligible_interrupts[riscv::IRQ_S_EXT]) begin
                     interrupt_cause = riscv::S_EXT_INTERRUPT;
                 end
                 // Machine Timer Interrupt
-                if (irq_ctrl_i.mip[riscv::M_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mie[riscv::M_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                if (eligible_interrupts[riscv::M_TIMER_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                     interrupt_cause = riscv::M_TIMER_INTERRUPT;
                 end
                 // Machine Mode Software Interrupt
-                if (irq_ctrl_i.mip[riscv::M_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mie[riscv::M_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                if (eligible_interrupts[riscv::M_SW_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                     interrupt_cause = riscv::M_SW_INTERRUPT;
                 end
                 // Machine Mode External Interrupt
-                if (irq_ctrl_i.mip[riscv::M_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]] && irq_ctrl_i.mie[riscv::M_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
+                if (eligible_interrupts[riscv::M_EXT_INTERRUPT[$clog2(riscv::XLEN)-1:0]]) begin
                     interrupt_cause = riscv::M_EXT_INTERRUPT;
                 end
             end

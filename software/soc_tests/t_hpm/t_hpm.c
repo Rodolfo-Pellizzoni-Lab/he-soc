@@ -82,11 +82,12 @@ int main(void) {
   a = CSR_R(MINSTRET); b = CSR_R(MINSTRET);
   CHECK(b > a, "minstret did not resume: %d -> %d", (int)a, (int)b);
 
-  // Selectors are five-bit WARL registers. Touch all six implemented counters.
+  // Selectors have a five-bit event ID plus Sscofpmf controls. Touch all six.
   CSR_W(MHPMEVENT3, ~0ULL); CSR_W(MHPMEVENT4, 24);
   CSR_W(MHPMEVENT5, 5);     CSR_W(MHPMEVENT6, 6);
   CSR_W(MHPMEVENT7, 23);    CSR_W(MHPMEVENT8, 24);
-  CHECK(CSR_R(MHPMEVENT3) == 31, "mhpmevent3 WARL value is %d", (int)CSR_R(MHPMEVENT3));
+  CHECK(CSR_R(MHPMEVENT3) == 0xfc0000000000001fULL,
+        "mhpmevent3 Sscofpmf WARL value is %08x%08x", H64(CSR_R(MHPMEVENT3)));
   CHECK(CSR_R(MHPMEVENT4) == 24 && CSR_R(MHPMEVENT5) == 5 && CSR_R(MHPMEVENT6) == 6 &&
         CSR_R(MHPMEVENT7) == 23 && CSR_R(MHPMEVENT8) == 24, "event-selector readback failed");
 

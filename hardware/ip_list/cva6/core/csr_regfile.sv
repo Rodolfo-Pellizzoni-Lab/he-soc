@@ -110,6 +110,8 @@ module csr_regfile import ariane_pkg::*; #(
     input  logic[riscv::XLEN-1:0] perf_data_i,                // read data from performance counter module
     output logic                  perf_we_o,
     output logic [31:0]           mcountinhibit_o,
+    input  logic [31:0]           perf_overflow_i,
+    input  logic                  perf_overflow_irq_i,
     // PMPs
     output riscv::pmpcfg_t [15:0] pmpcfg_o,   // PMP configuration containing pmpcfg for max 16 PMPs
     output logic [15:0][riscv::PLEN-3:0] pmpaddr_o,           // PMP addresses
@@ -227,6 +229,7 @@ module csr_regfile import ariane_pkg::*; #(
     assign csr_addr = riscv::csr_t'(csr_addr_i);
     assign conv_csr_addr = riscv::convert_vs_access_csr((riscv::csr_t'(csr_addr_i)),v_q);
     assign mcountinhibit_o = mcountinhibit_q;
+    localparam logic [riscv::XLEN-1:0] PMU_IRQ_MASK = PERF_COUNTER_EN ? riscv::MIP_LCOFIP : '0;
     assign fs_o = mstatus_q.fs;
     assign vfs_o = (ariane_pkg::RVH) ? vsstatus_q.fs : riscv::Off;
     // ----------------
@@ -479,6 +482,13 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_MTVEC:              csr_rdata = mtvec_q;
                 riscv::CSR_MCOUNTEREN:         csr_rdata = mcounteren_q;
                 riscv::CSR_MCOUNTINHIBIT:      csr_rdata = {{riscv::XLEN-32{1'b0}}, mcountinhibit_q};
+                riscv::CSR_SCOUNTOVF: begin
+                    csr_rdata = {{riscv::XLEN-32{1'b0}}, perf_overflow_i};
+                    if (priv_lvl_q != riscv::PRIV_LVL_M) begin
+                        csr_rdata = csr_rdata & mcounteren_q;
+                        if (ariane_pkg::RVH && v_q) csr_rdata = csr_rdata & hcounteren_q;
+                    end
+                end
                 riscv::CSR_MTVT:               csr_rdata = mtvt_q;
                 riscv::CSR_MSCRATCH:           csr_rdata = mscratch_q;
                 riscv::CSR_MEPC:               csr_rdata = mepc_q;
@@ -673,8 +683,9 @@ module csr_regfile import ariane_pkg::*; #(
                         csr_rdata = {10'b0, pmpaddr_q[index][riscv::PLEN-3:1], 1'b0};
                 end
                 default: begin
-                    // Unimplemented HPM selectors are WARL zero, like their counters.
-                    if (conv_csr_addr.address inside {[12'h329:12'h33f]}) csr_rdata = '0;
+                    // Unimplemented HPM selectors are legal, hardwired zero.
+                    // Do not include 0x321/0x322 (Smcntrpmf configuration).
+                    if (csr_addr_i inside {[12'h329:12'h33f]}) csr_rdata = '0;
                     else read_access_exception = 1'b1;
                 end
             endcase
@@ -689,6 +700,8 @@ module csr_regfile import ariane_pkg::*; #(
         automatic riscv::satp_t vsatp;
         automatic riscv::hgatp_t hgatp;
         automatic logic [63:0] instret;
+        automatic riscv::priv_lvl_t trap_priv;
+        automatic logic trap_virtual;
 
         satp = satp_q;
         if(ariane_pkg::RVH) begin
@@ -995,8 +1008,8 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_SIP: begin
                     // In CLIC mode, writes to SIP are ignored.
                     if (!clic_mode_o) begin
-                        mask = riscv::MIP_SSIP & mideleg_q;
-                        // only the supervisor software interrupt is write-able, iff delegated
+                        mask = (riscv::MIP_SSIP | PMU_IRQ_MASK) & mideleg_q;
+                        // Software and local counter-overflow pending bits are writable when delegated.
                         mip_d = (mip_q & ~mask) | (csr_wdata & mask);
                     end
                 end
@@ -1218,7 +1231,7 @@ module csr_regfile import ariane_pkg::*; #(
                 // machine interrupt delegation register
                 // we do not support user interrupt delegation
                 riscv::CSR_MIDELEG: begin
-                    mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP;
+                    mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | PMU_IRQ_MASK;
                     if(~ariane_pkg::RVH) begin
                         mideleg_d = (mideleg_q & ~mask) | (csr_wdata & mask);
                     end else begin
@@ -1230,9 +1243,9 @@ module csr_regfile import ariane_pkg::*; #(
                     // In CLIC mode, writes to MIE are ignored.
                     if (!clic_mode_o) begin
                         if(~ariane_pkg::RVH) begin
-                            mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | riscv::MIP_MSIP | riscv::MIP_MTIP | riscv::MIP_MEIP;
+                            mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | riscv::MIP_MSIP | riscv::MIP_MTIP | riscv::MIP_MEIP | PMU_IRQ_MASK;
                         end else begin
-                            mask = HS_DELEG_INTERRUPTS | riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | riscv::MIP_MSIP | riscv::MIP_MTIP | riscv::MIP_MEIP;
+                            mask = HS_DELEG_INTERRUPTS | riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | riscv::MIP_MSIP | riscv::MIP_MTIP | riscv::MIP_MEIP | PMU_IRQ_MASK;
                         end
                         mie_d = (mie_q & ~mask) | (csr_wdata & mask); // we only support supervisor and M-mode interrupts
                     end
@@ -1297,9 +1310,9 @@ module csr_regfile import ariane_pkg::*; #(
                     // In CLIC mode, writes to MIP are ignored.
                     if (!clic_mode_o) begin
                         if (~ariane_pkg::RVH) begin
-                            mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP;
+                            mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | PMU_IRQ_MASK;
                         end else begin
-                            mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | riscv::MIP_VSSIP;
+                            mask = riscv::MIP_SSIP | riscv::MIP_STIP | riscv::MIP_SEIP | riscv::MIP_VSSIP | PMU_IRQ_MASK;
                         end
                         mip_d = (mip_q & ~mask) | (csr_wdata & mask);
                     end
@@ -1435,8 +1448,7 @@ module csr_regfile import ariane_pkg::*; #(
                     end
                 end
                 default: begin
-                    // Writes to selectors for unimplemented counters are ignored.
-                    if (!(conv_csr_addr.address inside {[12'h329:12'h33f]}))
+                    if (!(csr_addr_i inside {[12'h329:12'h33f]}))
                         update_access_exception = 1'b1;
                 end
             endcase
@@ -1474,14 +1486,17 @@ module csr_regfile import ariane_pkg::*; #(
         mip_d[riscv::IRQ_M_SOFT] = ipi_i;
         // Timer interrupt pending, coming from platform timer
         mip_d[riscv::IRQ_M_TIMER] = time_irq_i;
+        // Edge request latches pending state. Software clears LCOFIP separately
+        // from mhpmevent.OF; a concurrent new request takes precedence.
+        if (PERF_COUNTER_EN && perf_overflow_irq_i) mip_d[riscv::IRQ_LCOF] = 1'b1;
 
         // -----------------------
         // Manage Exception Stack
         // -----------------------
         // update exception CSRs
         // we got an exception update cause, pc and stval register
-        trap_to_priv_lvl = riscv::PRIV_LVL_M;
-        trap_to_v        = 1'b0;
+        trap_priv = riscv::PRIV_LVL_M;
+        trap_virtual = 1'b0;
         // Exception is taken and we are not in debug mode
         // exceptions in debug mode don't update any fields
         if (!debug_mode_q && ex_i.cause != riscv::DEBUG_REQUEST && ex_i.valid) begin
@@ -1497,13 +1512,13 @@ module csr_regfile import ariane_pkg::*; #(
                     (~ex_i.cause[riscv::XLEN-1] && medeleg_q[ex_i.cause[$clog2(riscv::XLEN)-1:0]] && ~hedeleg_q[ex_i.cause[$clog2(riscv::XLEN)-1:0]])) begin
                     // traps never transition from a more-privileged mode to a less privileged mode
                     // so if we are already in M mode, stay there
-                    trap_to_priv_lvl = (priv_lvl_o == riscv::PRIV_LVL_M) ? riscv::PRIV_LVL_M : riscv::PRIV_LVL_S;
+                    trap_priv = (priv_lvl_o == riscv::PRIV_LVL_M) ? riscv::PRIV_LVL_M : riscv::PRIV_LVL_S;
                 // In CLIC mode, xideleg ceases to have effect.
                 end else if ((ex_i.cause[riscv::XLEN-1] && hideleg_q[ex_i.cause[$clog2(riscv::XLEN)-1:0]] && ~clic_mode_o) ||
                              (~ex_i.cause[riscv::XLEN-1] && hedeleg_q[ex_i.cause[$clog2(riscv::XLEN)-1:0]])) begin
-                    trap_to_priv_lvl = (priv_lvl_o == riscv::PRIV_LVL_M) ? riscv::PRIV_LVL_M : riscv::PRIV_LVL_S;
+                    trap_priv = (priv_lvl_o == riscv::PRIV_LVL_M) ? riscv::PRIV_LVL_M : riscv::PRIV_LVL_S;
                     // trap to VS only if it is  the currently active mode
-                    trap_to_v   = v_q;
+                    trap_virtual = v_q;
                 end
             end else begin
                 // In CLIC mode, xideleg ceases to have effect.
@@ -1511,13 +1526,13 @@ module csr_regfile import ariane_pkg::*; #(
                     (~ex_i.cause[riscv::XLEN-1] && medeleg_q[ex_i.cause[$clog2(riscv::XLEN)-1:0]])) begin
                     // traps never transition from a more-privileged mode to a less privileged mode
                     // so if we are already in M mode, stay there
-                    trap_to_priv_lvl = (priv_lvl_o == riscv::PRIV_LVL_M) ? riscv::PRIV_LVL_M : riscv::PRIV_LVL_S;
+                    trap_priv = (priv_lvl_o == riscv::PRIV_LVL_M) ? riscv::PRIV_LVL_M : riscv::PRIV_LVL_S;
                 end
             end
 
             // trap to supervisor mode
-            if (trap_to_priv_lvl == riscv::PRIV_LVL_S) begin
-                if (ariane_pkg::RVH && trap_to_v) begin
+            if (trap_priv == riscv::PRIV_LVL_S) begin
+                if (ariane_pkg::RVH && trap_virtual) begin
                     // update sstatus
                     vsstatus_d.sie  = 1'b0;
                     vsstatus_d.spie = vsstatus_q.sie;
@@ -1622,9 +1637,9 @@ module csr_regfile import ariane_pkg::*; #(
                 end
             end
 
-            priv_lvl_d = trap_to_priv_lvl;
+            priv_lvl_d = trap_priv;
             if (ariane_pkg::RVH) begin
-                v_d        = trap_to_v;
+                v_d = trap_virtual;
             end
         end
 
@@ -1840,6 +1855,10 @@ module csr_regfile import ariane_pkg::*; #(
             // actually return from debug mode
             debug_mode_d = 1'b0;
         end
+        // These feed trap-vector selection, which is read back for debug.
+        // Publish once to avoid a default-M / delegated-S delta-cycle ring.
+        trap_to_priv_lvl = trap_priv;
+        trap_to_v = trap_virtual;
     end
 
     // ---------------------------
@@ -1939,10 +1958,10 @@ module csr_regfile import ariane_pkg::*; #(
                             privilege_violation = ~mcounteren_q[csr_addr_i[4:0]];
                         end
                         riscv::PRIV_LVL_U: begin
-                            virtual_privilege_violation = v_q & mcounteren_q[csr_addr_i[4:0]] &
-                                (~hcounteren_q[csr_addr_i[4:0]] | ~scounteren_q[csr_addr_i[4:0]]);
                             if(v_q) begin
                                 privilege_violation = ~mcounteren_q[csr_addr_i[4:0]];
+                                virtual_privilege_violation = mcounteren_q[csr_addr_i[4:0]] &
+                                    (~hcounteren_q[csr_addr_i[4:0]] | ~scounteren_q[csr_addr_i[4:0]]);
                             end else begin
                                 privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] | ~scounteren_q[csr_addr_i[4:0]];
                             end
@@ -2026,21 +2045,23 @@ module csr_regfile import ariane_pkg::*; #(
 
     // output assignments dependent on privilege mode
     always_comb begin : priv_output
-        trap_vector_base_o = (ariane_pkg::RVSCLIC && clic_mode_o && clic_irq_shv_i && ex_i.cause[riscv::XLEN-1]) ? {mtvt_q[riscv::VLEN-1:8], 8'b0} : {mtvec_q[riscv::VLEN-1:2], 2'b0};
+        logic [riscv::VLEN-1:0] trap_vector;
+        logic [riscv::VLEN-1:0] return_pc;
+        trap_vector = (ariane_pkg::RVSCLIC && clic_mode_o && clic_irq_shv_i && ex_i.cause[riscv::XLEN-1]) ? {mtvt_q[riscv::VLEN-1:8], 8'b0} : {mtvec_q[riscv::VLEN-1:2], 2'b0};
         // output user mode stvec
         if (trap_to_priv_lvl == riscv::PRIV_LVL_S) begin
             if (ariane_pkg::RVSCLIC && clic_mode_o && clic_irq_shv_i && ex_i.cause[riscv::XLEN-1]) begin
-                trap_vector_base_o = {stvt_q[riscv::VLEN-1:8], 8'b0};
+                trap_vector = {stvt_q[riscv::VLEN-1:8], 8'b0};
             end else if (ariane_pkg::RVH && trap_to_v) begin
-                trap_vector_base_o = {vstvec_q[riscv::VLEN-1:2], 2'b0};
+                trap_vector = {vstvec_q[riscv::VLEN-1:2], 2'b0};
             end else begin
-                trap_vector_base_o = {stvec_q[riscv::VLEN-1:2], 2'b0};
+                trap_vector = {stvec_q[riscv::VLEN-1:2], 2'b0};
             end
         end
 
         // if we are in debug mode jump to a specific address
         if (debug_mode_q) begin
-            trap_vector_base_o = DmBaseAddress[riscv::VLEN-1:0] + ariane_dm_pkg::ExceptionAddress[riscv::VLEN-1:0];
+            trap_vector = DmBaseAddress[riscv::VLEN-1:0] + ariane_dm_pkg::ExceptionAddress[riscv::VLEN-1:0];
         end
 
         // check if we are in vectored mode, if yes then do BASE + 4 * cause we
@@ -2056,22 +2077,24 @@ module csr_regfile import ariane_pkg::*; #(
                 ((trap_to_priv_lvl == riscv::PRIV_LVL_M && mtvec_q[0])
                || (trap_to_priv_lvl == riscv::PRIV_LVL_S && !trap_to_v && stvec_q[0])
                || (ariane_pkg::RVSCLIC && clic_mode_o && clic_irq_shv_i))) begin
-            trap_vector_base_o[7:2] = ex_i.cause[5:0];
+            trap_vector[7:2] = ex_i.cause[5:0];
         end
         if (ariane_pkg::RVH && ex_i.cause[riscv::XLEN-1] &&
                 trap_to_priv_lvl == riscv::PRIV_LVL_S && trap_to_v && vstvec_q[0]) begin
-            trap_vector_base_o[7:2] = {ex_i.cause[5:2],2'b01};
+            trap_vector[7:2] = {ex_i.cause[5:2],2'b01};
         end
 
-        epc_o = mepc_q[riscv::VLEN-1:0];
+        return_pc = mepc_q[riscv::VLEN-1:0];
         // we are returning from supervisor or virtual supervisor mode, so take the sepc register
         if (sret) begin
-            epc_o = (ariane_pkg::RVH && v_q) ? vsepc_q[riscv::VLEN-1:0] : sepc_q[riscv::VLEN-1:0];
+            return_pc = (ariane_pkg::RVH && v_q) ? vsepc_q[riscv::VLEN-1:0] : sepc_q[riscv::VLEN-1:0];
         end
         // we are returning from debug mode, to take the dpc register
         if (dret) begin
-            epc_o = dpc_q[riscv::VLEN-1:0];
+            return_pc = dpc_q[riscv::VLEN-1:0];
         end
+        trap_vector_base_o = trap_vector;
+        epc_o = return_pc;
     end
 
     // -------------------

@@ -20,6 +20,10 @@ module perf_counters import ariane_pkg::*; #(
   input  logic                                    rst_ni,
   input  logic                                    debug_mode_i, // debug mode
   input  logic [31:0]                             mcountinhibit_i,
+  input  riscv::priv_lvl_t                        priv_lvl_i,
+  input  logic                                    v_i,
+  output logic [31:0]                             overflow_o,
+  output logic                                    overflow_irq_o,
   // SRAM like interface
   input  logic [11:0]                             addr_i,   // read/write address (up to 6 counters possible)
   input  logic                                    we_i,     // write enable
@@ -65,8 +69,12 @@ module perf_counters import ariane_pkg::*; #(
   typedef logic [EventIncrWidth-1:0] event_incr_t;
   event_incr_t event_incr[6:1];
   //internal signal for  MUX select line input
-  logic [4:0] mhpmevent_d[6:1];
-  logic [4:0] mhpmevent_q[6:1];
+  // RV64 Sscofpmf: OF and five mode inhibit bits; low five bits select events.
+  localparam logic [63:0] EventWriteMask = RVH ? 64'hfc00_0000_0000_001f : 64'hf000_0000_0000_001f;
+  logic [63:0] mhpmevent_d[6:1];
+  logic [63:0] mhpmevent_q[6:1];
+  logic mode_inhibit[6:1];
+  logic [64:0] counter_sum[6:1];
 
   logic [NR_COMMIT_PORTS-1:0] load_event;
   logic [NR_COMMIT_PORTS-1:0] store_event;
@@ -112,7 +120,13 @@ module perf_counters import ariane_pkg::*; #(
       end
 
       for(int unsigned i = 1; i <= 6; i++) begin
-        case(mhpmevent_q[i])
+        case (priv_lvl_i)
+          riscv::PRIV_LVL_M: mode_inhibit[i] = mhpmevent_q[i][62];
+          riscv::PRIV_LVL_S: mode_inhibit[i] = v_i ? mhpmevent_q[i][59] : mhpmevent_q[i][61];
+          riscv::PRIV_LVL_U: mode_inhibit[i] = v_i ? mhpmevent_q[i][58] : mhpmevent_q[i][60];
+          default: mode_inhibit[i] = 1'b1;
+        endcase
+        case(mhpmevent_q[i][4:0])
            5'b00000 : event_incr[i] = '0;
            5'b00001 : event_incr[i] = event_incr_t'(l1_icache_miss_i);//L1 I-Cache misses
            5'b00010 : event_incr[i] = event_incr_t'(l1_dcache_miss_i);//L1 D-Cache misses
@@ -147,16 +161,32 @@ module perf_counters import ariane_pkg::*; #(
     end
 
     always_comb begin : generic_counter
+        riscv::xlen_t read_data;
+        logic [31:0] overflow_status;
+        logic overflow_request;
         generic_counter_d = generic_counter_q;
-        data_o = 'b0;
+        read_data = 'b0;
         mhpmevent_d = mhpmevent_q;
+	    overflow_status = '0;
+	    overflow_request = 1'b0;
 	    read_access_exception =  1'b0;
 	    update_access_exception =  1'b0;
 
       for(int unsigned i = 1; i <= 6; i++) begin
-         if ((!debug_mode_i) && (!mcountinhibit_i[i+2])) begin
+         overflow_status[i+2] = mhpmevent_q[i][63];
+         counter_sum[i] = {1'b0, generic_counter_q[i]} + 65'(event_incr[i]);
+         // A counter write wins over the same cycle's increment/overflow.
+         if ((!debug_mode_i) && (!mcountinhibit_i[i+2]) && (!mode_inhibit[i]) &&
+             !(we_i && addr_i == (12'hb02 + i))) begin
              if (event_incr[i] != '0) begin
-                generic_counter_d[i] = generic_counter_q[i] + event_incr[i];
+                generic_counter_d[i] = counter_sum[i][63:0];
+                // A selector write wins over its OF update and request, but
+                // does not discard an otherwise valid old-selector increment.
+                if (counter_sum[i][64] && !mhpmevent_q[i][63] &&
+                    !(we_i && addr_i == (12'h322 + i))) begin
+                  mhpmevent_d[i][63] = 1'b1;
+                  overflow_request = 1'b1;
+                end
              end
         end
       end
@@ -168,29 +198,29 @@ module perf_counters import ariane_pkg::*; #(
             riscv::CSR_MHPM_COUNTER_5,
             riscv::CSR_MHPM_COUNTER_6,
             riscv::CSR_MHPM_COUNTER_7,
-            riscv::CSR_MHPM_COUNTER_8  :begin if (riscv::XLEN == 32) data_o = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3 + 1][31:0]; else data_o = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3 + 1];end
+            riscv::CSR_MHPM_COUNTER_8  :begin if (riscv::XLEN == 32) read_data = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3 + 1][31:0]; else read_data = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3 + 1];end
             riscv::CSR_L1_ICACHE_MISS,
             riscv::CSR_L1_DCACHE_MISS,
             riscv::CSR_ITLB_MISS,
             riscv::CSR_DTLB_MISS,
             riscv::CSR_LOAD,
             riscv::CSR_STORE : begin
-              if (riscv::XLEN == 32) data_o = generic_counter_q[addr_i-riscv::CSR_L1_ICACHE_MISS + 1][31:0];
-              else data_o = generic_counter_q[addr_i-riscv::CSR_L1_ICACHE_MISS + 1];
+              if (riscv::XLEN == 32) read_data = generic_counter_q[addr_i-riscv::CSR_L1_ICACHE_MISS + 1][31:0];
+              else read_data = generic_counter_q[addr_i-riscv::CSR_L1_ICACHE_MISS + 1];
             end
             riscv::CSR_MHPM_COUNTER_3H,
             riscv::CSR_MHPM_COUNTER_4H,
             riscv::CSR_MHPM_COUNTER_5H,
             riscv::CSR_MHPM_COUNTER_6H,
             riscv::CSR_MHPM_COUNTER_7H,
-            riscv::CSR_MHPM_COUNTER_8H :begin if (riscv::XLEN == 32) data_o = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3H + 1][63:32]; else read_access_exception = 1'b1;end
+            riscv::CSR_MHPM_COUNTER_8H :begin if (riscv::XLEN == 32) read_data = generic_counter_q[addr_i-riscv::CSR_MHPM_COUNTER_3H + 1][63:32]; else read_access_exception = 1'b1;end
             riscv::CSR_MHPM_EVENT_3,
             riscv::CSR_MHPM_EVENT_4,
             riscv::CSR_MHPM_EVENT_5,
             riscv::CSR_MHPM_EVENT_6,
             riscv::CSR_MHPM_EVENT_7,
-            riscv::CSR_MHPM_EVENT_8   : data_o = mhpmevent_q[addr_i-riscv::CSR_MHPM_EVENT_3 + 1] ;
-            default: data_o = 'b0;
+            riscv::CSR_MHPM_EVENT_8   : read_data = mhpmevent_q[addr_i-riscv::CSR_MHPM_EVENT_3 + 1] ;
+            default: read_data = 'b0;
         endcase
 
      //Write
@@ -213,10 +243,15 @@ module perf_counters import ariane_pkg::*; #(
             riscv::CSR_MHPM_EVENT_5,
             riscv::CSR_MHPM_EVENT_6,
             riscv::CSR_MHPM_EVENT_7,
-            riscv::CSR_MHPM_EVENT_8   : mhpmevent_d[addr_i-riscv::CSR_MHPM_EVENT_3 + 1] = data_i;
+            riscv::CSR_MHPM_EVENT_8   : mhpmevent_d[addr_i-riscv::CSR_MHPM_EVENT_3 + 1] = data_i & EventWriteMask;
             default: update_access_exception =  1'b1;
         endcase
       end
+      // Publish each cross-module output once, avoiding xsim delta-cycle
+      // rings caused by transient default-then-override assignments.
+      data_o = read_data;
+      overflow_o = overflow_status;
+      overflow_irq_o = overflow_request;
     end
 
 //Registers

@@ -247,6 +247,8 @@ module cva6 import ariane_pkg::*; #(
   riscv::xlen_t             data_csr_perf, data_perf_csr;
   logic                     we_csr_perf;
   logic [31:0]              mcountinhibit_csr_perf;
+  logic [31:0]              overflow_perf_csr;
+  logic                     overflow_irq_perf_csr;
 
   logic                     icache_flush_ctrl_cache;
   logic                     itlb_miss_ex_perf;
@@ -747,6 +749,8 @@ module cva6 import ariane_pkg::*; #(
     .perf_data_i            ( data_perf_csr                 ),
     .perf_we_o              ( we_csr_perf                   ),
     .mcountinhibit_o        ( mcountinhibit_csr_perf        ),
+    .perf_overflow_i        ( overflow_perf_csr             ),
+    .perf_overflow_irq_i    ( overflow_irq_perf_csr         ),
     .pmpcfg_o               ( pmpcfg                        ),
     .pmpaddr_o              ( pmpaddr                       ),
     .qos_rcid_o             ( qos_rcid                      ),
@@ -772,6 +776,10 @@ module cva6 import ariane_pkg::*; #(
     .rst_ni              ( rst_ni                    ),
     .debug_mode_i        ( debug_mode                ),
     .mcountinhibit_i     ( mcountinhibit_csr_perf     ),
+    .priv_lvl_i          ( priv_lvl                   ),
+    .v_i                 ( v                          ),
+    .overflow_o          ( overflow_perf_csr          ),
+    .overflow_irq_o      ( overflow_irq_perf_csr      ),
     .addr_i              ( addr_csr_perf             ),
     .we_i                ( we_csr_perf               ),
     .data_i              ( data_csr_perf             ),
@@ -799,6 +807,9 @@ module cva6 import ariane_pkg::*; #(
     .perfc_evu_resp     (perfc_evu_resp_o),
     .pcmiles_evu_resp   (pcmiles_evu_resp_o)
   );
+ end else begin: gen_no_perf_counter
+   assign overflow_perf_csr = '0;
+   assign overflow_irq_perf_csr = 1'b0;
  end
 
  //Performance Counters Event Unit Packet Generation

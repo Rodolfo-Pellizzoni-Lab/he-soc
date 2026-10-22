@@ -400,6 +400,7 @@ package riscv;
     localparam int unsigned IRQ_VS_EXT   = 10;
     localparam int unsigned IRQ_M_EXT    = 11;
     localparam int unsigned IRQ_HS_EXT   = 12;
+    localparam int unsigned IRQ_LCOF     = 13;
 
     localparam logic [XLEN-1:0] MIP_SSIP  = 1 << IRQ_S_SOFT;
     localparam logic [XLEN-1:0] MIP_VSSIP = 1 << IRQ_VS_SOFT;
@@ -411,6 +412,7 @@ package riscv;
     localparam logic [XLEN-1:0] MIP_VSEIP = 1 << IRQ_VS_EXT;
     localparam logic [XLEN-1:0] MIP_MEIP  = 1 << IRQ_M_EXT;
     localparam logic [XLEN-1:0] MIP_SGEIP = 1 << IRQ_HS_EXT;
+    localparam logic [XLEN-1:0] MIP_LCOFIP = 1 << IRQ_LCOF;
 
     localparam logic [XLEN-1:0] S_SW_INTERRUPT     = (1 << (XLEN-1)) | XLEN'(IRQ_S_SOFT);
     localparam logic [XLEN-1:0] VS_SW_INTERRUPT    = (1 << (XLEN-1)) | XLEN'(IRQ_VS_SOFT);
@@ -422,6 +424,7 @@ package riscv;
     localparam logic [XLEN-1:0] VS_EXT_INTERRUPT   = (1 << (XLEN-1)) | XLEN'(IRQ_VS_EXT);
     localparam logic [XLEN-1:0] M_EXT_INTERRUPT    = (1 << (XLEN-1)) | XLEN'(IRQ_M_EXT);
     localparam logic [XLEN-1:0] HS_EXT_INTERRUPT   = (1 << (XLEN-1)) | XLEN'(IRQ_HS_EXT);
+    localparam logic [XLEN-1:0] LCOF_INTERRUPT     = (1 << (XLEN-1)) | XLEN'(IRQ_LCOF);
 
     // ----------------------
     // PseudoInstructions Codes
@@ -464,6 +467,7 @@ package riscv;
         CSR_SIP            = 12'h144,
         CSR_SINTTHRESH     = 12'h147,
         CSR_SATP           = 12'h180,
+        CSR_SCOUNTOVF       = 12'hDA0,
         CSR_SRMCFG         = 12'h181, // Ssqosid
         // Hypervisor-extended Supervisor Mode CSRs
         CSR_HSTATUS        = 12'h600,
