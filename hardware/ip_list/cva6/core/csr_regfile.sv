@@ -672,7 +672,11 @@ module csr_regfile import ariane_pkg::*; #(
                     else
                         csr_rdata = {10'b0, pmpaddr_q[index][riscv::PLEN-3:1], 1'b0};
                 end
-                default: read_access_exception = 1'b1;
+                default: begin
+                    // Unimplemented HPM selectors are WARL zero, like their counters.
+                    if (conv_csr_addr.address inside {[12'h329:12'h33f]}) csr_rdata = '0;
+                    else read_access_exception = 1'b1;
+                end
             endcase
         end
     end
@@ -1430,7 +1434,11 @@ module csr_regfile import ariane_pkg::*; #(
                         pmpaddr_d[index] = csr_wdata[riscv::PLEN-3:0];
                     end
                 end
-                default: update_access_exception = 1'b1;
+                default: begin
+                    // Writes to selectors for unimplemented counters are ignored.
+                    if (!(conv_csr_addr.address inside {[12'h329:12'h33f]}))
+                        update_access_exception = 1'b1;
+                end
             endcase
         end
 
@@ -1931,9 +1939,10 @@ module csr_regfile import ariane_pkg::*; #(
                             privilege_violation = ~mcounteren_q[csr_addr_i[4:0]];
                         end
                         riscv::PRIV_LVL_U: begin
-                            virtual_privilege_violation = v_q & mcounteren_q[csr_addr_i[4:0]] & ~hcounteren_q[csr_addr_i[4:0]];
+                            virtual_privilege_violation = v_q & mcounteren_q[csr_addr_i[4:0]] &
+                                (~hcounteren_q[csr_addr_i[4:0]] | ~scounteren_q[csr_addr_i[4:0]]);
                             if(v_q) begin
-                                privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] & ~scounteren_q[csr_addr_i[4:0]] & hcounteren_q[csr_addr_i[4:0]];
+                                privilege_violation = ~mcounteren_q[csr_addr_i[4:0]];
                             end else begin
                                 privilege_violation = ~mcounteren_q[csr_addr_i[4:0]] | ~scounteren_q[csr_addr_i[4:0]];
                             end

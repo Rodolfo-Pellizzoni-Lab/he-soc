@@ -9,6 +9,7 @@
 #define MCOUNTINHIBIT 0x320
 #define MCOUNTEREN    0x306
 #define SCOUNTEREN    0x106
+#define HCOUNTEREN    0x606
 #define MCYCLE        0xb00
 #define MINSTRET      0xb02
 #define MHPMCOUNTER3  0xb03
@@ -27,11 +28,11 @@
 #define HPMCOUNTER9   0xc09
 
 // Run "csrr t2, hpmcounter3; ecall" in S mode (mpp=1) or U mode
-// (mpp=0). The trap returns to M mode and reports its cause and value.
-static uint64_t try_hpmcounter3(int mpp, uint64_t *value) {
+// (mpp=0), with virtualization selected by mpv. Report the M-mode trap.
+static uint64_t try_hpmcounter3(int mpp, int mpv, uint64_t *value) {
   uint64_t cause, read_value, old_mtvec;
-  uint64_t mstatus_mpp = 3ULL << 11;
-  uint64_t new_mpp = (uint64_t)mpp << 11;
+  uint64_t mstatus_mpp = (3ULL << 11) | (1ULL << 39);
+  uint64_t new_mpp = ((uint64_t)mpp << 11) | ((uint64_t)mpv << 39);
   __asm__ volatile(
       "csrr %[omt], mtvec\n"
       "la   t0, 1f\n"
@@ -115,29 +116,45 @@ int main(void) {
   CSR_W(MCOUNTEREN, 1ULL << 9);
   CHECK(CSR_R(HPMCOUNTER9) == 0, "unimplemented hpmcounter9 is nonzero");
 
-  // Lower-mode access follows the counter-enable chain:
-  // S needs mcounteren; U needs both mcounteren and scounteren.
+  // Exercise all enable combinations in S, U, VS and VU mode.
   uint64_t old_mcounteren = CSR_R(MCOUNTEREN), old_scounteren = CSR_R(SCOUNTEREN);
+  uint64_t old_hcounteren = CSR_R(HCOUNTEREN);
   uint64_t old_medeleg, value, cause;
   __asm__ volatile("csrr %0, medeleg\n csrw medeleg, zero" : "=r"(old_medeleg));
   __asm__ volatile("csrw pmpaddr0, %0\n csrw pmpcfg0, %1" :: "r"(~0ULL), "r"(0x1FULL));
 
-  CSR_W(MCOUNTEREN, 1ULL << 3); CSR_W(SCOUNTEREN, 0);
-  cause = try_hpmcounter3(1, &value);
-  CHECK(cause == 9 && value == a, "S access: cause %d value %d, expected ecall and %d", (int)cause,
-        (int)value, (int)a);
-  cause = try_hpmcounter3(0, &value);
-  CHECK(cause == 2, "U access with scounteren clear: cause %d, expected illegal instruction", (int)cause);
+  for (int enables = 0; enables < 8; enables++) {
+    int m = enables & 1, h = (enables >> 1) & 1, s = (enables >> 2) & 1;
+    CSR_W(MCOUNTEREN, (uint64_t)m << 3);
+    CSR_W(HCOUNTEREN, (uint64_t)h << 3);
+    CSR_W(SCOUNTEREN, (uint64_t)s << 3);
+    for (int mode = 0; mode < 4; mode++) {
+      int mpv = mode >> 1, mpp = (mode & 1) ? 0 : 1;
+      uint64_t expected = mpp ? (mpv ? 10 : 9) : 8;
+      if (!m) expected = 2;
+      else if (mpv && (!h || (!mpp && !s))) expected = 22;
+      else if (!mpv && !mpp && !s) expected = 2;
+      cause = try_hpmcounter3(mpp, mpv, &value);
+      CHECK(cause == expected && ((expected == 2 || expected == 22) || value == a),
+            "mode %d enables M/H/S=%d/%d/%d: cause %d value %d, expected cause %d value %d",
+            mode, m, h, s, (int)cause, (int)value, (int)expected, (int)a);
+    }
+  }
 
-  CSR_W(SCOUNTEREN, 1ULL << 3);
-  cause = try_hpmcounter3(0, &value);
-  CHECK(cause == 8 && value == a, "U access: cause %d value %d, expected ecall and %d", (int)cause,
-        (int)value, (int)a);
-  CSR_W(MCOUNTEREN, 0);
-  cause = try_hpmcounter3(0, &value);
-  CHECK(cause == 2, "U access with mcounteren clear: cause %d, expected illegal instruction", (int)cause);
+  // Unimplemented event selectors are WARL zero, including ignored writes.
+#define CHECK_ZERO_EVENT(csr) do { CSR_W(csr, ~0ULL); \
+    CHECK(CSR_R(csr) == 0, "unimplemented selector " STR(csr) " is nonzero"); } while (0)
+  CHECK_ZERO_EVENT(0x329); CHECK_ZERO_EVENT(0x32a); CHECK_ZERO_EVENT(0x32b);
+  CHECK_ZERO_EVENT(0x32c); CHECK_ZERO_EVENT(0x32d); CHECK_ZERO_EVENT(0x32e);
+  CHECK_ZERO_EVENT(0x32f); CHECK_ZERO_EVENT(0x330); CHECK_ZERO_EVENT(0x331);
+  CHECK_ZERO_EVENT(0x332); CHECK_ZERO_EVENT(0x333); CHECK_ZERO_EVENT(0x334);
+  CHECK_ZERO_EVENT(0x335); CHECK_ZERO_EVENT(0x336); CHECK_ZERO_EVENT(0x337);
+  CHECK_ZERO_EVENT(0x338); CHECK_ZERO_EVENT(0x339); CHECK_ZERO_EVENT(0x33a);
+  CHECK_ZERO_EVENT(0x33b); CHECK_ZERO_EVENT(0x33c); CHECK_ZERO_EVENT(0x33d);
+  CHECK_ZERO_EVENT(0x33e); CHECK_ZERO_EVENT(0x33f);
 
   CSR_W(MCOUNTEREN, old_mcounteren); CSR_W(SCOUNTEREN, old_scounteren);
+  CSR_W(HCOUNTEREN, old_hcounteren);
   CSR_W(MCOUNTINHIBIT, 0);
   __asm__ volatile("csrw medeleg, %0" :: "r"(old_medeleg));
   return soc_test_end();
