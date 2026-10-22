@@ -4,6 +4,7 @@ set boardName  $::env(XILINX_BOARD)
 
 
 create_project xilinx_qspi . -part $partNumber
+set_property board_part $boardName [current_project]
 create_ip -name axi_quad_spi -vendor xilinx.com -library ip -version 3.2 -module_name xilinx_qspi
 set_property -dict [list CONFIG.C_SPI_MEMORY {2} CONFIG.C_USE_STARTUP {1} CONFIG.C_USE_STARTUP_INT {1} CONFIG.C_SPI_MODE {2} CONFIG.C_SCK_RATIO {2}] [get_ips xilinx_qspi]
 generate_target {instantiation_template} [get_files ./xilinx_qspi.srcs/sources_1/ip/xilinx_qspi/xilinx_qspi.xci]
