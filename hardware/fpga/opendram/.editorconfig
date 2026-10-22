@@ -1,0 +1,4 @@
+# The patches must keep the trailing whitespace of the AMD lines they carry: they are applied with
+# no fuzz, so a trimmed context line no longer matches the generated file.
+[*.patch]
+trim_trailing_whitespace = false
