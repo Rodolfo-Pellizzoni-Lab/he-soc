@@ -25,11 +25,11 @@ of that branch (its `issues/README.md`):
 
 ## How the build uses it
 
-With `OPENDRAM=1`, `run.tcl` does not read the prebuilt
-`alsaqr/tcl/ips/ddr/ip/ddr4_0.xci` and sources `opendram.tcl`, which:
+With `OPENDRAM=1`, `hardware/fpga/run.tcl` does not read the prebuilt
+`hardware/fpga/alsaqr/tcl/ips/ddr/ip/ddr4_0.xci` and sources `opendram.tcl`, which:
 
 1. creates the DDR4 MIG in the project, with the settings of
-   `alsaqr/tcl/ips/ddr/run.tcl` except `AUTO_AP_COL_A3`, which is off: OpenDRAM
+   `hardware/fpga/alsaqr/tcl/ips/ddr/run.tcl` except `AUTO_AP_COL_A3`, which is off: OpenDRAM
    keeps its own record of which banks are open, from the PRE and ACT commands
    it issues, and a read or write with auto-precharge would close a bank
    without it knowing;
@@ -45,9 +45,9 @@ With `OPENDRAM=1`, `run.tcl` does not read the prebuilt
    design sources and are not in `Bender.yml`.
 
 Everything else is the same as in the standard DDR4 build: the SoC and its
-clock (`alsaqr/tcl/ips/clk_mngr/run.tcl`: 50 MHz with 4 cores), the clock
+clock (`hardware/fpga/alsaqr/tcl/ips/clk_mngr/run.tcl`: 50 MHz with 4 cores), the clock
 crossing to the MIG, the pins and the constraints. The other IPs come from
-`make ips` as usual; the prebuilt DDR4 IP is not needed.
+`make ips` in `hardware/fpga` as usual; the prebuilt DDR4 IP is not needed.
 
 The patches are OpenDRAM's (its `patches/`, made for Vivado 2024.2) with two
 kinds of change: the `` `include `` lines name the files alone instead of a path

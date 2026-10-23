@@ -1,4 +1,4 @@
-# hardware/fpga/opendram/opendram.tcl -- sourced by hardware/fpga/run.tcl when OPENDRAM=1.
+# hardware/ip_list/opendram/opendram.tcl -- sourced by hardware/fpga/run.tcl when OPENDRAM=1.
 #
 # Puts OpenDRAM in place of the DDR4 MIG's own memory controller (README.md here).
 # Instead of reading the prebuilt alsaqr/tcl/ips/ddr/ip/ddr4_0.xci, it:
@@ -56,7 +56,7 @@ set od_f [open $od_ip_out/rtl/controller/ddr4_v2_2_mc_ctl.sv]
 set od_txt [read $od_f]
 close $od_f
 if {![regexp -line "^module ${od_mig_rev}_mc_ctl\\M" $od_txt]} {
-    error "OPENDRAM: the generated MIG is not $od_mig_rev; hardware/fpga/opendram/patches/ fits Vivado 2024.2's MIG only"
+    error "OPENDRAM: the generated MIG is not $od_mig_rev; hardware/ip_list/opendram/patches/ fits Vivado 2024.2's MIG only"
 }
 
 foreach {od_name od_sub} {ddr4_0_ddr4_mem_intfc ip_top ddr4_v2_2_mc_ctl controller} {

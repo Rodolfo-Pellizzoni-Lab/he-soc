@@ -9,8 +9,8 @@ read_ip ./alsaqr/tcl/ips/boot_rom/ip/xilinx_rom_bank_1024x64.xci
 read_ip ./alsaqr/tcl/ips/clk_mngr/ip/xilinx_clk_mngr.xci
 if {[info exists ::env(OPENDRAM)] && $::env(OPENDRAM)=="1"} {
     # OpenDRAM in place of the MIG's memory controller: the DDR4 IP is made here instead
-    # (hardware/fpga/opendram/README.md)
-    source ./opendram/opendram.tcl
+    # (hardware/ip_list/opendram/README.md)
+    source ../ip_list/opendram/opendram.tcl
 } else {
     read_ip ./alsaqr/tcl/ips/ddr/ip/ddr4_0.xci
 }
