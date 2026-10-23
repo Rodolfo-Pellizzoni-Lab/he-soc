@@ -5,6 +5,9 @@ controller inside the Xilinx DDR4 MIG. The MIG keeps its PHY, calibration and
 AXI front end. Setting `OPENDRAM=1` makes the FPGA build (`hardware/fpga/run.tcl`)
 use it; without it the build is unchanged and uses the MIG's own controller.
 
+Everything he-soc needs for it is in this directory, next to the other frozen
+IPs. OpenDRAM's own repository stays generic and knows nothing about he-soc.
+
 ## What is here
 
 | path | what |
@@ -12,6 +15,7 @@ use it; without it the build is unchanged and uses the MIG's own controller.
 | `rtl/` | OpenDRAM's RTL, the 18 files of `src/opendram/` of the OpenDRAM repository (github.com/Sarkar22/OpenDRAM), branch `vivado-2024.2-fixes`, commit 663ea1e, copied unchanged |
 | `patches/` | the changes OpenDRAM needs in two files the MIG generates: `ddr4_0_ddr4_mem_intfc.sv` (instantiates `opendram_mc` in place of the MIG's controller `ddr4_v2_2_24_mc`) and `ddr4_v2_2_mc_ctl.sv` (takes OpenDRAM's per-slot commands `sel_cmd0..3` instead of the MIG's arbiter) |
 | `opendram.tcl` | what `run.tcl` runs when `OPENDRAM=1` (below) |
+| `sim/` | a recipe that simulates OpenDRAM with he-soc's MIG configuration in OpenDRAM's own testbench, and its result |
 
 This is the unpipelined OpenDRAM (command scheduler V5) with both refresh fixes
 of that branch (its `issues/README.md`):
@@ -46,8 +50,33 @@ With `OPENDRAM=1`, `hardware/fpga/run.tcl` does not read the prebuilt
 
 Everything else is the same as in the standard DDR4 build: the SoC and its
 clock (`hardware/fpga/alsaqr/tcl/ips/clk_mngr/run.tcl`: 50 MHz with 4 cores), the clock
-crossing to the MIG, the pins and the constraints. The other IPs come from
-`make ips` in `hardware/fpga` as usual; the prebuilt DDR4 IP is not needed.
+crossing to the MIG and the pins. The other IPs come from `make ips` in
+`hardware/fpga` as usual; the prebuilt DDR4 IP is not needed.
+
+One constraint change on this branch applies to every build, with or without
+`OPENDRAM=1`: `hardware/fpga/alsaqr/tcl/constraints.xdc` no longer creates a
+clock of its own on `u_ddr4_0/c0_ddr4_ui_clk` (08706a3d). That clock was
+asynchronous to everything else, so the paths between the axi_cdc and the
+MIG's AXI port, which run on one clock, were never timed. Once timed, they
+turned out to fail by up to 1.09 ns in an OpenDRAM build.
+
+## Building
+
+Run `make ips` in `hardware/fpga` once (every IP except `ddr`), then build as
+usual with `OPENDRAM=1` in the environment. The bitstreams of this branch were
+built with alsaqr-mcp's `fpga_build`, with `"OPENDRAM": "1"` added to its
+config's `fpga.env`. That environment, for the record:
+
+```
+BOARD=vcu118 XILINX_PART=xcvu9p-flga2104-2L-e XILINX_BOARD=xilinx.com:vcu118:part0:2.0
+AXI_ID_DDR_WIDTH=9 MAIN_MEM=DDR4 SIMPLE_PAD=SPI-I2C-UART-SDIO USE_OT=0 ETH2FMC_NO_PAD=0
+NUM_CORES=4 XILINX_ETH=1 OPENDRAM=1
+bender: simple-padframe=1 exclude-cluster=1 exclude-rot=1 quad-core=1
+        exclude-ethernet=1 xilinx-ethernet=1 scripts-bender-fpga-ddr
+```
+
+`make run` in `hardware/fpga` runs the same `run.tcl`, but it was not used end
+to end for these builds.
 
 The patches are OpenDRAM's (its `patches/`, made for Vivado 2024.2) with two
 kinds of change: the `` `include `` lines name the files alone instead of a path
@@ -73,8 +102,8 @@ The MIG that Vivado 2024.2 generates with he-soc's settings has:
 
 - refresh: tRFC = 163 clocks and tREFI = 4875 clocks (7.8 us). With the pad of
   20, OpenDRAM's first command after a refresh comes 169 clocks after the REF,
-  6 clocks after tRFC (computed with the formula in `rtl/opendram_mc.sv`, not
-  simulated);
+  6 clocks after tRFC. The formula in `rtl/opendram_mc.sv` gives it, and the
+  simulation in `sim/` measured it on the DDR4 pins;
 - periodic reads: PER_RD_INTVL = 157. The MIG registers its compare, so the
   interval is 160 controller cycles (1.02 us), and a periodic read goes out at
   the end of each interval in which no read was issued.
@@ -90,14 +119,43 @@ against 15-18). That is correct, but not as fast as constants made for
 DDR4-1250 would be. The file's tRFC and tREFI are not used: refresh timing
 comes from the MIG.
 
-OpenDRAM is not simulated in he-soc: the xsim flow uses a behavioural memory
-in place of the MIG. OpenDRAM's own simulation and tests (in its repository)
-use its own MIG configuration above, not he-soc's.
+he-soc's xsim flow uses a behavioural memory in place of the MIG, so it does
+not simulate OpenDRAM. `sim/` runs OpenDRAM's own testbench with he-soc's MIG
+configuration: the MIG traffic generator passes with every read compared, and
+the JEDEC referee finds no violation (`sim/README.md`).
+
+## On the board (VCU118)
+
+Two builds of this branch were tested on the VCU118 (Vivado 2024.2, SoC at
+50 MHz, 4 cores, Ethernet):
+
+- e42d2051, before the constraint fix:
+  - he-soc's bare-metal board suite: 12 of 12;
+  - March C- for 4 hours: 84 passes over 123 MB, 0 errors;
+  - retention: 379 MB written, then 24 minutes with only refresh running,
+    0 bit flips;
+  - memtester under Linux 6.1, one instance per core: 4 x 64 MB fast tests
+    and 4 x 2 MB with all 18 tests, 0 failures;
+  - 40 SSH and raw TCP transfers, all checksums matching.
+- 08706a3d, published as `alsaqr-software/bitstreams/alsaqr_opendram_ethernet.bit`:
+  - setup timing met everywhere, including the paths between the axi_cdc and
+    the MIG (+0.221 ns MIG to CDC, +0.325 ns CDC to MIG);
+  - the only timing misses: 7 hold (reset removal) checks of -0.031 to
+    -0.053 ns inside `i_spim_gen[1]`, the unused SPI master 1, besides the
+    known adv_timer hold paths;
+  - Linux 6.1 netboots, and 20 of 20 16 MiB scp uploads pass.
+
+Linux 6.1.183 needs alsaqr-software's `linux/cva6-sdk/linux_patch_6.1`
+(0166940b). Without it, `__vdso_clock_gettime()` can crash any process. This
+shows up as SSH sessions dropping during long transfers, with the stock MIG
+as well as with OpenDRAM.
 
 ## Updating OpenDRAM
 
 Copy `src/opendram/` of the OpenDRAM repository over `rtl/`, and update the
-branch and commit in the table above. If OpenDRAM's patches changed, make the
+branch and commit in the table above. Then check that
+`sim/opendram_hesoc_mig.patch` still applies to that commit, and rerun the
+simulation in `sim/`. If OpenDRAM's patches changed, make the
 he-soc patches again: generate the MIG with the settings in `opendram.tcl`,
 apply OpenDRAM's patches with the two changes above, and save the result as
 unified diffs from the generated files.
