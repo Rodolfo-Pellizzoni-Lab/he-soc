@@ -38,7 +38,38 @@ bash issues/replay.sh /tmp/pins_hesoc.tcl /tmp/pins.log /tmp/od_sim_start
 grep '^PINS' /tmp/pins.log
 ```
 
-## Result (2026-10-22)
+## On the 16x branch (es/opendram-2024.2-16x)
+
+`../rtl/` here differs from OpenDRAM 663ea1e in two files. After `git apply`, copy them over OpenDRAM's, and give
+the run more time. The traffic generator needs about 395 us at 16x, and the default limit of 100 us ends it early:
+
+```
+cp <he-soc>/hardware/ip_list/opendram/rtl/command_scheduler/{time_constraints.vh,command_scheduler.sv} \
+   src/opendram/command_scheduler/
+make project
+touch /tmp/od_sim_start && make sim SIM_DURATION=1000us
+```
+
+Two pass/fail limits in OpenDRAM's `scripts/check_simlog.sh` are sized for 1x:
+- a periodic read waiting more than 1000 cycles;
+- fewer refreshes seen than required minus one.
+
+At 16x, read the periodic-read wait as a measurement, and judge refresh by the referee's JEDEC checks: the gap between
+REFs must stay under 9 x tREFI = 43,875 tCK, and tRFC and tRP(REF) must be clean. Refresh overhead and back-to-back
+refresh behaviour in xsim are not like the hardware's: one `#(TCQ)` delay in `opendram_mc.sv` acts as 100 ns there.
+
+Result at 16x (2026-10-23, the RTL of c2c758d8):
+
+- **`make sim`:** TEST PASSED. The traffic generator compared every read.
+- **JEDEC referee:** 0 violations in 266,198 checks over 61,725 controller cycles.
+- **Refresh:** 50 of 50 refreshes, with gaps of 4128-5696 tCK. The first command after each REF comes 169 clocks after
+  it.
+- **Periodic reads:** 90 requested and 90 accepted. The longest wait to be accepted was 540 cycles.
+- **Read returns:** none duplicated and none orphaned.
+- **Command spacing:** wherever the traffic reached them, OpenDRAM's command gaps equal the 16x minimums, for
+  example ACT -> CAS 19 -> 259 tCK.
+
+## Result at 1x (2026-10-22)
 
 - **`make sim`:** TEST PASSED. The traffic generator compared every read.
 - **JEDEC referee:** 0 violations in 62,429 rule checks over 12,194 controller cycles. It checks tRCD, tRP, tRAS,

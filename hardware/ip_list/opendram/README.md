@@ -12,7 +12,7 @@ IPs. OpenDRAM's own repository stays generic and knows nothing about he-soc.
 
 | path | what |
 |---|---|
-| `rtl/` | OpenDRAM's RTL, the 18 files of `src/opendram/` of the OpenDRAM repository (github.com/Sarkar22/OpenDRAM), branch `vivado-2024.2-fixes`, commit 663ea1e, copied unchanged |
+| `rtl/` | OpenDRAM's RTL, the 18 files of `src/opendram/` of the OpenDRAM repository (github.com/Sarkar22/OpenDRAM), branch `vivado-2024.2-fixes`, commit 663ea1e, copied unchanged except the 16x timing change of this branch (below): `command_scheduler/time_constraints.vh` and `command_scheduler/command_scheduler.sv` (c2c758d8) |
 | `patches/` | the changes OpenDRAM needs in two files the MIG generates: `ddr4_0_ddr4_mem_intfc.sv` (instantiates `opendram_mc` in place of the MIG's controller `ddr4_v2_2_24_mc`) and `ddr4_v2_2_mc_ctl.sv` (takes OpenDRAM's per-slot commands `sel_cmd0..3` instead of the MIG's arbiter) |
 | `opendram.tcl` | what `run.tcl` runs when `OPENDRAM=1` (below) |
 | `sim/` | a recipe that simulates OpenDRAM with he-soc's MIG configuration in OpenDRAM's own testbench, and its result |
@@ -26,6 +26,34 @@ of that branch (its `issues/README.md`):
 - fix B: `rtl/request_scheduler/request_scheduler_wrapper.sv` gives a periodic
   read to the lowest open bank even when that bank's queue is full, so that a
   periodic-read request can no longer be lost (which stopped refresh for good).
+
+## This branch: DRAM timing constraints 16x
+
+This branch, `es/opendram-2024.2-16x`, makes memory deliberately slower, so
+that interference and slowdown effects become visible. It is the change of
+682d6682 on `es/opendram-16x-timing` (Ali Abbasi's proposal), applied to this
+copy in c2c758d8:
+
+- all 27 numeric macros in `rtl/command_scheduler/time_constraints.vh` are
+  multiplied by 16 (tRCD 16 -> 256, tRC 61 -> 976, ...);
+- `TIME_WIDTH` in `rtl/command_scheduler/command_scheduler.sv` goes from 4 to
+  8 bits, or every scaled value would wrap. The largest stored value is 244
+  (tRC), so 16x is the largest factor that fits.
+
+Every constraint OpenDRAM enforces is 16 times longer than the ones described
+below: read to write 164-196 clocks, write to read 352-416. Refresh itself is
+not slowed, because the MIG times it. But the drain before each refresh and
+the restart after it are slower: in simulation, refresh held requests off for
+13.3% of the time, against 4.9% at 1x. Periodic reads wait longer to be
+accepted (up to 540 controller cycles in simulation, 9 at 1x). None is lost,
+and nothing in the MIG has a timeout for them.
+
+The old 16x factor was sized for a 20 MHz SoC. At 50 MHz it puts the DRAM's
+command ceiling about 2.5x below the SoC side's AXI bandwidth, a harder
+bottleneck than before. It is kept at 16x for comparability.
+
+`sim/README.md` has the 16x simulation. The board results further down are
+for the 1x builds of `es/opendram-2024.2`.
 
 ## How the build uses it
 
