@@ -154,7 +154,12 @@ int main(void) {
   uint32_t fast = stream(CHASE);
   printf("stream of %d lines: %u cycles at 32 cycles per beat, %u unlimited\r\n", N, slow, fast);
   CHECK(slow >= (uint32_t)(N - SLACK) * 256, "OCC16 512: %d lines streamed in %u cycles", N, slow);
-  CHECK(fast + (uint32_t)N * 128 <= slow, "the bandwidth limit did not slow the stream (%u vs %u)", slow, fast);
+  // The limit must take the stream at least half way from its unlimited time to the limit's own floor (N lines x
+  // 256 cycles). A fixed margin of N x 128 assumed the memory is far faster than the limit, and fails with a slow
+  // memory controller (OpenDRAM with 16x timing: 10600 unlimited, 18602 limited) where the limit works as intended.
+  uint32_t floor_cy = (uint32_t)N * 256;
+  uint32_t gain = fast < floor_cy ? (floor_cy - fast) / 2 : 0;
+  CHECK(slow >= fast + gain, "the bandwidth limit did not slow the stream (%u vs %u)", slow, fast);
 
   // 5. writes through the model: 64 dirty lines into a 16-way set, at least 48 are evicted and written back
   dm_set(0, 300, 0);
