@@ -125,3 +125,14 @@ on; the log then shows "configuring for phy/sgmii link mode" and "Link is Up - 1
 `tail`, `id`, and `apmuctl` drives the APMU through `/dev/mem` (`apmuctl example_bubble` passes). Measured from the
 PC: ping 4-8 ms, scp 1 MiB ~9 s either way (SSH ciphers at 50 MHz), `wget` 1 MiB 3.4 s, plain TCP with `nc` about
 the same, UDP datagrams both ways.
+
+SSH or scp sessions that died mid-transfer with "Connection reset by peer" and nothing in any log (4 of 30 16 MiB
+uploads, Emon Sarkar, 2026-10-23) were the kernel, not the link: 6.1.183's `cpu_relax()` in
+`arch/riscv/include/asm/vdso/processor.h` tests the Zihintpause static key, and that header is also compiled into the
+vDSO, where `riscv_isa_ext_keys` is an unresolved symbol whose GOT entry stays 0 (`CONFIG_JUMP_LABEL` is off in the
+bundle). `__vdso_clock_gettime()` calls it only on its seqlock retry, i.e. when another hart is updating the vDSO time
+data, so any process can segfault at address 0x4 now and then; dropbear catches the SIGSEGV and exits silently.
+alsaqr-software `linux/cva6-sdk/linux_patch_6.1/` (commit 0166940b) drops the static key, after which 20 of 20
+uploads pass on this bitstream and on the OpenDRAM one. Buildroot does not re-patch an already extracted kernel:
+`make -C linux/cva6-sdk/buildroot linux-dirclean`, remove `Image`, `vmlinux` and `fw_payload.*` from `install64/`,
+then run `linux/scripts/build.sh`.
