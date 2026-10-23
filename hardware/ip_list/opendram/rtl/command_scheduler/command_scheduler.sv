@@ -39,7 +39,15 @@ module command_scheduler#(
     
     parameter DATA_PTR_WIDTH    = 5,
     
-    parameter TIME_WIDTH        = 4,
+    // TIME_WIDTH is sized to the 16x-inflated time_constraints.vh.
+    // Worst case stored value = CEIL_DIV4(`tRC - 1 - 0) = CEIL_DIV4(975) = 244
+    // (constraints_calculator.sv:96/:104). 8 bits holds 255 -> 11 counts spare.
+    //   * Do NOT scale past 16x: 17x gives 259, which silently wraps to 3 and
+    //     RELAXES tRC from 244 cycles to 3 (truncation is a warning, not an error).
+    //   * Do NOT undefine OMIT_TFAW_COUNTER / OMIT_TRAS_COUNTER (cs_macros.svh:16,:33)
+    //     without widening this to >= 10: tras_counter.sv:103 and tfaw_rnk.sv:79-81
+    //     store RAW, un-CEIL_DIV4'd values (623 and 639 at 16x).
+    parameter TIME_WIDTH        = 8,
     
     parameter TCQ               = 0.1
     

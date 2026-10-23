@@ -12,37 +12,37 @@
 // specific language governing permissions and limitations under the License.
 //-----------------------------------------------------------------------------
 
-`define     BL          4
-`define     tCK         0.83 // not used anywhere
+`define     BL          64
+`define     tCK         13.28 // not used anywhere
 `define     tAL         0
-`define     tCL         18
-`define     tCWL        12
-`define     tRCD        16
-`define     tRP         16
-`define     tRAS        39
-`define     tRC         61
-`define     tRFC        313 // not used anywhere
-`define     tRFC2       312 // not used anywhere
-`define     tRFC4       192 // not used anywhere
-`define     tREFI       9363 // not used anywhere
-`define     tPRE        1
-`define     tWTR_L      10
-`define     tFAW        40
-`define     tWR         20
-`define     tCCD_S      4
-`define     tCCD_L      6
-`define     tCKE        6
-`define     tCKESR      7
-`define     tXS         432 // not used anywhere
-`define     tXP         8        
+`define     tCL         288
+`define     tCWL        192
+`define     tRCD        256
+`define     tRP         256
+`define     tRAS        624
+`define     tRC         976
+`define     tRFC        5008 // not used anywhere
+`define     tRFC2       4992 // not used anywhere
+`define     tRFC4       3072 // not used anywhere
+`define     tREFI       149808 // not used anywhere
+`define     tPRE        16
+`define     tWTR_L      160
+`define     tFAW        640
+`define     tWR         320
+`define     tCCD_S      64
+`define     tCCD_L      96
+`define     tCKE        96
+`define     tCKESR      112
+`define     tXS         6912 // not used anywhere
+`define     tXP         128        
 `define     tRTRS       0
 
 `ifdef OMIT_TFAW_COUNTER
     `define     tRRD_S      (`tFAW + 1) / 4
     `define     tRRD_L      (`tFAW + 1) / 4
 `else
-    `define     tRRD_S      7
-    `define     tRRD_L      8
+    `define     tRRD_S      112
+    `define     tRRD_L      128
 `endif // `ifdef OMIT_TFAW_COUNTER
 
 `ifdef USE_SEPARATE_INTER_INTRA_TABLES
@@ -50,9 +50,9 @@
     `ifdef OMIT_TRAS_COUNTER
         `define     tRTP        (`tRAS - (`tRCD - `tAL))
     `else
-        `define     tRTP        10
+        `define     tRTP        160
     `endif // `ifdef OMIT_TRAS_COUNTER
 `else
-    `define     tWTR_S      4
-    `define     tRTP        10
+    `define     tWTR_S      64
+    `define     tRTP        160
 `endif // `ifdef USE_SEPARATE_INTER_INTRA_TABLES
