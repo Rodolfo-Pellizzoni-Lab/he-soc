@@ -10,7 +10,7 @@
 module tb_plic_equiv;
   localparam int unsigned NS = 255, NT = 8, NT16 = 16, MP = 7, PW = 3, SW = 8;
   localparam logic [31:0] BASE = 32'h0C00_0000;
-  localparam int unsigned CYCLES = 40000;
+  parameter int unsigned CYCLES = 40000;   // run_xsim.sh: CYCLES=<n> SEED=<n>
 
   logic clk = 1'b0, rst_n = 1'b0;
   always #5 clk = ~clk;
