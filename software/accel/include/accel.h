@@ -17,7 +17,18 @@
 // field with every register access and tags its DMA (the template: with the hart that wrote START); the socket
 // can force a tag per slot instead. SoC user layout (ariane_axi_soc, QosUserLsb = 3): port [2:0], RCID [6:3],
 // MCID [10:7], AT [11]; the CCU writes the port bits.
-#define ACCEL_USER(port, rcid, mcid) ((uint32_t)(port) | ((uint32_t)(rcid) << 3) | ((uint32_t)(mcid) << 7))
+// width of the source-port field at the bottom of the user word: clog2(NumCVA6 + 1) (3 bits up to 7 cores,
+// 4 bits for 8 to 15); SOC_NUM_CORES (soc_test.h) or ACCEL_NUM_CORES selects it, default 4 cores
+#ifndef ACCEL_NUM_CORES
+#ifdef SOC_NUM_CORES
+#define ACCEL_NUM_CORES SOC_NUM_CORES
+#else
+#define ACCEL_NUM_CORES 4
+#endif
+#endif
+#define ACCEL_SRC_BITS ((ACCEL_NUM_CORES + 1) <= 2 ? 1 : (ACCEL_NUM_CORES + 1) <= 4 ? 2 : (ACCEL_NUM_CORES + 1) <= 8 ? 3 : \
+                        (ACCEL_NUM_CORES + 1) <= 16 ? 4 : 5)
+#define ACCEL_USER(port, rcid, mcid) ((uint32_t)(port) | ((uint32_t)(rcid) << ACCEL_SRC_BITS) | ((uint32_t)(mcid) << (ACCEL_SRC_BITS + 4)))
 #define ACCEL_TAG_REG        0x28                                          // template: user field latched at START (R)
 #define ACCEL_QOS_PROBE      (ACCEL_WINDOW + 0x3F0000UL)                   // returns the user field of the read itself
 #define ACCEL_TAG_POLICY(s)  (ACCEL_WINDOW + 0x3F0100UL + (unsigned long)(s) * 8)   // RW: bit 31 FORCE, [11:0] tag

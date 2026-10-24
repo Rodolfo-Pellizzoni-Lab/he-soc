@@ -34,14 +34,19 @@ Inside CVA6, every AR and AW leaving the core gets `user[QOS_TAG_WIDTH-1:0] = {A
 - Data covers loads, stores, AMOs, page-table walks, D$ refills and write-backs, and uncached accesses.
 - The W, R and B channels are not tagged.
 
-On the SoC buses (`ariane_axi_soc` package), the user field is 12 bits:
+On the SoC buses (`ariane_axi_soc` package), the user field is `QosUserLsb + 9` bits wide, where `QosUserLsb =
+$clog2(NumCVA6 + 1)` is the width of the CCU source-port field: 3 bits (a 12-bit user word) up to 7 cores, 4 bits
+(13-bit) for 8 to 15 cores. With the four cores of the default build:
 
 ```
 user[2:0]   source port of the CCU (written by the CCU): 0-3 the cores, 4 the accelerator socket's DMA port
-user[3+:4]  RCID
-user[7+:4]  MCID
-user[11]    AT
+user[3+:4]  RCID                     (user[QosUserLsb +: 4] in general)
+user[7+:4]  MCID                     (user[QosUserLsb+4 +: 4])
+user[11]    AT                       (user[QosUserLsb+8])
 ```
+
+Software that decodes the word (the QoS probe in `soc_tests/t_qos`, `soc_test.h`'s `SOC_SRC_BITS`) derives the
+port width from `SOC_NUM_CORES`; with `NUM_CVA6=8` the RCID starts at bit 4.
 
 (`QosUserLsb` is `$clog2(NumCVA6 + 1)`: the CCU writes its port index into the low bits, and the socket's DMA is its
 fifth port, see `hardware/accel/README.md`.)

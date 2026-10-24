@@ -69,6 +69,10 @@ static inline int soc_test_end(void) {
 #ifndef SOC_NUM_CORES
 #define SOC_NUM_CORES 4
 #endif
+// width of the CCU source-port field at the bottom of the SoC AXI user word: ariane_axi_soc::QosUserLsb =
+// clog2(SOC_NUM_CORES + 1), the cores plus the socket's DMA port (3 bits up to 7 cores, 4 bits up to 15)
+#define SOC_SRC_BITS ((SOC_NUM_CORES + 1) <= 2 ? 1 : (SOC_NUM_CORES + 1) <= 4 ? 2 : (SOC_NUM_CORES + 1) <= 8 ? 3 : \
+                      (SOC_NUM_CORES + 1) <= 16 ? 4 : 5)
 #define SOC_PLIC_BASE 0x0C000000UL
 static inline void soc_wake_all(void) {
   for (int h = 2; h < SOC_NUM_CORES; h++) {
