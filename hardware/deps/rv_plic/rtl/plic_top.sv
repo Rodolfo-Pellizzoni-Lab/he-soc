@@ -59,7 +59,7 @@ module plic_top #(
     rv_plic_target #(
       .N_SOURCE  ( N_SOURCE ),
       .MAX_PRIO  ( MAX_PRIO ),
-      .ALGORITHM ( "MATRIX" )
+      .ALGORITHM ( "TREE" )
     ) i_target (
       .clk_i,
       .rst_ni,
@@ -78,12 +78,14 @@ module plic_top #(
   logic [N_SOURCE:0][PRIOW-1:0] prio_i, prio_o;
   logic [N_SOURCE:0] prio_we_o;
 
-  // TODO(zarubaf): This needs more graceful handling
-  // it will break if the number of sources is larger than 32
   logic [N_TARGET-1:0][N_SOURCE:0] ie_i, ie_o;
   logic [N_TARGET-1:0] ie_we_o;
 
-  plic_regs i_plic_regs (
+  plic_regs #(
+    .N_SOURCE ( N_SOURCE ),
+    .N_TARGET ( N_TARGET ),
+    .MAX_PRIO ( MAX_PRIO )
+  ) i_plic_regs (
     .prio_i(prio_i),
     .prio_o(prio_o),
     .prio_we_o(prio_we_o),
