@@ -52,8 +52,25 @@ The old 16x factor was sized for a 20 MHz SoC. At 50 MHz it puts the DRAM's
 command ceiling about 2.5x below the SoC side's AXI bandwidth, a harder
 bottleneck than before. It is kept at 16x for comparability.
 
-`sim/README.md` has the 16x simulation. The board results further down are
-for the 1x builds of `es/opendram-2024.2`.
+`sim/README.md` has the 16x simulation. On the VCU118, the 16x build of
+c2c758d8 (published as `alsaqr-software/bitstreams/alsaqr_opendram_ethernet_16x.bit`)
+showed the following:
+
+- timing: met, with the gate clean (MIG clock +0.261 ns; the axi_cdc to MIG
+  paths +1.457 ns and +2.078 ns setup);
+- he-soc's bare-metal suite: 12 of 12, with the bandwidth check of
+  `t_dram` made relative to the memory's speed (af530f67);
+- the memory as the cores see it: a dependent cache-missing read takes 163
+  cycles at 50 MHz against 87 at 1x, and a 64-line stream 10703 cycles
+  against 5648. CAS latency, the PHY and the SoC's own path are not scaled, so
+  the total is about 1.9x, not 16x;
+- March C- for 4 hours: 46 passes over 123 MB, 0 errors (309 s per pass,
+  against 170 s at 1x);
+- retention: 379 MB written, 24 minutes with only refresh running, 0 bit
+  flips;
+- Linux 6.1 with alsaqr-software's vDSO fix: 20 of 20 16 MiB scp uploads.
+
+The board results further down are for the 1x builds of `es/opendram-2024.2`.
 
 ## How the build uses it
 
