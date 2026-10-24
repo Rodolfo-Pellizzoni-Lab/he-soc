@@ -15,7 +15,8 @@ package cv64a6_imafdch_wb_sv39_alsaqr_pkg;
   import cva6_config_pkg::*;
 
   localparam  CVA6AXIIdWidth = 4; // Do not change, CVA6 from planV only supports IdWidth = 4
-  localparam  CCUAXIIdWidth = CVA6AXIIdWidth + $clog2(ariane_soc::NumCVA6) + $clog2(ariane_soc::NumCVA6+1) + 1;
+  // the CCU has NumCVA6 + 1 ports (the accelerator socket's DMA port): same formula as host/cva6_synth_wrap.sv
+  localparam  CCUAXIIdWidth = CVA6AXIIdWidth + $clog2(ariane_soc::NumCVA6+1) + $clog2(ariane_soc::NumCVA6+2);
 
   localparam config_pkg::cva6_cfg_t ArianeSocCfg = '{
       NrCommitPorts: unsigned'(CVA6ConfigNrCommitPorts),
