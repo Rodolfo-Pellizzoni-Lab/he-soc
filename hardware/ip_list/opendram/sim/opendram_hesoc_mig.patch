@@ -1,0 +1,87 @@
+diff --git a/gen_opendram.tcl b/gen_opendram.tcl
+index 77f05f5..37f40fe 100644
+--- a/gen_opendram.tcl
++++ b/gen_opendram.tcl
+@@ -33,23 +33,28 @@ create_project mig_ip -force ./gen/mig_ip/ -part xcvu9p-flga2104-2L-e
+ # set board part
+ set_property board_part xilinx.com:vcu118:part0:2.4 [current_project]
+ 
+-# instantiate MIG IP
++# instantiate MIG IP -- he-soc's DDR4 configuration (he-soc hardware/fpga/opendram/opendram.tcl):
++# one x16 MT40A256M16GE-083E at DDR4-1250 (tCK 1600 ps), CL 9 / CWL 9, 64-bit AXI, ID 9,
++# auto-precharge off. Not he-soc's System_Clock No_Buffer: the simulation keeps the
++# differential input the testbench drives (only the input buffer differs), so the
++# standalone patches/ still fit. No DDR4 board interface: the VCU118's is 64 bits wide.
+ create_ip -name ddr4 -vendor xilinx.com -library ip -version 2.2 -module_name ddr4_0
+ set_property -dict [list \
+     CONFIG.RESET_BOARD_INTERFACE {reset} \
+     CONFIG.C0_CLOCK_BOARD_INTERFACE {default_250mhz_clk1} \
+-    CONFIG.C0_DDR4_BOARD_INTERFACE {ddr4_sdram_c1_083} \
+-    CONFIG.C0.DDR4_TimePeriod {833} \
++    CONFIG.C0.DDR4_TimePeriod {1600} \
+     CONFIG.C0.DDR4_InputClockPeriod {4000} \
+-    CONFIG.C0.DDR4_CLKOUT0_DIVIDE {5} \
++    CONFIG.C0.DDR4_Specify_MandD {false} \
++    CONFIG.C0.DDR4_CLKOUT0_DIVIDE {8} \
+     CONFIG.C0.DDR4_MemoryPart {MT40A256M16GE-083E} \
+-    CONFIG.C0.DDR4_DataWidth {64} \
++    CONFIG.C0.DDR4_DataWidth {16} \
+     CONFIG.C0.DDR4_AxiSelection {true} \
+-    CONFIG.C0.DDR4_CasWriteLatency {12} \
+-    CONFIG.C0.DDR4_AxiDataWidth {512} \
+-    CONFIG.C0.DDR4_AxiAddressWidth {31} \
+-    CONFIG.C0.DDR4_AxiIDWidth {16} \
+-    CONFIG.ADDN_UI_CLKOUT1_FREQ_HZ {100} \
++    CONFIG.C0.DDR4_AUTO_AP_COL_A3 {false} \
++    CONFIG.C0.DDR4_CasLatency {9} \
++    CONFIG.C0.DDR4_CasWriteLatency {9} \
++    CONFIG.C0.DDR4_AxiDataWidth {64} \
++    CONFIG.C0.DDR4_AxiAddressWidth {29} \
++    CONFIG.C0.DDR4_AxiIDWidth {9} \
+     CONFIG.Debug_Signal {Disable} \
+     CONFIG.C0.BANK_GROUP_WIDTH {1}] \
+     [get_ips ddr4_0]
+diff --git a/src/axi_vip/jedec_checker_inc.svh b/src/axi_vip/jedec_checker_inc.svh
+index beeef6e..a382e94 100644
+--- a/src/axi_vip/jedec_checker_inc.svh
++++ b/src/axi_vip/jedec_checker_inc.svh
+@@ -892,6 +892,28 @@ bind opendram_mc jedec_ddr4_checker #(
+     .BA_USED        (2),           // opendram_mc BNK_WIDTH
+     .DEV_ROW_BITS   (15),          // 4Gb x16 device: A14:A0
+     .DEV_COL_BITS   (10),
++    // he-soc's MIG (branch vivado-2024.2-fixes-hesoc-mig): tCK 1600 ps, CL 9, CWL 9 (MR0/MR2).
++    // Device minimums from the Micron model's DDR4-1333 timing set, which it uses for
++    // tCK 1500-1874 ps (gen/ddr4_0_ex/imports/timing_tasks.sv), rounded up as above;
++    // in brackets where the MIG's own value differs.
++    .TCK_PS         (1600),
++    .TCL            (9),
++    .TCWL           (9),
++    .TRCD           (10),          // model 16000ps/1600 -> 10 (MIG 9)
++    .TRP            (10),          // model 15000ps/1600 -> 10 (MIG 9)
++    .TRAS           (25),          // model 39000ps/1600 -> 25 (MIG 20)
++    .TRC            (35),          // model 55000ps/1600 -> 35
++    .TRRD_S         (4),           // model max(4, 6000ps) -> 4 ; MIG 4
++    .TRRD_L         (5),           // model max(4, 7500ps) -> 5 (MIG 4)
++    .TFAW           (22),          // model 35000ps/1600 -> 22 (MIG 28)
++    .TCCD_S         (4),
++    .TCCD_L         (5),           // model itCCDc_L(TS_1500) = 5 (MR6 programs 4)
++    .TRTP           (5),           // model max(4, 7500ps) -> 5 ; MIG 5
++    .TWR            (10),          // model 15000ps/1600 -> 10 ; MIG 10
++    .TWTR_S         (2),           // model itWTRc_S(TS_1500) = 2 ; MIG 2
++    .TWTR_L         (5),           // model itWTRc_L(TS_1500) = 5 ; MIG 5
++    .TRFC           (163),         // 4Gb 1x refresh 260ns ; MIG 163
++    .TREFI          (4875),        // 7.8us ; MIG 4875
+     .AUX_ROW_XCHECK (0)            // 1 = enable the non-pin-pure row check
+ ) u_jedec_chk (
+     .clk         (clk),
+--- a/issues/pins_decode.tcl
++++ b/issues/pins_decode.tcl
+@@ -9,7 +9,7 @@
+ # is ACT; otherwise {A16,A15,A14} = {RAS_n,CAS_n,WE_n}: 001 REF, 010 PRE (A10 = 0)
+ # or PREA (A10 = 1), 100 WR, 101 RD, 110 ZQ, 000 MRS, 111 NOP.
+ set TB /sim_tb_top
+-set PINS_TCK 833.3333
++set PINS_TCK 1600.0
+ set PINS_REFT -1
+ set PINS_FIRST ""
+ set PINS_PRE ""
