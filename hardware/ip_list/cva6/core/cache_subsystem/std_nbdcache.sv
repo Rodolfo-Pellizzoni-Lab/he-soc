@@ -113,6 +113,8 @@ import std_cache_pkg::*;
 
     readshared_done_t readshared_done;
     logic [3:0]       updating_cache;
+    logic [2:0]       store_hold;
+    logic [2:0][63:0] store_hold_addr;
 
     logic [DCACHE_SET_ASSOC-1:0]         miss_invalidate_req;
     logic [DCACHE_INDEX_WIDTH-1:0]       miss_invalidate_addr;
@@ -155,6 +157,8 @@ import std_cache_pkg::*;
         .amo_addr_i           ( serving_amo_addr      ),
         .miss_invalidate_req_i   (miss_invalidate_req  ),
         .miss_invalidate_addr_i  (miss_invalidate_addr ),
+        .store_hold_i         ( store_hold            ),
+        .store_hold_addr_i    ( store_hold_addr       ),
         .*
     );
 
@@ -203,6 +207,8 @@ import std_cache_pkg::*;
                 .snoop_invalidate_addr_i ( invalidate_addr       ),
                 .readshared_done_i     ( readshared_done         ),
                 .updating_cache_o      ( updating_cache    [i]   ),
+                .store_hold_o          ( store_hold        [i-1] ),
+                .store_hold_addr_o     ( store_hold_addr   [i-1] ),
                 .*
             );
         end

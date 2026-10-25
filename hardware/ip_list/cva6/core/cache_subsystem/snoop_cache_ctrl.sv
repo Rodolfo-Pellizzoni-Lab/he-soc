@@ -11,7 +11,8 @@
 // Description: cache controller, driven by incoming snoop requests
 
 module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
-    parameter ariane_cfg_t ArianeCfg = ArianeDefaultConfig // contains cacheable regions
+    parameter ariane_cfg_t ArianeCfg = ArianeDefaultConfig, // contains cacheable regions
+    parameter int unsigned NR_CACHE_CTRL = 3                // cache controllers whose pending stores hold snoops
 ) (
   input  logic                               clk_i, // Clock
   input  logic                               rst_ni, // Asynchronous reset active low
@@ -46,7 +47,10 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
   input  logic      [DCACHE_INDEX_WIDTH-1:0] miss_invalidate_addr_i,
   // to/from cache_ctrl
   input  logic                               updating_cache_i,
-  output readshared_done_t                   readshared_done_o
+  output readshared_done_t                   readshared_done_o,
+  // stores that own their line and have not written it yet (one per cache controller): snoops to that line wait
+  input  logic        [NR_CACHE_CTRL-1:0]    store_hold_i,
+  input  logic        [NR_CACHE_CTRL-1:0][63:0] store_hold_addr_i
 );
 
   // pragma translate_off
@@ -102,6 +106,18 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
   logic shared;
 
   assign shared = |(shared_way_i & hit_way_i);
+
+  // A cache controller has a store that owns this line and has not written it yet: do not accept the snoop before
+  // the write (the controller needs only the local SRAM port to finish, so nothing waits on the CCU meanwhile).
+  logic store_hold_hit;
+  always_comb begin : store_hold_check
+    store_hold_hit = 1'b0;
+    for (int unsigned i = 0; i < NR_CACHE_CTRL; i++) begin
+      if (store_hold_i[i] &&
+          store_hold_addr_i[i][DCACHE_TAG_WIDTH+DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET] == snoop_port_i.ac.addr[DCACHE_TAG_WIDTH+DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET])
+        store_hold_hit = 1'b1;
+    end
+  end
 
   snoop_pkg::crresp_t cr_resp_d, cr_resp_q;
 
@@ -159,7 +175,8 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
         cacheline_word_sel_d = 1'b0;
 
         // we receive a snooping request
-        if (snoop_port_i.ac_valid == 1'b1 && flushing_i == 1'b0 && !(amo_valid_i == 1'b1 && amo_addr_i[63:DCACHE_BYTE_OFFSET] == snoop_port_i.ac.addr[63:DCACHE_BYTE_OFFSET])) begin
+        if (snoop_port_i.ac_valid == 1'b1 && flushing_i == 1'b0 && !(amo_valid_i == 1'b1 && amo_addr_i[63:DCACHE_BYTE_OFFSET] == snoop_port_i.ac.addr[63:DCACHE_BYTE_OFFSET]) &&
+            !store_hold_hit) begin
           start_req_o = 1'b1;
           snoop_port_o.ac_ready = 1'b1;
           // save the request details

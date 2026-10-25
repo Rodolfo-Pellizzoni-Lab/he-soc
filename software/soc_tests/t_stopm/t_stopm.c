@@ -8,16 +8,25 @@
 // thread_ack as it sees them and, per core, the last state acknowledged, the value its decrement returned, how
 // often it advanced the state and a heartbeat (loop iterations, in SRAM) that shows which core stopped moving.
 // Only core 0 prints. Build with -DSOC_NUM_CORES=<n>; -DNO_SIDE_EFFECTS drops the per-iteration side effects,
-// -DROUNDS=<n> -DVERBOSE -DSPIN_LIMIT=10000u suit a simulation run. hardware/docs/cores.md has the findings.
+// -DVERBOSE prints every round; ROUNDS and SPIN_LIMIT default to board values with fpga=1 and to simulation
+// values otherwise. hardware/docs/cores.md and hardware/docs/coherence.md have the findings.
 #include "soc_test.h"
 
 #define NC         SOC_NUM_CORES
 #ifndef ROUNDS
+#ifdef FPGA_EMULATION
 #define ROUNDS     200
+#else
+#define ROUNDS     10                     // simulation: a round is about 0.3 ms of simulated time
+#endif
 #endif
 #define ST_EXIT    4                      // PREPARE 1, DISABLE_IRQ 2, RUN 3, EXIT 4 as in the kernel
 #ifndef SPIN_LIMIT
-#define SPIN_LIMIT 1000000u                                             // iterations without a state change before a stall is counted (-DSPIN_LIMIT=10000u for xsim)
+#ifdef FPGA_EMULATION
+#define SPIN_LIMIT 1000000u               // iterations without a state change before a stall is counted (about 2 s)
+#else
+#define SPIN_LIMIT 10000u                 // simulation: about 1 ms of simulated time, several rounds' worth
+#endif
 #endif
 
 struct msdata { volatile uint32_t state; volatile uint32_t thread_ack; uint64_t pad; };

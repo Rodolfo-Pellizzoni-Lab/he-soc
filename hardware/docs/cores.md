@@ -122,11 +122,11 @@ readers run their loop with the old value each time and the writer sits in the f
 readers the burst of refills is over before the writer retries and the store lands; with five to seven a
 ReadShared is always in flight at the writer when it retries. That is the threshold Linux shows: `multi_cpu_stop`
 is exactly one writer and N-1 CPUs spinning on one line, with no back-off in `cpu_relax`. The CCU's serialisation
-makes the refills strictly back to back, but the retry policy is in the L1. Fix directions: do not count a
-ReadShared that was served *before* the CleanUnique response as a collision (only one between the response and the
-store write is a hazard), and have the snoop controller hold its `ac_ready` for the line while that store is
-pending after its CleanUnique, so the store is written before the next snoop is answered; a spin loop that backs
-off (a short delay in the wait) also breaks the cycle in software. Four-core Linux has simply not hit it.
+makes the refills strictly back to back, but the retry policy is in the L1. Four-core Linux has simply not hit
+it. The fix (2026-10-25, `cache_ctrl.sv` / `snoop_cache_ctrl.sv`): a ReadShared answered *before* the CleanUnique
+response no longer counts as a collision, and the snoop controller holds snoops to a line whose store owns it
+until the store is written. hardware/docs/coherence.md has the protocol walk-through, the cycle trace, the
+safety argument and the verification.
 
 ## Verified in xsim
 
