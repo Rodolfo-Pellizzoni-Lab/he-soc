@@ -132,9 +132,31 @@ Measured with t_bw on the four-core library (cycles per 16-byte line; the model'
 | wb (not in the state machine) | 35 / 35 | | |
 
 With four harts each hart keeps its single-hart rate (46 to 47 cycles per line each), so the aggregate is 3.2
-times the old one and the snoop round plus decode, 9 cycles, is the new serial part. On the eight-core library
-the phase timestamps of the (timed-out) first run give about 8 cycles per line with eight harts loaded against
-35 before. t_stopm, the stop_machine port that found the eight-core livelock, passes on the final version with
+times the old one and the snoop round plus decode, 9 cycles, is the new serial part. The eight-core library
+(t_bw built with SOC_NUM_CORES=8, 76 checks):
+
+| 8-core SoC, cycles per line | 1 hart | 2 harts | 4 harts | 8 harts |
+|---|---|---|---|---|
+| rd, before → after | 50 → 47 | 36 → 23 | 36 → 12 | 35 → 8.5 (model 9.0) |
+| wr, before → after | 46 → 42 | 36 → 21 | 35 → 11 | 34 → 8.5 |
+| sh, before → after | 51 → 47 | 26 → 25 | 18 → 17 | – → 14 |
+
+Eight harts share one 16-byte line every 8.5 cycles instead of 35: at 50 MHz the coherence unit's ceiling for
+LLC hits rises from 23 MB/s to 94 MB/s, and the eighth loaded hart no longer takes from the others.
+
+**Latency under load** is the other face of the same change. t_part's all-shared phase runs a pointer-chasing
+app, a streaming core and the accelerator's DMA at once (4 cores, cycles per app hop / per accelerator word,
+alone → shared):
+
+| | old CCU | decoupled CCU |
+|---|---|---|
+| app, LLC-hit pointer chase | 45 → 159 (3.5×); 225 with the DRAM model (5×) | 45 → 49.5 (1.1×); 50.4 (1.12×) |
+| accelerator, DMA words | 107 → 360 (3.4×); 493 | 107 → 126 (1.17×); 137 |
+
+With the serial unit every hit of the app queued behind a whole transaction of each neighbour; now it queues
+behind their 9-cycle serial parts only. t_part's two checks that asserted the old penalty (at least 30 % slower
+when shared, and lines lost to sharing) were rewritten for the new behaviour (at most 30 %; capacity evidence
+from the Q, B1 and R phases). t_stopm, the stop_machine port that found the eight-core livelock, passes on the final version with
 4 cores (20 rounds) and with 8 cores and side effects (10 rounds).
 
 ## Verification
@@ -144,8 +166,9 @@ the phase timestamps of the (timed-out) first run give about 8 cycles per line w
 | 4 cores | soc regression: t_mem, t_atomics, t_smp, t_irq, t_socket, t_qos, t_cbqri, t_dram, t_dma, t_iotag, t_eth, hello_culsans, quad_boot | 13 of 13 pass (2026-10-25, final version) |
 | 4 cores | t_part alone (exceeds the regression's 2 h limit) | running on rpsrvr1 |
 | 4 cores | t_stopm (stop_machine port, 20 rounds), t_bw (36 checks) | pass |
-| 8 cores | t_stopm with side effects (10 rounds), t_bw | pass; t_bw timed out under load after all phases, exact rerun on rpsrvr1 |
-| 8 cores | soc regression, t_part | running on rpsrvr1 |
+| 8 cores | t_stopm with side effects (10 rounds), t_bw (76 checks) | pass (t_bw on rpsrvr1) |
+| 8 cores | soc regression | t_atomics, t_smp, t_irq, t_socket, t_cbqri pass; t_mem, t_dram and the second half paused for the bitstream builds |
+| 8 cores | t_part alone | not yet run on the final version |
 | VCU118 | bitstream `cores8_dec3` (NUM_CVA6=8) | building |
 
 The first version of the change failed t_atomics, t_smp, t_qos (hang) and t_eth (one frame); the three fixes
