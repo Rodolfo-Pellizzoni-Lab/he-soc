@@ -64,11 +64,11 @@ DRAM and the DDR4 controller provide; the simulation reports a different ID at t
 | 0x10C | OCC16 | [15:0] |
 | 0x110 | RD_COUNT | read bursts accepted while enabled |
 | 0x114 | WR_COUNT | write bursts |
-| 0x118 | RD_LATE | reads whose first beat came back after its modelled time |
+| 0x118 | RD_LATE | reads whose first beat came back after its modelled time. RD_LATE, LATE_CYCLES and HOLD_CYCLES only judge reads accepted while enabled and since the last clear, so RD_LATE <= RD_COUNT |
 | 0x11C | LATE_CYCLES | sum of that lateness |
 | 0x120 | HOLD_CYCLES | sum of the cycles first read beats were held back |
 | 0x124 | ID | 0xD2A3_0001: the model is present in this bitstream |
-| 0x128 | RD_BEATS | read beats delivered (8 bytes each) |
+| 0x128 | RD_BEATS | read beats (8 bytes each) arriving from the memory while enabled, including beats of reads accepted while disabled, which RD_COUNT does not count |
 
 The generated SoC control block decodes only the low 8 address bits; apb_soc_control routes offsets 0x100-0x1FF
 to the model's registers and everything else to the generated block.
@@ -103,7 +103,8 @@ Under Linux (Buildroot, 433 MB of RAM) the model is configured with devmem from 
 values (`LAT_RD = LAT_WR = 80`, `OCC16 = 20`) writing 32 MB into tmpfs took 26.7 s of host time against 12.4 s
 with the model off, and reading it back 1.2 s against 0.7 s. The model saw 5.7 M reads of 2.04 beats on average
 (the kernel's memory lies outside the LLC window, so its traffic is 16-byte L1 fills) and 4.4 M write bursts;
-1 read was late, by 12 cycles.
+1 read was late, by 12 cycles. (That run predates the counter fix of 2026-10-25: a read in flight when the model was
+enabled was then judged against its own accept time, and the one late read matches that, by the DDR4's own 12 cycles.)
 
 ## Latency sweep
 
@@ -126,6 +127,12 @@ and with the 1 GHz settings; `software/soc_tests/plot_sweep.py` draws its consol
 dependent DRAM read with the model off, which is the number to calibrate against, then checks the fixed latency,
 the late detection, the bandwidth limit on a dependent chase and on a stream, the write path and the pass-through
 once disabled. On a bitstream without the model it only prints the real latency.
+
+Two counters are never read at the same moment: while an uncached load of one is in flight the core fetches ahead,
+and code that has never run misses the LLC, a DRAM read through the model between the two loads. `t_dram` reads the
+pairs it compares (RD_COUNT with RD_LATE, and with RD_BEATS) until both repeat; before that, step 3 failed with "63 of
+62 reads counted late" in simulation. The register writes that configure a step are posted and slow (APB), so the
+first one or two hops after them run with the model still off and are not counted; the checks allow for it.
 
 ## Next steps
 

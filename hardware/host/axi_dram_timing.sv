@@ -65,7 +65,7 @@ module axi_dram_timing #(
   localparam int unsigned RbPW = $clog2(RBufDepth);
   localparam int unsigned BbPW = $clog2(BBufDepth);
 
-  typedef struct packed { logic first; id_t id; t16_t next16; } rd_entry_t;   // next16: release time of the next beat
+  typedef struct packed { logic first; logic timed; id_t id; t16_t next16; } rd_entry_t;   // next16: release time of the next beat; timed: accepted while enabled
   typedef struct packed { id_t id; t16_t rel16; }               wr_entry_t;
   typedef struct packed { r_chan_t beat; t16_t rel16; }         rbuf_entry_t;
   typedef struct packed { b_chan_t resp; t16_t rel16; }         bbuf_entry_t;
@@ -132,7 +132,10 @@ module axi_dram_timing #(
     wr_head_d = wr_head_q; wr_tail_d = wr_tail_q; wr_cnt_d = wr_cnt_q;
     rb_rd_d = rb_rd_q; rb_wr_d = rb_wr_q; rb_cnt_d = rb_cnt_q;
     bb_rd_d = bb_rd_q; bb_wr_d = bb_wr_q; bb_cnt_d = bb_cnt_q;
-    cnt_d = cnt_q;
+    cnt_d = cfg_i.clear ? '0 : cnt_q;   // a clear zeroes the counts and keeps this cycle's accepts and beats
+    // reads queued at a clear belong to the old interval: their first beats are not judged in the new one, so
+    // RD_LATE and HOLD_CYCLES only cover reads RD_COUNT has counted since the clear
+    if (cfg_i.clear) for (int i = 0; i < RdDepth; i++) rdq_d[i].timed = 1'b0;
     lat_rd16 = t16_t'(cfg_i.lat_rd) << 4;
     lat_wr16 = t16_t'(cfg_i.lat_wr) << 4;
     occ_ar   = (t16_t'(slv_req_i.ar.len) + 48'd1) * t16_t'(cfg_i.occ16);
@@ -144,11 +147,11 @@ module axi_dram_timing #(
       if (en) begin
         dl = (t16_q + lat_rd16 > bus_free_d) ? t16_q + lat_rd16 : bus_free_d;
         bus_free_d = dl + occ_ar;
-        cnt_d.rd_count = cnt_q.rd_count + 1'b1;
+        cnt_d.rd_count = cnt_d.rd_count + 1'b1;
       end else begin
         dl = t16_q;
       end
-      rdq_d[rd_tail_q] = '{first: 1'b1, id: slv_req_i.ar.id, next16: dl};
+      rdq_d[rd_tail_q] = '{first: 1'b1, timed: en, id: slv_req_i.ar.id, next16: dl};
       rd_tail_d = rd_tail_q + 1'b1;
       rd_cnt_d  = rd_cnt_d + 1'b1;
     end
@@ -157,7 +160,7 @@ module axi_dram_timing #(
       if (en) begin
         dl = (t16_q + lat_wr16 > bus_free_d) ? t16_q + lat_wr16 : bus_free_d;
         bus_free_d = dl + occ_aw;
-        cnt_d.wr_count = cnt_q.wr_count + 1'b1;
+        cnt_d.wr_count = cnt_d.wr_count + 1'b1;
       end else begin
         bus_free_d = t16_q;
       end
@@ -178,13 +181,14 @@ module axi_dram_timing #(
         rdq_d[rd_head_q].next16 = rel + (en ? t16_t'(cfg_i.occ16) : '0);
         rdq_d[rd_head_q].first  = 1'b0;
         if (en) begin
-          cnt_d.rd_beats = cnt_q.rd_beats + 1'b1;
-          if (rdq_q[rd_head_q].first) begin
+          cnt_d.rd_beats = cnt_d.rd_beats + 1'b1;
+          // only a read accepted while enabled, and since the last clear, has a modelled time in this interval
+          if (rdq_q[rd_head_q].first && rdq_q[rd_head_q].timed && !cfg_i.clear) begin
             if (t16_q > rel) begin
-              cnt_d.rd_late     = cnt_q.rd_late + 1'b1;
-              cnt_d.late_cycles = cnt_q.late_cycles + 32'((t16_q - rel) >> 4);
+              cnt_d.rd_late     = cnt_d.rd_late + 1'b1;
+              cnt_d.late_cycles = cnt_d.late_cycles + 32'((t16_q - rel) >> 4);
             end else begin
-              cnt_d.hold_cycles = cnt_q.hold_cycles + 32'((rel - t16_q) >> 4);
+              cnt_d.hold_cycles = cnt_d.hold_cycles + 32'((rel - t16_q) >> 4);
             end
           end
         end
@@ -215,7 +219,6 @@ module axi_dram_timing #(
       bb_rd_d  = bb_rd_q + 1'b1;
       bb_cnt_d = bb_cnt_d - 1'b1;
     end
-    if (cfg_i.clear) cnt_d = '0;
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
