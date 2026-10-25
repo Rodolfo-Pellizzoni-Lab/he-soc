@@ -6,7 +6,8 @@
 // lat_wr after the accepted AW, and no earlier than the modelled data bus is free (occ16: 1/16 target cycles of bus
 // time per 8-byte beat, so a 64-byte line costs 8 * occ16 / 16 cycles). Beats of one burst are paced at occ16.
 //
-// Sits between the LLC's memory port and the DRAM path in host_domain; configured and counted through the SoC
+// Sits in front of the DRAM path in host_domain, after the SPU and the slowdown regulator that follow the LLC's
+// memory port; configured and counted through the SoC
 // control registers at 0x1A10_6100 (apb_soc_control.sv). Outstanding requests are tracked whether the model is
 // enabled or not, so enable can change at any time: disabled, responses pass straight through once the buffers
 // have drained; enabled, they go through the buffers and come out when due. Responses are assumed to come back in

@@ -1,15 +1,20 @@
 # DRAM timing model
 
-`hardware/host/axi_dram_timing.sv` sits between the LLC's memory port and the DRAM path (host_domain). It is the
+`hardware/host/axi_dram_timing.sv` sits between the slowdown regulator and the DRAM path (host_domain). It is the
 first step of a FASED-style memory model: the SoC clock is read as the clock of the target being emulated, one
 SoC cycle per target cycle whatever the FPGA runs at, and every memory response is held until the DRAM of that
 target would have delivered it. Requests still go to the real memory (the simulated DRAM in xsim, the DDR4 on the
 VCU118) immediately; only the time at which the data becomes visible changes.
 
 ```
-LLC memory port --AXI--> axi_dram_timing --AXI--> (SPU) --> DDR4 / simulated DRAM
-                              ^ cfg / counters: SoC control registers 0x1A10_6100 (apb_soc_control)
+LLC memory port --AXI--> SPU --> slowdown --AXI--> axi_dram_timing --AXI--> DDR4 / simulated DRAM
+                                                         ^ cfg / counters: SoC control registers 0x1A10_6100 (apb_soc_control)
 ```
+
+With the slowdown regulator in the path (`hardware/ip_list/slowdown`, `` `define USE_SLOWDOWN `` in host_domain.sv)
+the model sits after the SPU and the slowdown: it sees the request stream the slowdown releases, and the SPU's
+latencies include both the slowdown's and the model's delays. The measurements below were taken before the
+slowdown was added, with the model directly on the LLC's memory port.
 
 The L1 data and instruction caches of CVA6 have 16-byte lines, the LLC 64-byte lines: a miss in the LLC-cached
 window reaches the model as an 8-beat refill, while DRAM outside that window (the LLC passes it through) comes

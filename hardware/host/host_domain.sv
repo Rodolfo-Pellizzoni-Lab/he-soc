@@ -20,6 +20,10 @@
 `include "common_cells/registers.svh"
 `define APMU_IOPMP
 `define APMU_IP
+// ---- Slowdown regulator enable switch (ip_list/slowdown) ----
+//   `define USE_SLOWDOWN  => LLC -> SPU -> slowdown -> DRAM timing model -> memory (normal operation)
+//     (left commented)    => LLC -> SPU -> DRAM timing model -> memory           (slowdown bypassed)
+`define USE_SLOWDOWN
 
 module host_domain
   import axi_pkg::xbar_cfg_t;
@@ -175,7 +179,9 @@ module host_domain
 
    ariane_axi_soc::req_slv_mem_t  axi_mem_req;
    ariane_axi_soc::resp_slv_mem_t axi_mem_res;
-   // the LLC's memory port after the DRAM timing model (host/axi_dram_timing.sv)
+   // the DRAM timing model (host/axi_dram_timing.sv): its input after the slowdown, its output to the DRAM path
+   ariane_axi_soc::req_slv_mem_t  axi_model_req;
+   ariane_axi_soc::resp_slv_mem_t axi_model_res;
    ariane_axi_soc::req_slv_mem_t  axi_dram_req;
    ariane_axi_soc::resp_slv_mem_t axi_dram_res;
    dram_model_pkg::cfg_t          s_dram_model_cfg;
@@ -344,6 +350,29 @@ module host_domain
     .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
    ) mem_axi_bus_spu_o_bus();
 
+   // Intermediate AXI buses: SPU master -> slowdown regulator -> DRAM timing model
+   AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH          ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH             ),
+    `ifdef EXCLUDE_LLC
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave   ),
+    `else
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave+1 ),
+    `endif
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
+   ) mem_axi_bus_spu_mst();
+
+   AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH          ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH             ),
+    `ifdef EXCLUDE_LLC
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave   ),
+    `else
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave+1 ),
+    `endif
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
+   ) mem_axi_bus_slowdown_mst();
+
    AXI_LITE #(
     .AXI_ADDR_WIDTH (AXI_LITE_AW),
     .AXI_DATA_WIDTH (AXI_LITE_DW)
@@ -385,7 +414,7 @@ module host_domain
 `endif
   `ifdef XSIM_SIM_DRAM
    // xsim: with NO_L3_CONNECTION no HyperRAM model sits on the pads, so an LLC refill never returns and the
-   // CCU FSM blocks every core. Terminate mem_axi_bus (LLC -> SPU -> HyperBus path) in a simulation memory
+   // CCU FSM blocks every core. Terminate mem_axi_bus (LLC -> SPU -> slowdown -> DRAM model -> HyperBus path) in a simulation memory
    // and give the HyperBus subsystem an idle bus instead.
    AXI_BUS #(
      .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH           ),
@@ -565,8 +594,42 @@ module host_domain
 
    `AXI_ASSIGN_TO_REQ(axi_cpu_req,hyper_axi_bus)
    `AXI_ASSIGN_FROM_RESP(hyper_axi_bus,axi_cpu_res)
-   // DRAM timing model between the LLC's memory port and the DRAM path: a wire until it is enabled through the
+   // Memory path after the LLC's memory port:
+   //   LLC -> SPU (i_spu_llc_mem, APMU memory events) -> slowdown regulator (ip_list/slowdown, USE_SLOWDOWN)
+   //       -> DRAM timing model -> DRAM path (mem_axi_bus)
+   // The SPU sees each request as the LLC issues it and each response after the slowdown's and the model's delays.
+   `ifdef APMU_IP
+    // Converts request packets to AXI Bus signals.
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_mem_req )
+    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus_spu_o_bus )
+  `else
+    // No SPU: the LLC feeds the slowdown directly.
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_mst, axi_mem_req )
+    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus_spu_mst )
+  `endif
+
+  `ifdef USE_SLOWDOWN
+   // Slowdown regulator between the SPU (post-LLC) and the DRAM timing model: caps the request rate and delays
+   // every R/B response (hardware/ip_list/slowdown/README.md)
+   slowdown_mem_top #(
+    .Latency_param            ( 20 ),  // must be >= 2
+    .Throughput_timer_param   ( 10 ),
+    .Throughput_FIFO_depth    (  8 )
+    // Throughput_COUNTER_WIDTH is a localparam ($clog2) inside the module
+   ) i_slowdown (
+    .clk_i            ( s_soc_clk                ),
+    .rst_ni           ( s_synch_soc_rst          ),
+    .slowdown_mem_slv ( mem_axi_bus_spu_mst      ),
+    .slowdown_mem_mst ( mem_axi_bus_slowdown_mst )
+   );
+  `else
+   `AXI_ASSIGN( mem_axi_bus_slowdown_mst, mem_axi_bus_spu_mst )
+  `endif
+
+   // DRAM timing model after the slowdown, in front of the DRAM path: a wire until it is enabled through the
    // SoC control registers at 0x1A10_6100 (hardware/docs/dram_model.md)
+   `AXI_ASSIGN_TO_REQ( axi_model_req, mem_axi_bus_slowdown_mst )
+   `AXI_ASSIGN_FROM_RESP( mem_axi_bus_slowdown_mst, axi_model_res )
    axi_dram_timing #(
      .axi_req_t  ( ariane_axi_soc::req_slv_mem_t    ),
      .axi_resp_t ( ariane_axi_soc::resp_slv_mem_t   ),
@@ -578,20 +641,14 @@ module host_domain
      .rst_ni     ( s_synch_soc_rst  ),
      .cfg_i      ( s_dram_model_cfg ),
      .cnt_o      ( s_dram_model_cnt ),
-     .slv_req_i  ( axi_mem_req      ),
-     .slv_resp_o ( axi_mem_res      ),
+     .slv_req_i  ( axi_model_req    ),
+     .slv_resp_o ( axi_model_res    ),
      .mst_req_o  ( axi_dram_req     ),
      .mst_resp_i ( axi_dram_res     )
    );
-   `ifdef APMU_IP
-    // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_dram_req )
-    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus_spu_o_bus )
-  `else
-    // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_dram_req )
-    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus )
-  `endif
+   // Converts request packets to AXI Bus signals.
+   `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_dram_req )
+   `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus )
    `AXI_LITE_ASSIGN_TO_REQ(axi_llc_cfg_req,llc_cfg_bus)
    `AXI_LITE_ASSIGN_FROM_RESP(llc_cfg_bus,axi_llc_cfg_res)
 
@@ -815,7 +872,7 @@ axi_spu_top #(
      .rst_ni             ( s_synch_soc_rst             ),
      .addr_map_i         ( spu_mem_addr_map            ),
      .spu_slv            ( mem_axi_bus_spu_o_bus       ),
-     .spu_mst            ( mem_axi_bus                 ),
+     .spu_mst            ( mem_axi_bus_spu_mst         ),  // SPU -> slowdown -> DRAM timing model -> memory
      .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
    );
 `endif // XSIM_CUT_i_spu_llc_mem
