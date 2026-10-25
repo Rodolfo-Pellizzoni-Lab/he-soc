@@ -75,13 +75,17 @@ alone gets two to three times the per-hart share.
 | Linux, bitstream | harts | DRAM read | DRAM write | memcpy | LLC-hit read | LLC-hit write |
 |---|---|---|---|---|---|---|
 | 4 CPUs, main (OpenDRAM 16x) | 1 | 7.8 | 4.8 | 6.1 | 11.7 | 7.7 |
-| 4 CPUs, main (OpenDRAM 16x) | 4, sum | 10.1 | 7.6 | 8.7 | 14.2 | 16.1 |
+| 4 CPUs, main (OpenDRAM 16x) | 4, sum | 10.1 | 7.6 | 8.7 | 8.8 † | 8.5 † |
 | 6 CPUs, `cores8` (MIG) | 1 | 9.5 | 6.4 | 8.0 | 10.8 | 7.2 |
-| 6 CPUs, `cores8` (MIG) | 4, sum | 13.9 | 13.0 | 13.3 | 14.9 | 18.3 |
-| 6 CPUs, `cores8` (MIG) | 6, sum | 14.1 | 13.2 | 13.7 | 20.1 | 20.1 |
+| 6 CPUs, `cores8` (MIG) | 4, sum | 13.9 | 13.0 | 13.3 | 14.9 | 11.5 † |
+| 6 CPUs, `cores8` (MIG) | 6, sum | 14.1 | 13.2 | 13.7 | 12.0 † | 12.5 † |
 
-Per hart in the six-hart run: 2.0 to 2.5 MB/s DRAM read, 2.4 MB/s LLC-hit read (hart 0 gets 8.1 while the others get
-2.4: it is the CCU port the arbiter favours). The raw output is `bw6_out.txt` in the session scratchpad.
+† sum of harts 1 to n-1 only. The `bw` processes are not synchronised between phases and hart 0's DRAM phases take
+10 to 30 % longer than the others' (see the note on arbitration under the next table), so from four harts on it
+reaches the short LLC-hit phases after the other harts have finished theirs and runs them at its single-hart rate
+(8.1 and 7.6 MB/s in the six-hart run, against 2.4 for each other hart). An earlier version of this section read
+those figures as a CCU priority for port 0; they are not. Per hart in the six-hart run: 2.0 to 2.5 MB/s DRAM read,
+2.4 MB/s LLC-hit read. The raw output is `board8/bw6_out.txt` in the session scratchpad.
 
 ### Linux on seven or eight CPUs
 
@@ -141,39 +145,51 @@ Same eight-core design with the store-hold change in the L1 (hardware/docs/coher
   (`smp: Brought up 1 node, 8 CPUs`); six and four CPUs (`nr_cpus=`) boot as before, 99 s and 92 s.
 
 Bandwidth on that bitstream (`bw`, 4 MiB buffers, one pinned process per hart; the single-hart row uses 8 MiB;
-MB/s; all rows on the same MIG controller, so every column is comparable, unlike the OpenDRAM main numbers above):
+MB/s; all rows on the same MIG controller, so every column is comparable, unlike the OpenDRAM main numbers above).
+The DRAM phases of all harts overlap (they are long and start together); the LLC-hit phases are short and
+unsynchronised, so where hart 0 ran its LLC-hit phase apart from the others (its phase time at most 75 % of theirs)
+the cell is the sum of harts 1 to n-1 (†):
 
 | Linux | harts loaded | DRAM read | DRAM write | memcpy | LLC-hit read | LLC-hit write |
 |---|---|---|---|---|---|---|
 | 4 CPUs | 1 | 11.2 | 7.5 | 9.3 | 12.5 | 8.3 |
 | 4 CPUs | 2 | 14.5 | 12.4 | 13.5 | 15.5 | 15.2 |
 | 4 CPUs | 3 | 15.5 | 14.4 | 15.0 | 17.3 | 18.9 |
-| 4 CPUs | 4 | 15.5 | 14.3 | 14.8 | 16.5 | 20.2 |
+| 4 CPUs | 4 | 15.5 | 14.3 | 14.8 | 16.5 | 12.7 † |
 | 6 CPUs | 1 | 10.0 | 6.7 | 8.3 | 11.2 | 7.5 |
 | 6 CPUs | 2 | 13.8 | 12.0 | 12.9 | 15.1 | 14.4 |
-| 6 CPUs | 4 | 14.2 | 13.2 | 13.7 | 15.2 | 18.7 |
-| 6 CPUs | 6 | 14.3 | 13.2 | 13.8 | 18.1 | 20.3 |
+| 6 CPUs | 4 | 14.2 | 13.2 | 13.7 | 15.2 | 11.7 † |
+| 6 CPUs | 6 | 14.3 | 13.2 | 13.8 | 12.0 † | 12.7 † |
 | 8 CPUs | 1 | 9.8 | 6.5 | 8.1 | 10.8 | 7.2 |
 | 8 CPUs | 2 | 13.5 | 11.6 | 12.5 | 14.7 | 13.8 |
 | 8 CPUs | 3 | 13.6 | 12.6 | 13.1 | 15.1 | 17.2 |
-| 8 CPUs | 4 | 13.5 | 12.4 | 12.9 | 15.5 | 17.9 |
-| 8 CPUs | 6 | 13.2 | 12.2 | 12.8 | 21.2 | 17.5 |
-| 8 CPUs | 8 | 12.9 | 12.2 | 12.9 | 22.3 | 20.2 |
+| 8 CPUs | 4 | 13.5 | 12.4 | 12.9 | 15.5 | 10.8 † |
+| 8 CPUs | 6 | 13.2 | 12.2 | 12.8 | 11.4 † | 10.8 † |
+| 8 CPUs | 8 | 12.9 | 12.2 | 12.9 | 11.7 † | 13.1 † |
 
 Where the load peaks:
 
-- **DRAM streaming saturates at two to three loaded harts**, at 15.5 MB/s read with four CPUs, 14.3 with six and
-  13.6 with eight; beyond that the aggregate is flat or falls while the per-hart share drops in proportion (with
-  eight harts each gets 1.2 to 1.7 MB/s read). More CPUs online *lower* the ceiling and the single-hart figure
-  (11.2, 10.0, 9.8): the idle CPUs' tick and idle-loop traffic takes its turn at the serial CCU.
-- **LLC-hit reads keep growing with loaded harts**, 17.3 (4 CPUs, 3 harts) to 22.3 MB/s (8 CPUs, 8 harts), but the
-  growth is almost entirely hart 0's: with eight harts loaded hart 0 reads 10.6 MB/s and each other hart 1.6, the
-  CCU's fixed-priority arbitration favouring port 0. The LLC-hit write aggregate tops out near 20 MB/s from four
-  harts on.
+- **Everything saturates at two to three loaded harts**: DRAM reads at 15.5 MB/s with four CPUs online, 14.3 with
+  six, 13.6 with eight; LLC-hit reads at 15 to 17 MB/s; LLC-hit writes at 15 to 19. Beyond that the aggregate is
+  flat or falls (12 to 13 MB/s with six to eight harts loaded, LLC hit or DRAM alike) while the per-hart share drops
+  in proportion (with eight harts each gets 1.2 to 1.7 MB/s read). More CPUs online *lower* the ceiling and the
+  single-hart figure (11.2, 10.0, 9.8): the idle CPUs' tick and idle-loop traffic takes its turn at the serial CCU.
+- **The arbitration is fair.** Harts 1 to n-1 are within 3 % of each other in every run. The CCU's request
+  arbiter is `rr_arb_tree` in its fair round-robin mode (`FairArb`, `LockIn`) inside the `axi_mux` that feeds the
+  single `ccu_fsm` (`ip_list/ace/src/ace_ccu_top.sv`), one arbiter for the read channel and one for the write
+  channel, and the state machine alternates between the two channels when both have a request pending (`prio_q`
+  in `ccu_fsm.sv`). An earlier version of this section read hart 0's 8 to 11 MB/s LLC-hit figures as a port-0
+  priority; they were measured after the other harts had drained (†). Hart 0 is in fact the *slowest* hart in every
+  overlapped phase, by a constant 0.4 to 0.5 MB/s whatever the hart count (6.5 against 7.0 MB/s with two harts,
+  1.2 against 1.6 with eight): a fixed number of memory transactions per second taken from it, which fits CPU 0's
+  kernel housekeeping (timekeeping CPU, PLIC interrupt target, the launching shell) and not an arbiter, whose bias
+  would be proportional to the share and would show between ports 1 to 7 as well.
 - So the configuration with the highest usable bandwidth is still four CPUs, and the highest aggregate load the
-  coherence unit sustains is about 15 MB/s of DRAM streaming or 20 to 22 MB/s of LLC hits, whatever the core
-  count. Raw sweeps: `board8/fix/sweep_cpus{8_full,6,4}.lines` in the session scratchpad, summarised by
-  `bw_sweep_summ.py`.
+  coherence unit sustains is about 15 to 17 MB/s, reached with two to four loaded harts, whatever the core count.
+  At 50 MHz that is 0.3 bytes per cycle, one 16-byte line every 50 cycles: the time the `ccu_fsm` holds a
+  transaction from the snoop round to the memory response. Raising it means overlapping transactions in the state
+  machine (or a wider line), not arbitration. Raw sweeps: `board8/fix/sweep_cpus{8_full,6,4}.lines` in the session
+  scratchpad, summarised by `bw_sweep_summ.py` and, per hart against hart 0, `fair_summ.py`.
 
 ## Verified in xsim
 
