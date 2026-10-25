@@ -41,7 +41,7 @@ at 255x8, register map at 255x16 against the generator's output, finder at 255/3
 | MATRIX, 8 contexts, routed quad-core SoC | 217,888 | main, `alsaqr_opendram_ethernet_16x_hpm` |
 | TREE, 8 contexts, routed quad-core SoC | 12,091 | branch, build `plic_tree_4c` |
 
-## Utilization on the xcvu9p (VCU118), 50 MHz, OpenDRAM, LLC, Ethernet
+## Utilization on the xcvu9p (VCU118), 50 MHz, LLC, Ethernet
 
 | Design | CLB LUTs | Registers | BRAM tiles | SLR LUT % | Timing |
 |---|---|---|---|---|---|
@@ -50,9 +50,11 @@ at 255x8, register map at 255x16 against the generator's output, finder at 255/3
 | branch, 8 cores (`cores8`) | 802,444 (67.9 %) | 473,229 | 1,162 | 72 / 71 / 61 | setup met, all routed; 389 hold endpoints at -0.213 ns, all in the uDMA SPI masters' async clears, plus the 8 adv_timer ones |
 
 One CVA6 is about 55k LUTs, 28k registers, 91 BRAM tiles and 27 DSPs. The CCU grows from 3.9k LUTs at five ports
-to 6.1k at nine, the PLIC from 12.1k at 8 contexts to 24.1k at 16. Both bitstreams were built with `fpga_build`
-(50 MHz, OpenDRAM) and not run on the board. Beyond eight cores the budget is roughly 61k LUTs per core (core plus
-its PLIC contexts), so ten would land near 80 % of the device.
+to 6.1k at nine, the PLIC from 12.1k at 8 contexts to 24.1k at 16. The two branch bitstreams were built with
+`fpga_build` at 50 MHz with the MIG's DDR4 controller (no `OPENDRAM=1`); the main bitstream in the first row is the
+OpenDRAM 16x one (`alsaqr_opendram_ethernet_16x_hpm.bit`), so a few thousand LUTs of the difference are the memory
+controller, the rest is the PLIC. Beyond eight cores the budget is roughly 61k LUTs per core (core plus its PLIC
+contexts), so ten would land near 80 % of the device.
 
 ## On the VCU118 with eight cores (2026-10-24, bitstream `cores8`)
 
@@ -60,6 +62,28 @@ Bare metal: t_smp, t_qos, t_iotag, t_irq and t_part built with `-DSOC_NUM_CORES=
 soc suite passes as built for four cores (the two tag tests fail as four-core builds because the RCID moves up one
 bit). OpenSBI built with `NUM_HARTS=8` registers all eight harts (`Domain0 HARTs 0*..7*`); the netboot loader and
 the board scripts release harts 2 to 7 (`alsaqr-mcp` `board.num_harts`).
+
+### Memory bandwidth, six-CPU Linux on the eight-core bitstream against four-CPU Linux on main
+
+`bw` (the streaming benchmark of 2026-10-24, one process pinned per hart; MB/s) on the six-CPU Linux of `cores8` and
+on the four-CPU Linux of the main bitstream. The DRAM columns are not comparable between the rows: `cores8` runs the
+MIG controller at full speed, the main bitstream the OpenDRAM 16x timing model (that is where the single-hart DRAM
+numbers of `cores8` are higher). The LLC-hit columns are, and they show what more cores buy: nothing per core. The
+coherence unit serialises every shareable access, so six harts together stream at the rate of four, and one hart
+alone gets two to three times the per-hart share.
+
+| Linux, bitstream | harts | DRAM read | DRAM write | memcpy | LLC-hit read | LLC-hit write |
+|---|---|---|---|---|---|---|
+| 4 CPUs, main (OpenDRAM 16x) | 1 | 7.8 | 4.8 | 6.1 | 11.7 | 7.7 |
+| 4 CPUs, main (OpenDRAM 16x) | 4, sum | 10.1 | 7.6 | 8.7 | 14.2 | 16.1 |
+| 6 CPUs, `cores8` (MIG) | 1 | 9.5 | 6.4 | 8.0 | 10.8 | 7.2 |
+| 6 CPUs, `cores8` (MIG) | 4, sum | 13.9 | 13.0 | 13.3 | 14.9 | 18.3 |
+| 6 CPUs, `cores8` (MIG) | 6, sum | 14.1 | 13.2 | 13.7 | 20.1 | 20.1 |
+
+Per hart in the six-hart run: 2.0 to 2.5 MB/s DRAM read, 2.4 MB/s LLC-hit read (hart 0 gets 8.1 while the others get
+2.4: it is the CCU port the arbiter favours). The raw output is `bw6_out.txt` in the session scratchpad.
+
+### Linux on seven or eight CPUs
 
 Linux 6.1.183 boots to the shell with up to **six** CPUs on this bitstream (any six harts: 0-5, or 0,1,4-7) and
 hangs with seven or eight; the threshold is not sharp, one of five six-CPU boots stalled later, in the init scripts. The kernel log, read from DRAM over the debug module's system bus, shows a normal boot
@@ -72,14 +96,37 @@ state never advances. (Nothing reaches the UART because this kernel has no SBI c
 acknowledges each state with an atomic decrement of the counter that shares its 16-byte line, and the last acker
 writes the next state with plain stores. On the eight-core board it passes with four participating cores and
 hangs with six, seven or eight, with or without the per-iteration atomics the kernel loop does; variants with the
-counter in its own line and a fixed leader pass on eight. The sequence that breaks is an atomic by a core that
-holds the line dirty: the miss handler writes the line back through the bypass path (around the CCU's snoop FSM,
-`WRITE_BACK` in `miss_handler.sv`, line invalidated, no wait for the write response) and then issues the atomic;
-another core's atomic on the same line is served by the FSM, which snoops the first core, finds nothing, and
-forwards the atomic to memory. If the first core's write-back is still in flight, the atomic executes on stale
-memory and a decrement is lost. More cores acknowledging at once widen the window, hence the threshold. The CCU
-needs a hazard check between in-flight write-backs and FSM memory accesses to the same line (or the snoop
-controller must hold snoop responses for a line with a pending write-back); four-core Linux has simply not hit it.
+counter in its own line and a fixed leader pass on eight. Its stall report (core 0 prints the shared words and,
+per core, the last state acknowledged, the value its decrement returned, how often it advanced the state and a
+heartbeat) shows what hangs: every decrement of a state completes and returns a distinct value (8 down to 1), so
+the atomics are fine; what never lands is the **plain store of the next state**: the other cores keep reading the
+previous state from their caches, and the writer's heartbeat freezes in that store.
+
+The eight-core xsim library reproduces it in the first store of round 0, and an interactive session
+(`sim_session` probes of the cores' cache controllers and of the CCU's `ccu_fsm`) shows a **livelock** between
+one writer and the spinning readers, inside the L1's store path:
+
+1. The writer's line is shared (the readers refilled from it), so its store takes the `MAKE_UNIQUE` path of
+   `cache_ctrl.sv`: the miss handler sends a CleanUnique (`SEND_CLEAN`), the CCU broadcasts CleanInvalid and every
+   reader drops its copy.
+2. All readers miss at once and queue ReadShared requests; the CCU serves them back to back, each one snoops the
+   writer, which still holds the line, answers with data and raises `readshared_done`.
+3. Back in `STORE_REQ` after the CleanUnique, the writer's cache controller sees the colliding ReadShared
+   (`colliding_read_q`) and, by design ("there has been a colliding readshared request during a makeunique+write;
+   redo CleanUnique"), issues the CleanUnique again instead of writing. Go to 1.
+
+In the simulation the CCU's state machine repeats the identical sequence every 1.2 us: the CleanUnique of port 0
+(`WAIT_INVALID_R`), then ReadShared from ports 1, 3, 2, 4, 5, 6, 7 answered from snoop data; the writer's miss
+handler is pinned in `SEND_CLEAN`, every reader's load port cycles `WAIT_REFILL_GNT`, `WAIT_CRITICAL_WORD`, the
+readers run their loop with the old value each time and the writer sits in the fence after its store. With three
+readers the burst of refills is over before the writer retries and the store lands; with five to seven a
+ReadShared is always in flight at the writer when it retries. That is the threshold Linux shows: `multi_cpu_stop`
+is exactly one writer and N-1 CPUs spinning on one line, with no back-off in `cpu_relax`. The CCU's serialisation
+makes the refills strictly back to back, but the retry policy is in the L1. Fix directions: do not count a
+ReadShared that was served *before* the CleanUnique response as a collision (only one between the response and the
+store write is a hazard), and have the snoop controller hold its `ac_ready` for the line while that store is
+pending after its CleanUnique, so the store is written before the next snoop is answered; a spin loop that backs
+off (a short delay in the wait) also breaks the cycle in software. Four-core Linux has simply not hit it.
 
 ## Verified in xsim
 
@@ -88,7 +135,8 @@ controller must hold snoop responses for a line with a pending write-back); four
   simulations share the machine with Vivado, run it alone).
 - 8 cores (`NUM_CVA6=8`): t_smp built for 8 cores (all eight harts woken, contended AMO and LR/SC counters
   exact, the QoS monitor sees cores 0 to 7), quad_boot, hello_culsans, t_irq, t_eth, t_atomics, t_cbqri, t_dma,
-  t_socket, t_qos built for 8 cores.
+  t_socket, t_qos built for 8 cores. t_stopm built for 8 cores livelocks in round 0 (above); the variant with
+  the counter in its own line completes its rounds.
 
 What more cores do not give: the CCU serialises every shareable access (one 16-byte transaction at a time for all
 ports), so eight harts share the same aggregate memory bandwidth four do.
