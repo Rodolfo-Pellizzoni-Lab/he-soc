@@ -128,3 +128,9 @@ state change):
 | 8 cores | t_smp, t_qos, t_iotag built for 8 cores (contended AMO and LR/SC counters, QoS scoreboard on every refill and write-back, DMA tags) | pass | TEST PASS 82 / 63 / 27 checks |
 | 8 cores | soc regression, 4-core builds: t_mem, t_atomics, t_smp, t_irq, t_socket, t_cbqri, t_dram, t_dma, t_eth, hello_culsans, quad_boot | pass | pass (t_qos and t_iotag fail as 4-core builds on 8 cores as before: the tag layout; t_part exceeds the 2 h regression limit on this library and is run alone) |
 | 4 cores | soc regression: t_mem, t_atomics, t_smp, t_irq, t_socket, t_qos, t_cbqri, t_dram, t_dma, t_iotag, t_eth, hello_culsans, quad_boot | pass | pass, 13 of 13 (t_part again beyond the 2 h limit, run alone) |
+
+Board (VCU118, bitstream `cores8_fix`, eight cores, 2026-10-25): t_stopm built for eight cores runs its 200 rounds
+(800 advances, no stall; before: hung with six, seven and eight cores), t_smp / t_qos / t_iotag eight-core builds
+pass, and Linux 6.1.183 boots to the shell with eight CPUs three times out of three (111 s), where it never got
+past the first `stop_machine` before. Six and four CPUs boot as before. hardware/docs/cores.md has the bandwidth
+numbers taken on that system.
