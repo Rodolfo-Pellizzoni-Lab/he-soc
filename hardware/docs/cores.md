@@ -62,7 +62,7 @@ bit). OpenSBI built with `NUM_HARTS=8` registers all eight harts (`Domain0 HARTs
 the board scripts release harts 2 to 7 (`alsaqr-mcp` `board.num_harts`).
 
 Linux 6.1.183 boots to the shell with up to **six** CPUs on this bitstream (any six harts: 0-5, or 0,1,4-7) and
-hangs with seven or eight. The kernel log, read from DRAM over the debug module's system bus, shows a normal boot
+hangs with seven or eight; the threshold is not sharp, one of five six-CPU boots stalled later, in the init scripts. The kernel log, read from DRAM over the debug module's system bus, shows a normal boot
 up to `smp: Brought up 1 node, 8 CPUs` and stops where a working boot prints `Switched to clocksource`, i.e. in
 the `stop_machine` of the clocksource switch: all CPUs spin in `multi_cpu_stop` with interrupts off and the
 state never advances. (Nothing reaches the UART because this kernel has no SBI console: `earlycon=sbi` and
