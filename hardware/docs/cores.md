@@ -54,6 +54,33 @@ to 6.1k at nine, the PLIC from 12.1k at 8 contexts to 24.1k at 16. Both bitstrea
 (50 MHz, OpenDRAM) and not run on the board. Beyond eight cores the budget is roughly 61k LUTs per core (core plus
 its PLIC contexts), so ten would land near 80 % of the device.
 
+## On the VCU118 with eight cores (2026-10-24, bitstream `cores8`)
+
+Bare metal: t_smp, t_qos, t_iotag, t_irq and t_part built with `-DSOC_NUM_CORES=8` pass on the board, the rest of the
+soc suite passes as built for four cores (the two tag tests fail as four-core builds because the RCID moves up one
+bit). OpenSBI built with `NUM_HARTS=8` registers all eight harts (`Domain0 HARTs 0*..7*`); the netboot loader and
+the board scripts release harts 2 to 7 (`alsaqr-mcp` `board.num_harts`).
+
+Linux 6.1.183 boots to the shell with up to **six** CPUs on this bitstream (any six harts: 0-5, or 0,1,4-7) and
+hangs with seven or eight. The kernel log, read from DRAM over the debug module's system bus, shows a normal boot
+up to `smp: Brought up 1 node, 8 CPUs` and stops where a working boot prints `Switched to clocksource`, i.e. in
+the `stop_machine` of the clocksource switch: all CPUs spin in `multi_cpu_stop` with interrupts off and the
+state never advances. (Nothing reaches the UART because this kernel has no SBI console: `earlycon=sbi` and
+`console=hvc0` are inert and output starts only when the 8250 driver registers ttyS0, after the hang.)
+
+`software/soc_tests/t_stopm` is a bare-metal port of `multi_cpu_stop`: every core spins on the shared state word,
+acknowledges each state with an atomic decrement of the counter that shares its 16-byte line, and the last acker
+writes the next state with plain stores. On the eight-core board it passes with four participating cores and
+hangs with six, seven or eight, with or without the per-iteration atomics the kernel loop does; variants with the
+counter in its own line and a fixed leader pass on eight. The sequence that breaks is an atomic by a core that
+holds the line dirty: the miss handler writes the line back through the bypass path (around the CCU's snoop FSM,
+`WRITE_BACK` in `miss_handler.sv`, line invalidated, no wait for the write response) and then issues the atomic;
+another core's atomic on the same line is served by the FSM, which snoops the first core, finds nothing, and
+forwards the atomic to memory. If the first core's write-back is still in flight, the atomic executes on stale
+memory and a decrement is lost. More cores acknowledging at once widen the window, hence the threshold. The CCU
+needs a hazard check between in-flight write-backs and FSM memory accesses to the same line (or the snoop
+controller must hold snoop responses for a line with a pending write-back); four-core Linux has simply not hit it.
+
 ## Verified in xsim
 
 - 4 cores, branch RTL: the soc regression passes (t_mem, t_atomics, t_smp, t_irq, t_socket, t_qos, t_cbqri,
