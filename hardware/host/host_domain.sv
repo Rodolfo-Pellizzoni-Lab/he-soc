@@ -669,10 +669,11 @@ module host_domain
       .lite_req_t       ( ariane_axi_soc::req_lite_t     ),
       .lite_resp_t      ( ariane_axi_soc::resp_lite_t    ),
       .rule_full_t      ( rule_full_t                    ),
-      // Source ID Specifications
-      .SourceIDStart    ( 2                              ),
-      .SourceIDEnd      (  ariane_soc::IdWidthSlave-1    ),
-      .NumCfgRegcp      ( 64                             ),
+      // Source ID Specifications: per-source way masks indexed by the ID above the remapper's slot bits, {crossbar
+      // port, the remapper's source prefix}, one mask per index value
+      .SourceIDStart    ( ariane_soc::RemapSlotWidth     ),
+      .SourceIDEnd      ( ariane_soc::IdWidthSlave-1     ),
+      .NumCfgRegcp      ( 2**(ariane_soc::IdWidthSlave - ariane_soc::RemapSlotWidth) ),
       // CBQRI capacity controller at LLC config base + 0x800 (0x1040_1800): ways allocated per (RCID, AT) of the
       // QoS tag in the AXI user field (ariane_axi_soc layout, hardware/docs/qos.md)
       .QosRcidWidth     ( ariane_pkg::QOS_RCID_WIDTH     ),
@@ -848,17 +849,37 @@ module host_domain
          end_addr:   ariane_soc::HYAXIBase + ariane_soc::HYAXILength
    };
 
+   // Source of each request on the LLC memory port for the APMU (ariane_axi_soc::mem_src, ariane_soc::NumMemSrcs
+   // codes): for CVA6-port traffic the CCU source in the user field (the cores, then the DMA port of the accelerator
+   // socket and the Ethernet DMA), for every other crossbar master a code of its own. A response reports its request's.
+   logic [ariane_soc::MemSrcWidth-1:0] spu_mem_ar_src, spu_mem_aw_src;
+   assign spu_mem_ar_src = ariane_axi_soc::mem_src(mem_axi_bus_spu_o_bus.ar_id[ariane_soc::IdWidthSlave-1:0],
+                                                   mem_axi_bus_spu_o_bus.ar_user);
+   assign spu_mem_aw_src = ariane_axi_soc::mem_src(mem_axi_bus_spu_o_bus.aw_id[ariane_soc::IdWidthSlave-1:0],
+                                                   mem_axi_bus_spu_o_bus.aw_user);
+   // pragma translate_off
+   initial begin : p_mem_src_assert
+     assert (ariane_soc::MemSrcWidth == pmu_pkg::SOURCE_ID_BITS && ariane_soc::NumMemSrcs <= 2**ariane_soc::MemSrcWidth)
+       else $fatal(1, "APMU memory-port sources: %0d codes in a %0d-bit field (pmu_pkg %0d bits)", ariane_soc::NumMemSrcs,
+                   ariane_soc::MemSrcWidth, pmu_pkg::SOURCE_ID_BITS);
+     // the LLC's per-source registers (64 + 8 bytes each, axi_llc_config) must stay below its CBQRI window (QosCcOffset)
+     assert (64 + 8 * 2**(ariane_soc::IdWidthSlave - ariane_soc::RemapSlotWidth) <= 32'h800)
+       else $fatal(1, "LLC: %0d per-source way masks overlap the CBQRI window", 2**(ariane_soc::IdWidthSlave - ariane_soc::RemapSlotWidth));
+   end
+   // pragma translate_on
+
 `ifndef XSIM_CUT_i_spu_llc_mem // xsim bisect
 axi_spu_top #(
      // Static configuration parameters of the cache.
      .SetAssociativity   ( ariane_soc::LLC_SET_ASSOC   ),
      .NumLines           ( ariane_soc::LLC_NUM_LINES   ),
      .NumBlocks          ( ariane_soc::LLC_NUM_BLOCKS  ),
-     // Source ID Specifications
-     .SourceIDStart      (  2                          ),
-     .SourceIDEnd        (  ariane_soc::IdWidthSlave-1 ),
-     // AXI4 Specifications
-     .IdWidth            ( ariane_soc::IdWidthSlave    ),
+     // Source ID Specifications: MemSrcWidth-bit sources from spu_mem_ar_src / spu_mem_aw_src
+     .SourceIDStart      (  0                          ),
+     .SourceIDEnd        (  ariane_soc::MemSrcWidth-1  ),
+     .ExtSource          (  1'b1                       ),
+     // AXI4 Specifications: the LLC memory port's full ID, so that its bypass and cache paths never alias
+     .IdWidth            ( ariane_soc::IdWidthSlave+1  ),
      .AddrWidth          ( AXI_ADDRESS_WIDTH           ),
      .DataWidth          ( AXI_DATA_WIDTH              ),
      // Address Indexing
@@ -873,6 +894,8 @@ axi_spu_top #(
      .addr_map_i         ( spu_mem_addr_map            ),
      .spu_slv            ( mem_axi_bus_spu_o_bus       ),
      .spu_mst            ( mem_axi_bus_spu_mst         ),  // SPU -> slowdown -> DRAM timing model -> memory
+     .ar_src_i           ( spu_mem_ar_src              ),
+     .aw_src_i           ( spu_mem_aw_src              ),
      .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
    );
 `endif // XSIM_CUT_i_spu_llc_mem

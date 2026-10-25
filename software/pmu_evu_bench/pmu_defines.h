@@ -95,8 +95,12 @@
 /// **********************************************************************
 /// Defines for Core to/from LLC
 /// ****************************
-// Read requests from Core X to LLC
-// Read requests from Core X to LLC
+/// Event select = {port value, port mask, source value, source mask, event value, event mask}, a nibble each
+/// (hardware/ip_list/apmu/src/pmu_pkg.sv). Ports with NumCVA6 = 4: 1-4 the cores' EVUs, 5-8 the SPUs on the cores'
+/// ports to the LLC (one per core), 9 the SPU on the LLC's memory port. SPU events: 1 read request, 2 write request,
+/// 3 read response, 4 write response.
+// Read requests from Core X to LLC (LLC_RD_REQ etc. match any port: the memory port 9 and the EVUs' events with
+// the same event ID count too)
 #define LLC_RD_REQ          0x00001F
 #define LLC_RD_REQ_CORE_0   0x5F001F
 #define LLC_RD_REQ_CORE_1   0x6F001F
@@ -104,10 +108,10 @@
 #define LLC_RD_REQ_CORE_3   0x8F001F
 // Read responses to Core X from LLC
 #define LLC_RD_RES          0x00003F
-#define LLC_RD_RES_CORE_0   0x1F003F
-#define LLC_RD_RES_CORE_1   0x2F003F
-#define LLC_RD_RES_CORE_2   0x3F003F
-#define LLC_RD_RES_CORE_3   0x4F003F
+#define LLC_RD_RES_CORE_0   0x5F003F
+#define LLC_RD_RES_CORE_1   0x6F003F
+#define LLC_RD_RES_CORE_2   0x7F003F
+#define LLC_RD_RES_CORE_3   0x8F003F
 // Write requests from Core X to LLC
 #define LLC_WR_REQ          0x00002F
 #define LLC_WR_REQ_CORE_0   0x5F002F
@@ -115,48 +119,47 @@
 #define LLC_WR_REQ_CORE_2   0x7F002F
 #define LLC_WR_REQ_CORE_3   0x8F002F
 // Write responses to Core X from LLC
-#define LLC_RD_RES          0x00004F
-#define LLC_WR_RES_CORE_0   0x1F004F
-#define LLC_WR_RES_CORE_1   0x2F004F
-#define LLC_WR_RES_CORE_2   0x3F004F
-#define LLC_WR_RES_CORE_3   0x4F004F
- 
+#define LLC_WR_RES          0x00004F
+#define LLC_WR_RES_CORE_0   0x5F004F
+#define LLC_WR_RES_CORE_1   0x6F004F
+#define LLC_WR_RES_CORE_2   0x7F004F
+#define LLC_WR_RES_CORE_3   0x8F004F
+
 /// ***********************************
 /// Defines for LLC to/from Main Memory
 /// ***********************************
-/// Port ID and Mask | Source ID and Mask | Event ID and Mask
-///     LLC:0        |     4, 5, 6, 7     |    REQ: 1, 2 
-///     MEM:1        |                    |    RES: 3, 4
-///  ________________|____________________|_____ RD, WR ______
- 
-
-// If numCVA6 = 2 => PortID = 3 for LLC <=> Main Memory
-// If numCVA6 = 4 => PortID = 5 for LLC <=> Main Memory
-// Read and write requests of all cores to Main Memory from LLC
-#define MEM_RD_REQ   0x5F001F  //2 core is 0x3F001F...
-#define MEM_WR_REQ   0x5F002F   //2 core
-// Read and write responses of all cores to LLC from Main Memory
-#define MEM_RD_RES   0x5F003F  
-#define MEM_WR_RES   0x5F004F
-   
+/// Port 9 (2*NumCVA6+1). Its source field is the source of the request (hardware/include/ariane_soc_pkg.sv,
+/// ariane_axi_soc::mem_src): 0-3 the cores, 4 the DMA port (the accelerator socket and the Ethernet DMA), then one
+/// per other crossbar master p, NumCcuPorts + p - 1: 5 debug module, 8 uDMA TX, 9 uDMA RX, 10 iDMA through the IOMMU,
+/// 11 IOMMU data structures. A response counts for the source of its request.
+// Read and write requests / responses of every source
+#define MEM_RD_REQ   0x9F001F
+#define MEM_WR_REQ   0x9F002F
+#define MEM_RD_RES   0x9F003F
+#define MEM_WR_RES   0x9F004F
 // Read and write requests of Core X to Main Memory from LLC
 #define MEM_RD_REQ_CORE_0  0x9F0F1F
 #define MEM_RD_REQ_CORE_1  0x9F1F1F
 #define MEM_RD_REQ_CORE_2  0x9F2F1F
 #define MEM_RD_REQ_CORE_3  0x9F3F1F
 #define MEM_WR_REQ_CORE_0  0x9F0F2F
-#define MEM_WR_REQ_CORE_1  0x9F2F2F
+#define MEM_WR_REQ_CORE_1  0x9F1F2F
 #define MEM_WR_REQ_CORE_2  0x9F2F2F
 #define MEM_WR_REQ_CORE_3  0x9F3F2F
 // Read and write responses of Core X to LLC from Main Memory
-#define MEM_RD_RES_CORE_0  0x5F0F3F
-#define MEM_RD_RES_CORE_1  0x5F1F3F
-#define MEM_RD_RES_CORE_2  0x5F2F3F
-#define MEM_RD_RES_CORE_3  0x5F3F3F
-#define MEM_WR_RES_CORE_0  0x5F0F4F
-#define MEM_WR_RES_CORE_1  0x5F1F4F
-#define MEM_WR_RES_CORE_2  0x5F2F4F
-#define MEM_WR_RES_CORE_3  0x5F3F4F
+#define MEM_RD_RES_CORE_0  0x9F0F3F
+#define MEM_RD_RES_CORE_1  0x9F1F3F
+#define MEM_RD_RES_CORE_2  0x9F2F3F
+#define MEM_RD_RES_CORE_3  0x9F3F3F
+#define MEM_WR_RES_CORE_0  0x9F0F4F
+#define MEM_WR_RES_CORE_1  0x9F1F4F
+#define MEM_WR_RES_CORE_2  0x9F2F4F
+#define MEM_WR_RES_CORE_3  0x9F3F4F
+// The same for the DMA port
+#define MEM_RD_REQ_DMA     0x9F4F1F
+#define MEM_WR_REQ_DMA     0x9F4F2F
+#define MEM_RD_RES_DMA     0x9F4F3F
+#define MEM_WR_RES_DMA     0x9F4F4F
 
 
 /// **********************************************************************

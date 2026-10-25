@@ -176,6 +176,8 @@ module ace_spu_top #(
     // Valid signal for `spu_ax_chan` and `spu_cam` modules.
     logic ar_info_valid;
     logic r_info_valid;
+    logic aw_info_valid;
+    logic w_info_valid;
 
     // Answers one of the following two questions:
     //      0. How many cachelines are affected by this transfer?
@@ -390,7 +392,7 @@ module ace_spu_top #(
         if (!rst_ni) begin
             new_b_resp_q <= 1'b1;
         end else begin
-            new_b_resp_q <= new_b_resp_q;
+            new_b_resp_q <= new_b_resp_d;
         end
     end
 
@@ -492,6 +494,7 @@ module ace_spu_top #(
         // Source ID Specifications.
         .SourceIDStart          ( SourceIDStart         ),
         .SourceIDEnd            ( SourceIDEnd           ),
+        .SOURCE_ID_BITS         ( SOURCE_ID_BITS        ),
         // `spu_ax_chan` parameters.
         .ax_chan_t              ( ax_chan_t             ),
         // SPU Event Specifications.
@@ -563,6 +566,7 @@ module ace_spu_top #(
         // Source ID Specifications.
         .SourceIDStart  ( SourceIDStart             ),
         .SourceIDEnd    ( SourceIDEnd               ),
+        .SOURCE_ID_BITS ( SOURCE_ID_BITS            ),
         // Address Indexing
         .addr_rule_t    ( addr_rule_t               ),
         .N_ADDR_RULES   ( N_ADDR_RULES              )
@@ -570,6 +574,7 @@ module ace_spu_top #(
         .clk_i          ( clk_i                     ),
         .rst_ni         ( rst_ni                    ),
         .ar_chan_i      ( ar_chan                   ),
+        .ar_src_i       ( source_id_t'(ar_chan.id[SourceIDStart +: SOURCE_ID_BITS]) ),
         .r_chan_i       ( r_chan                    ),
         .addr_map_i     ( addr_map_i                ),
         .valid_o        ( r_info_valid              ),
@@ -628,6 +633,7 @@ module ace_spu_top #(
         // Source ID Specifications.
         .SourceIDStart          ( SourceIDStart         ),
         .SourceIDEnd            ( SourceIDEnd           ),
+        .SOURCE_ID_BITS         ( SOURCE_ID_BITS        ),
         // `spu_ax_chan` parameters.
         .ax_chan_t              ( ax_chan_t             ),
         // SPU Event Specifications.
@@ -699,6 +705,7 @@ module ace_spu_top #(
         // Source ID Specifications.
         .SourceIDStart  ( SourceIDStart             ),
         .SourceIDEnd    ( SourceIDEnd               ),
+        .SOURCE_ID_BITS ( SOURCE_ID_BITS            ),
         // Address Indexing
         .addr_rule_t    ( addr_rule_t               ),
         .N_ADDR_RULES   ( N_ADDR_RULES              )
@@ -706,6 +713,7 @@ module ace_spu_top #(
         .clk_i          ( clk_i                     ),
         .rst_ni         ( rst_ni                    ),
         .aw_chan_i      ( aw_chan                   ),
+        .aw_src_i       ( source_id_t'(aw_chan.id[SourceIDStart +: SOURCE_ID_BITS]) ),
         .b_chan_i       ( b_chan                    ),
         .addr_map_i     ( addr_map_i                ),
         .valid_o        ( w_info_valid              ),

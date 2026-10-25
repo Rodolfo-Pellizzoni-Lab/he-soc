@@ -115,10 +115,12 @@ module alsaqr_xilinx
    localparam  APP_DATA_WIDTH   = 512; // This parameter is controllerwise
    localparam  APP_MASK_WIDTH   = 64;  // This parameter is controllerwise
 
+  // the LLC memory port's ID (host_domain mem_axi_bus); the DDR4 IP is generated with the same width
+  // (fpga/setup.sh AXI_ID_DDR_WIDTH), so a change here needs the IP regenerated
   `ifdef EXCLUDE_LLC
-   localparam AXI_ID_WIDTH = 8;
+   localparam AXI_ID_WIDTH = ariane_soc::IdWidthSlave;
   `else
-   localparam AXI_ID_WIDTH = 9;
+   localparam AXI_ID_WIDTH = ariane_soc::IdWidthSlave + 1;
   `endif
 
   parameter int unsigned AXI_USER_WIDTH = ariane_axi_soc::UserWidth;

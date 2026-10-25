@@ -70,13 +70,40 @@ package ariane_soc;
       logic [63:0] end_addr;
    } addr_map_rule_t;
 
-  // 4 is recommended by AXI standard, so lets stick to it, do not change
-  // The ID width of the master ports is wider than that of the slave ports.
-  // The additional ID bits are used by the internal multiplexers to route responses.
-  // The ID width of the master ports must be AxiIdWidthSlvPorts + $clog_2(NoSlvPorts).
-  // The same parameters in cva6/include/ariane_axi need to match with the values below!
-  localparam IdWidth   = 4; // Do not change
-  localparam IdWidthSlave = IdWidth + $clog2(NrSlaves);
+  // Host crossbar IDs: every master's port is IdWidth bits, and the crossbar puts the index of that port
+  // (axi_masters_t, XbarPortWidth bits) above them, so its slaves (the LLC among them) see IdWidthSlave bits.
+  // 4 is what the masters on it are built for (OpenTitan's has fixed 4-bit IDs). Raising it widens every slave-side
+  // ID, the LLC memory port's too, and with it the FPGA DDR4 controller, an IP generated with a fixed ID width
+  // (fpga/setup.sh AXI_ID_DDR_WIDTH). (The CVA6 cores' own IDs are ariane_axi::IdWidth, a different width.)
+  localparam IdWidth       = 4;
+  localparam XbarPortWidth = $clog2(NrSlaves);
+  localparam IdWidthSlave  = IdWidth + XbarPortWidth;
+
+  // ---- Masters of the coherence unit (CCU, cva6_synth_wrap): the NumCVA6 cores are its ports 0..NumCVA6-1, then
+  // its DMA port, which the accelerator socket and the Xilinx Ethernet DMA share (cva6_subsystem). Every number and
+  // width that depends on how many masters the CCU has derives from these.
+  localparam int unsigned NumCcuDmaPorts = 1;
+  localparam int unsigned NumCcuPorts    = NumCVA6 + NumCcuDmaPorts;
+  localparam int unsigned CcuDmaPort     = NumCVA6;
+  // The CCU writes the port a request came from (its "source") into the low CcuSrcWidth bits of the AXI user field
+  // (ace_ccu_top; ariane_axi_soc::QosUserLsb), and the source travels with the request to the memory.
+  localparam int unsigned CcuSrcWidth    = (NumCcuPorts > 1) ? $clog2(NumCcuPorts) : 1;
+
+  // ---- ID remapper between the CCU and the crossbar (cva6_axi_id_remap): RemapMaxUniqIds IDs in flight per
+  // direction, and AXI ID = {source, slot}. RemapSrcWidth bits of the source fit next to the slot in IdWidth bits;
+  // with fewer than CcuSrcWidth the ID keeps the source's low bits, and what needs the full source reads the user
+  // field. IdWidth >= RemapSlotWidth + CcuSrcWidth would make the ID carry all of it.
+  localparam int unsigned RemapMaxUniqIds = 4;
+  localparam int unsigned RemapTxnsPerId  = 1;
+  localparam int unsigned RemapSlotWidth  = cf_math_pkg::idx_width(RemapMaxUniqIds);   // as the remapper sizes it
+  localparam int unsigned RemapSrcWidth   = IdWidth - RemapSlotWidth;
+
+  // ---- Source of a request at the LLC memory port, as the APMU's SPU there reports it (host_domain,
+  // ariane_axi_soc::mem_src): 0..NumCcuPorts-1 the CCU source (the cores, then the DMA port), NumCcuPorts + p - 1
+  // for crossbar master p >= 1. MemSrcWidth is the APMU's source field (pmu_pkg::SOURCE_ID_BITS, checked in
+  // host_domain), which must hold all NumMemSrcs.
+  localparam int unsigned NumMemSrcs  = NumCcuPorts + NrSlaves - 1;
+  localparam int unsigned MemSrcWidth = 4;
 
   /// Number of synchronization registers to insert on the async pointers
   localparam CdcSyncStages   = 3;

@@ -21,6 +21,10 @@ module axi_spu_top #(
     // then set SourceIDStart = 7, SourceIDEnd = 9. (Both inclusive.)
     parameter int unsigned SourceIDStart    = 0,
     parameter int unsigned SourceIDEnd      = 0,
+    // 0: the source of a request is its ID slice [SourceIDEnd:SourceIDStart]. 1: it is ar_src_i / aw_src_i, sampled
+    // with the request (SourceIDEnd - SourceIDStart + 1 bits wide). Either way a response reports the source of the
+    // request it answers.
+    parameter bit          ExtSource        = 1'b0,
 
     /// AXI4 Specifications
     parameter int unsigned IdWidth          = 8,
@@ -71,6 +75,8 @@ module axi_spu_top #(
     input  addr_map_t               addr_map_i,
     AXI_BUS.Slave                   spu_slv,
     AXI_BUS.Master                  spu_mst,
+    input  source_id_t              ar_src_i,   // ExtSource: source of the AR on spu_slv
+    input  source_id_t              aw_src_i,   // ExtSource: source of the AW on spu_slv
     output pmu_pkg::pmu_event_t     e_out
 );
     import spu_pkg::*;
@@ -79,6 +85,7 @@ module axi_spu_top #(
     // Ax Buffer
     typedef struct packed {
         id_t                id;
+        source_id_t         src;
         addr_t              addr;
         axi_pkg::burst_t    burst;
         axi_pkg::len_t      len;
@@ -176,6 +183,8 @@ module axi_spu_top #(
     // Valid signal for `spu_ax_chan` and `spu_cam` modules.
     logic ar_info_valid;
     logic r_info_valid;
+    logic aw_info_valid;
+    logic w_info_valid;
 
     // Answers one of the following two questions:
     //      0. How many cachelines are affected by this transfer?
@@ -348,6 +357,7 @@ module axi_spu_top #(
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             aw_chan.id    <= 0;
+            aw_chan.src   <= 0;
             aw_chan.addr  <= 0;
             aw_chan.len   <= 0;
             aw_chan.size  <= 0; 
@@ -355,6 +365,7 @@ module axi_spu_top #(
             aw_chan.valid <= 0;
         end else begin
             aw_chan.id    <= spu_slv.aw_id;
+            aw_chan.src   <= ExtSource ? aw_src_i : source_id_t'(spu_slv.aw_id[SourceIDStart +: SOURCE_ID_BITS]);
             aw_chan.addr  <= spu_slv.aw_addr;
             aw_chan.len   <= spu_slv.aw_len;
             aw_chan.size  <= spu_slv.aw_size;
@@ -378,7 +389,7 @@ module axi_spu_top #(
         if (!rst_ni) begin
             new_b_resp_q <= 1'b1;
         end else begin
-            new_b_resp_q <= new_b_resp_q;
+            new_b_resp_q <= new_b_resp_d;
         end
     end
 
@@ -416,6 +427,7 @@ module axi_spu_top #(
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             ar_chan.id    <= 0;
+            ar_chan.src   <= 0;
             ar_chan.addr  <= 0;
             ar_chan.len   <= 0;
             ar_chan.size  <= 0; 
@@ -423,6 +435,7 @@ module axi_spu_top #(
             ar_chan.valid <= 0;
         end else begin
             ar_chan.id    <= spu_slv.ar_id;
+            ar_chan.src   <= ExtSource ? ar_src_i : source_id_t'(spu_slv.ar_id[SourceIDStart +: SOURCE_ID_BITS]);
             ar_chan.addr  <= spu_slv.ar_addr;
             ar_chan.len   <= spu_slv.ar_len;
             ar_chan.size  <= spu_slv.ar_size;
@@ -480,6 +493,7 @@ module axi_spu_top #(
         // Source ID Specifications.
         .SourceIDStart          ( SourceIDStart         ),
         .SourceIDEnd            ( SourceIDEnd           ),
+        .SOURCE_ID_BITS         ( SOURCE_ID_BITS        ),
         // `spu_ax_chan` parameters.
         .ax_chan_t              ( ax_chan_t             ),
         // SPU Event Specifications.
@@ -500,7 +514,7 @@ module axi_spu_top #(
 
     assign ar_fifo_info_i.unaligned_transfer = ar_unaligned_transfer;
     assign ar_fifo_info_i.size_of_burst      = ar_size_of_burst;
-    assign ar_fifo_info_i.source_id          = ar_source_id;
+    assign ar_fifo_info_i.source_id          = ar_chan.src;
     assign ar_fifo_info_i.addr_idx           = ar_addr_idx;
 
     always_comb begin
@@ -551,6 +565,7 @@ module axi_spu_top #(
         // Source ID Specifications.
         .SourceIDStart  ( SourceIDStart             ),
         .SourceIDEnd    ( SourceIDEnd               ),
+        .SOURCE_ID_BITS ( SOURCE_ID_BITS            ),
         // Address Indexing
         .addr_rule_t    ( addr_rule_t               ),
         .N_ADDR_RULES   ( N_ADDR_RULES              )
@@ -558,6 +573,7 @@ module axi_spu_top #(
         .clk_i          ( clk_i                     ),
         .rst_ni         ( rst_ni                    ),
         .ar_chan_i      ( ar_chan                   ),
+        .ar_src_i       ( ar_chan.src               ),
         .r_chan_i       ( r_chan                    ),
         .addr_map_i     ( addr_map_i                ),
         .valid_o        ( r_info_valid              ),
@@ -616,6 +632,7 @@ module axi_spu_top #(
         // Source ID Specifications.
         .SourceIDStart          ( SourceIDStart         ),
         .SourceIDEnd            ( SourceIDEnd           ),
+        .SOURCE_ID_BITS         ( SOURCE_ID_BITS        ),
         // `spu_ax_chan` parameters.
         .ax_chan_t              ( ax_chan_t             ),
         // SPU Event Specifications.
@@ -636,7 +653,7 @@ module axi_spu_top #(
 
     assign aw_fifo_info_i.unaligned_transfer = aw_unaligned_transfer;
     assign aw_fifo_info_i.size_of_burst      = aw_size_of_burst; 
-    assign aw_fifo_info_i.source_id          = aw_source_id;
+    assign aw_fifo_info_i.source_id          = aw_chan.src;
     assign aw_fifo_info_i.addr_idx           = aw_addr_idx;
 
     always_comb begin
@@ -687,6 +704,7 @@ module axi_spu_top #(
         // Source ID Specifications.
         .SourceIDStart  ( SourceIDStart             ),
         .SourceIDEnd    ( SourceIDEnd               ),
+        .SOURCE_ID_BITS ( SOURCE_ID_BITS            ),
         // Address Indexing
         .addr_rule_t    ( addr_rule_t               ),
         .N_ADDR_RULES   ( N_ADDR_RULES              )
@@ -694,6 +712,7 @@ module axi_spu_top #(
         .clk_i          ( clk_i                     ),
         .rst_ni         ( rst_ni                    ),
         .aw_chan_i      ( aw_chan                   ),
+        .aw_src_i       ( aw_chan.src               ),
         .b_chan_i       ( b_chan                    ),
         .addr_map_i     ( addr_map_i                ),
         .valid_o        ( w_info_valid              ),
@@ -800,6 +819,9 @@ module axi_spu_top #(
         end if (pmu_pkg::EVENT_INFO_BITS != LATENCY_BITS + ADDR_IDX_BITS) begin
             $display("Response event packets need more bits for event info.");
             $error("Some event info bits will be truncated.");
+        end
+        if (SOURCE_ID_BITS > $bits(pmu_pkg::source_id_t)) begin
+            $error("%0d source bits do not fit the APMU's %0d-bit source field.", SOURCE_ID_BITS, $bits(pmu_pkg::source_id_t));
         end
     end
 

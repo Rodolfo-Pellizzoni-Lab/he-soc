@@ -205,10 +205,22 @@ module cva6_synth_wrap
 );
 
   localparam  CVA6AXiIdWidth = 4; // Do not change, CVA6 from planV only supports IdWidth = 4
-  // CCU ports: the cores, plus the accelerator socket's DMA master as a non-caching port (see below)
-  localparam  NumCcuPorts   = ariane_soc::NumCVA6 + 1;
-  localparam  DmaCcuPort    = ariane_soc::NumCVA6;
+  // CCU ports: the cores, plus the DMA port (accelerator socket and Ethernet DMA) as a non-caching port (see below)
+  localparam  NumCcuPorts   = ariane_soc::NumCcuPorts;
+  localparam  DmaCcuPort    = ariane_soc::CcuDmaPort;
   localparam  CCUAxiIdWidth = CVA6AXiIdWidth + $clog2(NumCcuPorts) + $clog2(NumCcuPorts+1);
+
+  // pragma translate_off
+  initial begin : p_ccu_cfg_assert
+    // the CCU writes the source port into user[$clog2(NoSlvPorts)-1:0] of everything it sends (ace_ccu_top): the
+    // SoC's user layout must keep exactly those bits below the QoS tag, or the tag's low RCID bits get overwritten
+    assert ($clog2(NumCcuPorts) == ariane_axi_soc::QosUserLsb)
+      else $fatal(1, "CCU source port: the CCU writes %0d user bits, ariane_axi_soc reserves %0d", $clog2(NumCcuPorts),
+                  ariane_axi_soc::QosUserLsb);
+    assert (ariane_soc::NumCcuDmaPorts == 1 && DmaCcuPort == ariane_soc::NumCVA6)
+      else $fatal(1, "this wrapper wires exactly one CCU DMA port, after the cores (dma_req_i)");
+  end
+  // pragma translate_on
 
 `ifdef APMU_IP
   ACE_BUS #(
@@ -600,8 +612,8 @@ module cva6_synth_wrap
       // Source ID Specifications
       .SourceIDStart      (  0                          ),
       .SourceIDEnd        (  0                          ),
-      // AXI4 Specifications
-      .IdWidth            ( ariane_soc::IdWidth         ),
+      // AXI4 Specifications: the core's own ACE port
+      .IdWidth            ( CVA6AXiIdWidth              ),
       .AddrWidth          ( AXI_ADDR_WIDTH              ),
       .DataWidth          ( AXI_DATA_WIDTH              ),
       // Address Indexing
@@ -780,13 +792,14 @@ module cva6_synth_wrap
   );
 
   cva6_axi_id_remap_intf #(
-    .AXI_SLV_PORT_ID_WIDTH     ( CCUAxiIdWidth  ),
-    .AXI_SLV_PORT_MAX_UNIQ_IDS ( 4              ),
-    .AXI_MAX_TXNS_PER_ID       ( 1              ),
-    .AXI_MST_PORT_ID_WIDTH     ( AXI_ID_WIDTH   ),
-    .AXI_ADDR_WIDTH            ( AXI_ADDR_WIDTH ),
-    .AXI_DATA_WIDTH            ( AXI_DATA_WIDTH ),
-    .AXI_USER_WIDTH            ( AXI_USER_WIDTH )
+    .AXI_SLV_PORT_ID_WIDTH     ( CCUAxiIdWidth               ),
+    .AXI_SLV_PORT_MAX_UNIQ_IDS ( ariane_soc::RemapMaxUniqIds ),
+    .AXI_MAX_TXNS_PER_ID       ( ariane_soc::RemapTxnsPerId  ),
+    .AXI_MST_PORT_ID_WIDTH     ( AXI_ID_WIDTH                ),
+    .AXI_SRC_WIDTH             ( ariane_soc::CcuSrcWidth     ),
+    .AXI_ADDR_WIDTH            ( AXI_ADDR_WIDTH              ),
+    .AXI_DATA_WIDTH            ( AXI_DATA_WIDTH              ),
+    .AXI_USER_WIDTH            ( AXI_USER_WIDTH              )
   ) i_cva6_axi_id_remapper (
       .clk_i  ( clk_i           ),
       .rst_ni ( rst_ni          ),

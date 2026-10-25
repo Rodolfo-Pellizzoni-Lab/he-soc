@@ -56,6 +56,9 @@ module cva6_axi_id_remap #(
   ///
   /// If master IDs are wider than the minimum, they are extended by prepending zeros.
   parameter int unsigned AxiMstPortIdWidth = 32'd0,
+  /// Bits of the AXI user field, from bit 0, that hold the source port the coherence unit writes into every request
+  /// (ariane_soc::CcuSrcWidth). The master-port ID carries them above the table index, as far as they fit.
+  parameter int unsigned AxiSrcWidth = 32'd0,
   /// Request struct type of the AXI4+ATOP slave port.
   ///
   /// The width of all IDs in this struct must match `AxiSlvPortIdWidth`.
@@ -198,25 +201,27 @@ module cva6_axi_id_remap #(
   // Zero-extend output IDs if the output IDs is are wider than the IDs from the tables.
   localparam ZeroWidth = AxiMstPortIdWidth - IdxWidth;
   // *****************************************************************************************
-  always_comb begin
-  // -------------------- READ --------------------
-    if (slv_req_i.ar.id[8:6] == 3'b100) begin
-      // Coherent: use [5:4] for core ID
-      mst_req_o.ar.id = { slv_req_i.ar.id[5:4], rd_push_oup_id };
-    end else begin
-      // Noncoherent: use [7:6] for core ID
-      mst_req_o.ar.id = { slv_req_i.ar.id[7:6], rd_push_oup_id };
+  // Output ID = {source, table index}. The source is the CCU port the request came from, which the CCU writes into
+  // user[AxiSrcWidth-1:0] on both of its paths (ace_ccu_top): port i on its non-shareable path, and on the CCU FSM's
+  // the requesting port, except that a write-back the FSM issues for snooped dirty data carries the port that held the
+  // data (ccu_fsm first_responder; its QoS tag stays the requester's). The cores are ports 0..NumCVA6-1, the DMA port
+  // shared by the accelerator socket and the Ethernet DMA follows them (ariane_soc). Only ZeroWidth bits of the source
+  // fit in the ID (ariane_soc::RemapSrcWidth): with fewer than AxiSrcWidth the ID keeps the source's low bits, and the
+  // full source stays in the user field, where the APMU's SPU on the LLC memory port reads it (host_domain).
+  // The CCU's own ID ({outer mux input, inner mux input, core ID}) is not decoded here because its layout depends on
+  // the number of CCU ports: the fixed positions used before ([8:6] == 3'b100 ? [5:4] : [7:6]) were written for the
+  // 4-port CCU's 9-bit IDs, and with the DMA port (5 ports, 10-bit IDs) they gave every shareable request core 2's prefix.
+  if (ZeroWidth > 0) begin : gen_src_prefix
+    always_comb begin
+      mst_req_o.ar.id = { ZeroWidth'(slv_req_i.ar.user[AxiSrcWidth-1:0]), rd_push_oup_id };
+      mst_req_o.aw.id = { ZeroWidth'(slv_req_i.aw.user[AxiSrcWidth-1:0]), wr_push_oup_id };
     end
- 
-    // -------------------- WRITE --------------------
-    if (slv_req_i.aw.id[8:6] == 3'b100) begin
-      // Coherent: use [5:4] for core ID
-      mst_req_o.aw.id = { slv_req_i.aw.id[5:4], wr_push_oup_id };
-    end else begin
-      // Noncoherent: use [7:6] for core ID
-      mst_req_o.aw.id = { slv_req_i.aw.id[7:6], wr_push_oup_id };
+  end else begin : gen_no_prefix
+    always_comb begin
+      mst_req_o.ar.id = rd_push_oup_id;
+      mst_req_o.aw.id = wr_push_oup_id;
     end
-end
+  end
 // *****************************************************************************************
 // *****************************************************************************************
   // Handle requests.
@@ -377,6 +382,11 @@ end
       else $fatal(1, "Parameter AxiSlvPortIdWidth has to be larger than 0!");
     assert(AxiMstPortIdWidth >= IdxWidth)
       else $fatal(1, "Parameter AxiMstPortIdWidth has to be at least IdxWidth!");
+    assert(AxiSrcWidth > 0 && $bits(slv_req_i.ar.user) >= AxiSrcWidth)
+      else $fatal(1, "Parameter AxiSrcWidth: %0d source bits, in a %0d-bit user field", AxiSrcWidth, $bits(slv_req_i.ar.user));
+    if (AxiSrcWidth > ZeroWidth)
+      $info("cva6_axi_id_remap: the %0d-bit ID holds %0d of the %0d source bits; the full source is in user[%0d:0]",
+            AxiMstPortIdWidth, ZeroWidth, AxiSrcWidth, AxiSrcWidth - 1);
     assert (AxiSlvPortMaxUniqIds > 0)
       else $fatal(1, "Parameter AxiSlvPortMaxUniqIds has to be larger than 0!");
     assert (AxiSlvPortMaxUniqIds <= 2**AxiSlvPortIdWidth)
@@ -605,6 +615,7 @@ module cva6_axi_id_remap_intf #(
   parameter int unsigned AXI_SLV_PORT_MAX_UNIQ_IDS = 32'd0,
   parameter int unsigned AXI_MAX_TXNS_PER_ID = 32'd0,
   parameter int unsigned AXI_MST_PORT_ID_WIDTH = 32'd0,
+  parameter int unsigned AXI_SRC_WIDTH = 32'd0,
   parameter int unsigned AXI_ADDR_WIDTH = 32'd0,
   parameter int unsigned AXI_DATA_WIDTH = 32'd0,
   parameter int unsigned AXI_USER_WIDTH = 32'd0
@@ -652,6 +663,7 @@ module cva6_axi_id_remap_intf #(
     .AxiSlvPortMaxUniqIds ( AXI_SLV_PORT_MAX_UNIQ_IDS ),
     .AxiMaxTxnsPerId      ( AXI_MAX_TXNS_PER_ID       ),
     .AxiMstPortIdWidth    ( AXI_MST_PORT_ID_WIDTH     ),
+    .AxiSrcWidth          ( AXI_SRC_WIDTH             ),
     .slv_req_t            ( slv_req_t                 ),
     .slv_resp_t           ( slv_resp_t                ),
     .mst_req_t            ( mst_req_t                 ),

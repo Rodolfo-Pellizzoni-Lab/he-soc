@@ -60,6 +60,34 @@ Each counter and its configuration registers occupy a separate 4 KiB page:
 | Counter 1 | `0x10408000` | Page 1 |
 | … | … | … |
 
+### Event select and sources (AlSaqr)
+
+A counter's Event Sel register is {port value [23:20], port mask [19:16], source value [15:12], source mask [11:8],
+event value [7:4], event mask [3:0]} (`pmu_pkg::event_sel_cfg_t`). The counter counts an event when
+`(mask & field) == value` holds for all three fields. Ports with four cores: 1-4 the cores' EVUs, 5-8 the SPUs on
+the cores' ports to the LLC, 9 the SPU on the LLC memory port (all DRAM traffic). SPU events: 1 read request,
+2 write request, 3 read response, 4 write response.
+
+On port 9 the source says who caused the traffic (`hardware/include/ariane_soc_pkg.sv`, `ariane_axi_soc::mem_src`):
+
+| Source | Master |
+|---|---|
+| 0-3 | the cores (ports 0-3 of the coherence unit) |
+| 4 | the coherence unit's DMA port: the accelerator socket and the Xilinx Ethernet DMA |
+| 5 | debug module |
+| 6, 7 | cluster port, RoT (idle) |
+| 8, 9 | uDMA TX, uDMA RX |
+| 10, 11 | IOMMU completion port (iDMA), IOMMU data structures |
+| 12, 13 | IOPMP initiator (idle), APMU master (does not reach DRAM) |
+
+The cores' and the DMA port's numbers are the coherence unit's source port, which travels in the AXI user field
+(`user[QosUserLsb-1:0]`, `hardware/docs/qos.md`). The other masters get `NumCcuPorts + p - 1` for crossbar port `p`.
+A response counts for the source of its request. A write-back the coherence unit issues for snooped dirty data counts
+for the core that held the data, an LLC eviction for the request whose miss caused it, and LLC flushes for source 0.
+The numbers follow the package when masters are added; the simulation checks that `NumMemSrcs` fits the 4-bit source
+field. Examples: `0x9F4F1F` counts the DMA port's read requests, `0x9F001F` every read request on port 9
+(`software/quad_boot/pmu_defines.h`; `software/soc_tests/t_srcid` checks them).
+
 > **Implementation note.** The AXI4-Lite reads/writes are serviced by AlSaqr's
 > `axi_lite_regs` IP, which expects a *contiguous* byte array, whereas the counters are
 > paged at 4 KiB boundaries. `pmu_top.sv` bridges the two: a register at address

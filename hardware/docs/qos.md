@@ -39,7 +39,8 @@ $clog2(NumCVA6 + 1)` is the width of the CCU source-port field: 3 bits (a 12-bit
 (13-bit) for 8 to 15 cores. With the four cores of the default build:
 
 ```
-user[2:0]   source port of the CCU (written by the CCU): 0-3 the cores, 4 the accelerator socket's DMA port
+user[2:0]   source port of the CCU (written by the CCU): 0-3 the cores, 4 the DMA port of the accelerator socket
+            and the Ethernet DMA
 user[3+:4]  RCID                     (user[QosUserLsb +: 4] in general)
 user[7+:4]  MCID                     (user[QosUserLsb+4 +: 4])
 user[11]    AT                       (user[QosUserLsb+8])
@@ -48,8 +49,9 @@ user[11]    AT                       (user[QosUserLsb+8])
 Software that decodes the word (the QoS probe in `soc_tests/t_qos`, `soc_test.h`'s `SOC_SRC_BITS`) derives the
 port width from `SOC_NUM_CORES`; with `NUM_CVA6=8` the RCID starts at bit 4.
 
-(`QosUserLsb` is `$clog2(NumCVA6 + 1)`: the CCU writes its port index into the low bits, and the socket's DMA is its
-fifth port, see `hardware/accel/README.md`.)
+(`QosUserLsb` is `ariane_soc::CcuSrcWidth`, `$clog2(NumCcuPorts)` with `NumCcuPorts` the cores plus the DMA port:
+the CCU writes its port index into the low bits, see `hardware/accel/README.md`. The same bits tell the APMU's SPU on
+the LLC memory port the source of a request, see `hardware/ip_list/apmu/README.md`.)
 
 Use `ariane_axi_soc::qos_tag(user)` to decode a SoC user field into an `ariane_pkg::qos_tag_t {at, mcid, rcid}`,
 and `ariane_axi_soc::qos_user(tag)` to build one.
@@ -104,6 +106,11 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
 - **How it is wired.** `axi_llc_hit_miss` locks the ways outside the mask for the replacement decision of the
   descriptor under lookup. That decision uses the RCID/AT of `desc_q`, which is stable for the whole lookup.
   It ORs with the SPM lock and the old AXI-ID partitioning (`SourceIDStart/End`, still there, default off).
+  The old masks (16 bits each from `0x1040_1040`) are indexed by the AXI ID above the remapper's slot bits:
+  index n is core n, but the ID holds only the CCU source's low bits, so the DMA port (the accelerator socket and
+  the Ethernet DMA) shares core 0's mask. The PMU benches that still program them (`pmu_evu_bench`,
+  `pmu_evu_simple_sim`, and in alsaqr-software `pmu_mempol_synth`, `pmu_sdvb`, `pmu_sad_profile`) give each core
+  four ways this way; on bitstreams with the old remapper (2026-10-16 to -25) every core's refills used core 2's.
 - **Parameters.** `axi_llc_top` takes `QosRcidWidth` (0 turns the controller off), `QosRcidLsb`, `QosAtBit`
   and `QosCcOffset`.
 

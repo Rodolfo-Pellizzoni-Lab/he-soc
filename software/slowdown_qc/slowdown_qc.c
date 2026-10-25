@@ -79,7 +79,8 @@ static inline void unlock_uart(void) {
 #define PLIC_EN_BITS2   (PLIC_BASE + 0x2380UL)
 
 /* Event selects — LLC + MEM request counts, per core (SPU ports 5-8 = cores
- * 0-3 at the LLC; port 9 src 4-7 = cores 0-3 at main memory). */
+ * 0-3 at the LLC; port 9 sources 0-3 = cores 0-3 at main memory, 4 = the DMA
+ * port, more in software/quad_boot/pmu_defines.h). */
 #define LLC_RD_REQ_CORE_0  0x5F001FUL
 #define LLC_RD_REQ_CORE_1  0x6F001FUL
 #define LLC_RD_REQ_CORE_2  0x7F001FUL

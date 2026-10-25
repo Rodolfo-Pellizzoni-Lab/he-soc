@@ -24,6 +24,17 @@ alongside the APMU and the per-core EVUs.
   between a request and its corresponding response completion.
 - Each event type is handled by a dedicated pipeline, and the resulting **event packets are
   stored in a FIFO** that forms the SPU's output interface to the APMU.
+- Every event carries a **source**, which the APMU's per-counter source filter matches. By
+  default it is a slice of the request's AXI ID (`SourceIDStart`..`SourceIDEnd`). In
+  `axi_spu_top`, `ExtSource = 1` makes it the `ar_src_i` / `aw_src_i` input instead, sampled
+  with the request, so the instance can derive it from the ID, the user field or both. In both
+  variants a response event (R, B) reports the source of the request it answers, kept per
+  outstanding request next to its start time. AlSaqr's SPU on the LLC memory port uses
+  `ExtSource`; the APMU README lists its source codes. That SPU sits between the LLC and the
+  slowdown regulator, so its response latencies include the slowdown's and the DRAM timing
+  model's delays (`hardware/host/host_domain.sv`).
+- A write response is counted once, also when it is held valid for several cycles (both
+  variants; before 2026-10-25 a stalled B counted once per cycle).
 
 ## Variants
 
