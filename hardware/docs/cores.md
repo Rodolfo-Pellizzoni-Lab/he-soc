@@ -191,6 +191,28 @@ Where the load peaks:
   machine (or a wider line), not arbitration. Raw sweeps: `board8/fix/sweep_cpus{8_full,6,4}.lines` in the session
   scratchpad, summarised by `bw_sweep_summ.py` and, per hart against hart 0, `fair_summ.py`.
 
+
+### With the decoupled CCU (2026-10-25 evening, bitstream `cores4_dec`, commit b9e40af1)
+
+The coherence unit no longer waits for the LLC's response (hardware/docs/ccu_model.md). Same `bw` program and
+sweep as above, Linux with 4 CPUs, every phase of all harts overlapped (hart 0 within 3 % of the others), MB/s:
+
+| Linux, 4 CPUs | harts loaded | DRAM read | DRAM write | memcpy | LLC-hit read | LLC-hit write |
+|---|---|---|---|---|---|---|
+| serial CCU (`cores8_fix`, above) | 1 | 11.2 | 7.5 | 9.3 | 12.5 | 8.3 |
+| decoupled CCU (`cores4_dec`) | 1 | 12.6 | 8.3 | 10.4 | 14.1 | 9.2 |
+| serial | 2 | 14.5 | 12.4 | 13.5 | 15.5 | 15.2 |
+| decoupled | 2 | 25.3 | 16.6 | 20.8 | 28.5 | 18.5 |
+| serial | 3 | 15.5 | 14.4 | 15.0 | 17.3 | 18.9 |
+| decoupled | 3 | 37.6 | 24.9 | 30.8 | 42.1 | 27.8 |
+| serial | 4 | 15.5 | 14.3 | 14.8 | 16.5 | 12.7 † |
+| decoupled | 4 | 49.3 | 32.4 | 40.1 | 52.6 | 35.0 |
+
+Each of the four harts keeps 97 % of its solo rate (12.2 to 12.4 MB/s DRAM read each against 12.6 alone): the
+ceiling the serial unit imposed at two harts is gone, reads scale 3.2 times at four harts and the write path,
+now the first limit, 2.3 times. A single hart gains 10 to 13 %. The raw sweep is `ccu/sweep_cores4_dec.lines` in
+the session scratchpad. The eight-CPU and six-CPU rows follow with the `cores8_dec3` bitstream.
+
 ## Verified in xsim
 
 - 4 cores, branch RTL: the soc regression passes (t_mem, t_atomics, t_smp, t_irq, t_socket, t_qos, t_cbqri,

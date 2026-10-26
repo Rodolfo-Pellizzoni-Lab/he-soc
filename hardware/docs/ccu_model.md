@@ -169,6 +169,8 @@ from the Q, B1 and R phases). t_stopm, the stop_machine port that found the eigh
 | 8 cores | t_stopm with side effects (10 rounds), t_bw (76 checks) | pass (t_bw on rpsrvr1) |
 | 8 cores | soc regression | t_atomics, t_smp, t_irq, t_socket, t_cbqri pass; t_mem, t_dram and the second half paused for the bitstream builds |
 | 8 cores | t_part alone | not yet run on the final version |
+| VCU118 | bitstream `cores4_dec` (4 cores, built on rpsrvr2 in 2 h 28) | 552,632 LUTs (46.7 %, 2.5k more than `plic_tree_4c`), setup met at 50 MHz, all routed; hold: the usual adv_timer clock-as-data (8) and uDMA SPI async-clear classes |
+| VCU118, `cores4_dec` | Linux 4 CPUs boots (shell 90 s); bw sweep, 4 harts: DRAM read 49.3 MB/s (was 15.5), LLC-hit read 52.6 (was 16.5), each hart at 97 % of its solo rate; t_atomics and hello_culsans bare metal pass | pass (cores.md has the table) |
 | VCU118 | bitstream `cores8_dec3` (NUM_CVA6=8) | building |
 
 The first version of the change failed t_atomics, t_smp, t_qos (hang) and t_eth (one frame); the three fixes
