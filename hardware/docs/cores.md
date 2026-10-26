@@ -213,6 +213,39 @@ ceiling the serial unit imposed at two harts is gone, reads scale 3.2 times at f
 now the first limit, 2.3 times. A single hart gains 10 to 13 %. The raw sweep is `ccu/sweep_cores4_dec.lines` in
 the session scratchpad. The eight-CPU and six-CPU rows follow with the `cores8_dec3` bitstream.
 
+
+### Eight-core bitstream with the decoupled CCU (2026-10-25 night, `cores8_dec3`, 805,846 LUTs, setup met at 50 MHz)
+
+Bare metal on eight harts: t_stopm 200 rounds (393/12/277/107/0/0/4/7 advances per core), t_smp 82 checks, t_qos
+63, t_iotag 27, all pass. Linux netboots to the shell in 85 s with 8, 6 and 4 CPUs (was 111 s with eight on the
+serial unit). `bw` sweeps as above, MB/s, every phase of every hart overlapped (hart 0 within 3 % of the others):
+
+| Linux | harts loaded | DRAM read | DRAM write | memcpy | LLC-hit read | LLC-hit write |
+|---|---|---|---|---|---|---|
+| 8 CPUs | 1 | 12.3 | 8.2 | 10.2 | 13.7 | 9.0 |
+| 8 CPUs | 2 | 24.7 | 16.3 | 20.3 | 27.9 | 18.3 |
+| 8 CPUs | 3 | 36.7 | 24.6 | 30.2 | 41.2 | 27.5 |
+| 8 CPUs | 4 | 48.5 | 32.5 | 39.7 | 51.8 | 35.1 |
+| 8 CPUs | 5 | 59.0 | 40.2 | 48.6 | 59.9 | 40.7 |
+| 8 CPUs | 6 | 68.6 | 47.0 | 56.5 | 69.1 | 46.9 |
+| 8 CPUs | 7 | 76.5 | 53.1 | 63.3 | 76.6 | 52.7 |
+| 6 CPUs | 1 | 12.5 | 8.2 | 10.3 | 13.9 | 9.1 |
+| 6 CPUs | 2 | 25.0 | 16.5 | 20.5 | 28.2 | 18.5 |
+| 6 CPUs | 3 | 37.4 | 24.9 | 30.6 | 41.6 | 27.9 |
+| 6 CPUs | 4 | 49.2 | 33.0 | 40.1 | 52.1 | 35.2 |
+| 6 CPUs | 5 | 60.1 | 40.6 | 49.2 | 60.6 | 41.1 |
+| 6 CPUs | 6 | 69.8 | 47.4 | 57.1 | 69.6 | 47.1 |
+| 4 CPUs | 1 | 12.6 | 8.3 | 10.4 | 14.1 | 9.2 |
+| 4 CPUs | 2 | 25.3 | 16.6 | 20.7 | 28.4 | 18.5 |
+| 4 CPUs | 3 | 37.5 | 24.9 | 30.7 | 42.2 | 27.8 |
+| 4 CPUs | 4 | 49.5 | 33.0 | 40.3 | 52.9 | 35.3 |
+
+Reads scale almost linearly to seven loaded harts (each at 87 % of its solo 12.3 MB/s), 5.6 times the serial
+unit's 13.6 MB/s ceiling at the same point; writes 4.4 times. More CPUs online no longer cost the single hart
+anything (12.3 to 12.6 MB/s with 8, 6 or 4 online). **Open:** the phase with all eight harts streaming did not
+finish within 40 minutes in the sweep script (Linux itself stayed responsive: the file copy after the timeout
+worked); it is being reproduced with per-process diagnostics (`board8/bw8_diag.sh`).
+
 ## Verified in xsim
 
 - 4 cores, branch RTL: the soc regression passes (t_mem, t_atomics, t_smp, t_irq, t_socket, t_qos, t_cbqri,
