@@ -164,14 +164,14 @@ from the Q, B1 and R phases). t_stopm, the stop_machine port that found the eigh
 | library | what | result |
 |---|---|---|
 | 4 cores | soc regression: t_mem, t_atomics, t_smp, t_irq, t_socket, t_qos, t_cbqri, t_dram, t_dma, t_iotag, t_eth, hello_culsans, quad_boot | 13 of 13 pass (2026-10-25, final version) |
-| 4 cores | t_part alone (exceeds the regression's 2 h limit) | running on rpsrvr1 |
+| 4 cores | t_part alone (exceeds the regression's 2 h limit; expectations updated, see below) | TEST PASS 202 checks (rpsrvr1, 3 h 35) |
 | 4 cores | t_stopm (stop_machine port, 20 rounds), t_bw (36 checks) | pass |
 | 8 cores | t_stopm with side effects (10 rounds), t_bw (76 checks) | pass (t_bw on rpsrvr1) |
-| 8 cores | soc regression | t_atomics, t_smp, t_irq, t_socket, t_cbqri pass; t_mem, t_dram and the second half paused for the bitstream builds |
-| 8 cores | t_part alone | not yet run on the final version |
+| 8 cores | soc regression (rpsrvr1 / rpsrvr2): t_mem, t_atomics, t_smp, t_irq, t_socket, t_cbqri, t_dram, t_dma, t_eth, hello_culsans, quad_boot; t_qos and t_iotag as 8-core builds | 13 of 13 pass (the 4-core builds of t_qos / t_iotag fail on the tag layout as always) |
+| 8 cores | t_part alone (8-core build) | TEST PASS 202 checks (rpsrvr1, 3 h 35) |
 | VCU118 | bitstream `cores4_dec` (4 cores, built on rpsrvr2 in 2 h 28) | 552,632 LUTs (46.7 %, 2.5k more than `plic_tree_4c`), setup met at 50 MHz, all routed; hold: the usual adv_timer clock-as-data (8) and uDMA SPI async-clear classes |
 | VCU118, `cores4_dec` | Linux 4 CPUs boots (shell 90 s); bw sweep, 4 harts: DRAM read 49.3 MB/s (was 15.5), LLC-hit read 52.6 (was 16.5), each hart at 97 % of its solo rate; t_atomics and hello_culsans bare metal pass | pass (cores.md has the table) |
-| VCU118 | bitstream `cores8_dec3` (NUM_CVA6=8) | building |
+| VCU118 | bitstream `cores8_dec3` (NUM_CVA6=8, 6 h 35 on the main machine) | 805,846 LUTs (68.2 %, 6.2k more than `cores8_fix`), setup met at 50 MHz, all routed; hold: the same two classes (adv_timer 8 at -0.818 ns, uDMA SPI async clears 485) |
 
 The first version of the change failed t_atomics, t_smp, t_qos (hang) and t_eth (one frame); the three fixes
 above made them pass. Everything above ran on the final version. The shared-line mode does

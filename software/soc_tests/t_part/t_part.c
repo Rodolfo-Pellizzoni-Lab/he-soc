@@ -248,20 +248,28 @@ static void pass(const char *title, int strict) {
   CHECK(p.app_probe <= APP_KEEP, "P: the app's %d lines did not survive in its 8 ways (%d misses)", NLINES, p.app_probe);
   CHECK(rr.app_probe <= APP_KEEP, "R: the app's lines did not survive in its 8 ways (%d misses)", rr.app_probe);
   CHECK(q.app_probe >= NLINES * 3 / 4, "Q: 8 lines per set in 4 ways did not thrash (%d misses)", q.app_probe);
-  CHECK(s.app_probe >= NLINES / 64 && s.app_probe > 2 * p.app_probe, "S: sharing did not cost the app lines (%d misses, partitioned %d)",
+  // S against P: sharing never protects the app better than its own ways do. (With the serialising coherence unit
+  // the shared phase also cost the app a few lines, 5 to 7 of NLINES, because the app ran 3.5 times slower than
+  // alone and the aggressors' insertions aged its lines out of the PLRU; with the decoupled unit the app keeps
+  // its lines hot and loses none, so the capacity evidence is in Q, B1 and R.)
+  CHECK(s.app_probe >= p.app_probe, "S: sharing cost the app fewer lines than partitioning (%d misses, partitioned %d)",
         s.app_probe, p.app_probe);
   CHECK(p.acc_probe <= ACC_KEEP, "P: the accelerator's %d lines did not survive in its 6 ways (%d misses)", ACC_LINES, p.acc_probe);
   CHECK(b0.acc_probe <= ACC_KEEP, "B0: the accelerator alone with 16 ways misses (%d)", b0.acc_probe);
   CHECK(b1.acc_probe >= ACC_LINES * 3 / 4, "B1: 4 lines per set in 1 way did not thrash (%d misses)", b1.acc_probe);
   CHECK(rr.acc_probe >= ACC_LINES * 3 / 4, "R: the accelerator squeezed to 1 way did not thrash (%d misses)", rr.acc_probe);
   CHECK(s.acc_probe >= ACC_LINES / 4, "S: sharing did not cost the accelerator lines (%d misses)", s.acc_probe);
-  // Latency. Under load every principal also pays the others' transactions: the coherence unit serializes them,
-  // so an app hit behind a streaming core costs its own hit plus one of the streamer's misses whatever the masks.
-  // What the masks decide is ordinal: partitioned <= shared, and too few ways < enough.
+  // Latency. Under load every principal also pays for the others' transactions in the coherence unit. The
+  // serialising unit charged an app hit behind a streaming core its own hit plus one of the streamer's misses
+  // (3.5 times the solo latency in S, 5 with the DRAM model); the decoupled unit (ccu_fsm DecoupledReads,
+  // hardware/docs/ccu_model.md) only its 9-cycle serial part, 10 to 12 % here. What the masks decide is ordinal:
+  // partitioned <= shared, and too few ways < enough.
   CHECK(p.app_x100 <= s.app_x100, "P: partitioned is slower than shared for the app (%d vs %d)", p.app_x100, s.app_x100);
   CHECK(q.app_x100 > p.app_x100, "Q: the app with 4 ways for 8 lines per set is not slower than with 8 (%d vs %d)",
         q.app_x100, p.app_x100);
-  CHECK(s.app_x100 >= a0.app_x100 * 130 / 100, "S: a streaming core costs the app nothing (%d vs alone %d)", s.app_x100, a0.app_x100);
+  CHECK(s.app_x100 > a0.app_x100 && s.app_x100 <= a0.app_x100 * 130 / 100,
+        "S: a streaming core and the accelerator cost the app %d%% per hop (%d vs alone %d), expected between 0 and 30",
+        (int)((s.app_x100 - a0.app_x100) * 100 / a0.app_x100), s.app_x100, a0.app_x100);
   CHECK(rr.acc_probe_x100 > p.acc_probe_x100, "R: the accelerator with 1 way is not slower than with 6 (%d vs %d)",
         rr.acc_probe_x100, p.acc_probe_x100);
   if (strict) {   // with a real memory latency the capacity effects are large
