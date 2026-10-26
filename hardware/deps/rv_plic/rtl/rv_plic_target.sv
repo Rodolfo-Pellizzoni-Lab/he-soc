@@ -119,6 +119,57 @@ end else if (ALGORITHM == "MATRIX") begin : gen_mat
       irq_id <= '0;
     end
   end // always_ff
+end else if (ALGORITHM == "TREE") begin : gen_tree
+  // Third implementation: a balanced binary reduction over the sources.
+  // Each node keeps the candidate with the higher priority and, on a tie, the lower source index, which is
+  // the choice the MATRIX implementation makes (its leading-one detector). The cost is N_SOURCE-1 compare
+  // and select nodes per target, $clog2(N_SOURCE) levels deep, instead of the (N x (N-1))/2 comparators of
+  // MATRIX: at 255 sources and 8 targets the matrix was 218k LUTs of a VU9P, as much as four CVA6 cores.
+  // Like MATRIX, a source takes part only when its priority is strictly above the threshold (the SEQUENTIAL
+  // implementation computes threshold + 1 in PRIOW bits, which wraps at MAX_PRIO).
+  localparam int unsigned LVL = (N_SOURCE > 1) ? $clog2(N_SOURCE) : 1;
+  localparam int unsigned NP  = 2 ** LVL;
+  typedef struct packed {
+    logic             valid;
+    logic [PRIOW-1:0] prio;
+    logic [SRCW-1:0]  id;     // source index + 1, as in the other implementations
+  } cand_t;
+  cand_t [NP-1:0] lvl [LVL+1];   // lvl[0]: the sources, lvl[LVL][0]: the winner
+
+  always_comb begin
+    for (int i = 0; i < NP; i++) begin
+      if (i < N_SOURCE) begin
+        lvl[0][i].valid = ip[i] & ie[i] & (prio[i] > threshold);
+        lvl[0][i].prio  = prio[i];
+        lvl[0][i].id    = SRCW'(i + 1);
+      end else begin
+        lvl[0][i] = '0;
+      end
+    end
+    for (int l = 0; l < LVL; l++) begin
+      for (int i = 0; i < NP; i++) begin
+        if (i < (NP >> (l + 1))) begin
+          // the left child holds the lower source indices and wins a tie
+          if (lvl[l][2*i].valid && (!lvl[l][2*i+1].valid || lvl[l][2*i].prio >= lvl[l][2*i+1].prio))
+            lvl[l+1][i] = lvl[l][2*i];
+          else
+            lvl[l+1][i] = lvl[l][2*i+1];
+        end else begin
+          lvl[l+1][i] = '0;
+        end
+      end
+    end
+  end
+
+  always_ff @(posedge clk_i, negedge rst_ni) begin
+    if (!rst_ni) begin
+      irq    <= 1'b0;
+      irq_id <= '0;
+    end else begin
+      irq    <= lvl[LVL][0].valid;
+      irq_id <= lvl[LVL][0].valid ? lvl[LVL][0].id : '0;
+    end
+  end
 end // ALGORITHM
 
 endmodule

@@ -64,7 +64,12 @@ module cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
     input  logic                                 snoop_invalidate_i,
     input  logic [63:0]                          snoop_invalidate_addr_i,
     input  readshared_done_t                     readshared_done_i,
-    output logic                                 updating_cache_o
+    output logic                                 updating_cache_o,
+    // to snoop controller: a store that owns its line (CleanUnique answered, or hit on a unique line) and has not
+    // written the SRAM yet. The snoop controller holds snoops to that line until the write is done, so the store
+    // can never lose its line to a ReadShared between the two (hardware/docs/coherence.md).
+    output logic                                 store_hold_o,
+    output logic [63:0]                          store_hold_addr_o
 );
 
     enum logic [3:0] {
@@ -103,6 +108,10 @@ module cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
 
 
     assign busy_o = (state_q != IDLE);
+    // STORE_REQ, and the cycle MAKE_UNIQUE receives the CleanUnique response (the snoop that would otherwise be
+    // accepted in that cycle is the first one after the CleanUnique)
+    assign store_hold_o      = (state_q == STORE_REQ) || (state_q == MAKE_UNIQUE && miss_gnt_i);
+    assign store_hold_addr_o = {{(64-DCACHE_TAG_WIDTH-DCACHE_INDEX_WIDTH){1'b0}}, mem_req_q.tag, mem_req_q.index};
     assign tag_o  = mem_req_d.tag;
 
     logic [DCACHE_LINE_WIDTH-1:0] cl_i;
@@ -343,8 +352,18 @@ end
               miss_req_o.size = '0;
               miss_req_o.we = '0;
               miss_req_o.wdata = '0;
-              if (miss_gnt_i)
+              if (miss_gnt_i) begin
                 state_d = STORE_REQ;
+                // The CleanUnique has been performed: every ReadShared answered up to now went to a reader that the
+                // CleanUnique invalidated again, so none of them is a collision for this store. Counting them made the
+                // store redo its CleanUnique while the readers refilled, and with enough spinning readers that never
+                // ended (the stop_machine livelock, hardware/docs/coherence.md). Only a ReadShared answered from here
+                // on matters; store_hold_o keeps the snoop controller from accepting one until the data is written,
+                // and a pulse in this very cycle is kept as a collision to be safe.
+                if (!(readshared_done_i.valid &&
+                      readshared_done_i.addr[DCACHE_TAG_WIDTH+DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET] == {mem_req_q.tag, mem_req_q.index[DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET]}))
+                  colliding_read_d = 1'b0;
+              end
             end
 
             // ~> we are here as we need a second round of memory access for a store

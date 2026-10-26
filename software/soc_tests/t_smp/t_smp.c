@@ -1,9 +1,10 @@
-// Four cores on shared cached DRAM (coherence through the CCU): wake-up of all cores, a contended amoadd
-// counter, an LR/SC increment loop, per-core cache lines written by their owner and read by core 0, and a
-// message-passing ring (data then flag) between neighbouring cores. Only core 0 prints.
+// All cores (SOC_NUM_CORES, 4 unless built with -DSOC_NUM_CORES=<n>) on shared cached DRAM (coherence through
+// the CCU): wake-up of all cores, a contended amoadd counter, an LR/SC increment loop, per-core cache lines
+// written by their owner and read by core 0, and a message-passing ring (data then flag) between neighbouring
+// cores. Only core 0 prints.
 #include "soc_test.h"
 
-#define NC    4
+#define NC    SOC_NUM_CORES
 #define ITERS 40
 
 static volatile uint64_t amo_counter  __attribute__((aligned(64)));

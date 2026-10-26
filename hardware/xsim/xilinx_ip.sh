@@ -1,8 +1,11 @@
 #!/bin/bash
 # Simulation sources of the Xilinx IP the SoC instantiates (today: the AXI DMA of the Ethernet subsystem, whose
 # RTL is plain VHDL/Verilog and needs no license). Vivado generates them from the same configuration the FPGA flow
-# uses (hardware/fpga/alsaqr/tcl/ips/eth_dma/config.tcl) into $WORK/xilinx_ip, and they are compiled into their
-# own xsim libraries (libs.txt), which the elaborations pick up with -L. Nothing is kept in the tree.
+# uses (hardware/fpga/alsaqr/tcl/ips/eth_dma/config.tcl) into $WORK/xilinx_ip. The IP's own libraries (libs.txt)
+# are the ones Vivado ships precompiled for xsim and maps in its global xsim.ini (axi_dma_v7_1_34, ...): those are
+# not compiled again (an `xvhdl -work <lib>` of such a name writes INTO the installation, which two builds running
+# at once corrupt), the elaborations pick them up with -L. Only the IP's top (xil_defaultlib) goes into work, and
+# a library the installation does not provide is compiled into $WORK/xsim.dir/<lib>. Nothing is kept in the tree.
 # usage: xilinx_ip.sh [-f]     -f: regenerate even if the sources exist
 set -e
 source "$(dirname "$0")/env.sh"
@@ -10,9 +13,10 @@ IPDIR=$XILINX_IP_DIR
 CFG=$HW/fpga/alsaqr/tcl/ips/eth_dma/config.tcl
 stamp=$(md5sum "$CFG" | cut -c1-8)
 if [ "$1" != "-f" ] && [ -f "$IPDIR/libs.txt" ] && [ "$(cat "$IPDIR/stamp" 2>/dev/null)" = "$stamp" ] \
-   && [ -d "$WORK/xsim.dir/axi_dma_v7_1_34" -o -d "$WORK/xsim.dir/$(tail -2 "$IPDIR/libs.txt" | head -1)" ]; then
+   && ls "$WORK"/xsim.dir/work/eth_dma*.sdb >/dev/null 2>&1; then
   echo "xilinx_ip: up to date ($IPDIR)"; exit 0
 fi
+GLOBAL_INI=${XILINX_VIVADO:?}/data/xsim/xsim.ini
 rm -rf "$IPDIR"; mkdir -p "$IPDIR"; cd "$IPDIR"
 cat > gen.tcl <<TCL
 source $CFG
@@ -31,16 +35,24 @@ TCL
 vivado -mode batch -nojournal -nolog -source gen.tcl > gen.log 2>&1 || { grep -E "^ERROR" gen.log | head -5; exit 1; }
 [ -s files.txt ] || { echo "xilinx_ip: no simulation files listed (gen.log)"; exit 1; }
 
-# compile, one library at a time, in the IP's compile order; the top (xil_defaultlib) goes into work
+# the top (xil_defaultlib) goes into work; a library Vivado ships precompiled (global xsim.ini) is only listed;
+# anything else is compiled into its own local library, in the IP's compile order
 cd "$WORK"
-: > "$IPDIR/libs.txt"
+: > "$IPDIR/libs.txt"; : > "$IPDIR/compile.log"
 while read -r lib type path; do
   [ "$lib" = "xil_defaultlib" ] && lib=work
-  case "$type" in
-    VHDL*)    xvhdl -work "$lib" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
-    Verilog*) xvlog -work "$lib" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
-    *) echo "xilinx_ip: skipping $type $path" ;;
-  esac
+  if [ "$lib" != "work" ] && grep -q "^$lib=" "$GLOBAL_INI"; then
+    echo "precompiled: $lib $path" >> "$IPDIR/compile.log"; dest=""
+  elif [ "$lib" = "work" ]; then dest="work"
+  else dest="$lib=$WORK/xsim.dir/$lib"
+  fi
+  if [ -n "$dest" ]; then
+    case "$type" in
+      VHDL*)    xvhdl -work "$dest" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
+      Verilog*) xvlog -work "$dest" "$path" >> "$IPDIR/compile.log" 2>&1 || { grep ERROR "$IPDIR/compile.log" | head -3; exit 1; } ;;
+      *) echo "xilinx_ip: skipping $type $path" ;;
+    esac
+  fi
   [ "$lib" != "work" ] && ! grep -qx "$lib" "$IPDIR/libs.txt" && echo "$lib" >> "$IPDIR/libs.txt"
 done < "$IPDIR/files.txt"
 echo "$stamp" > "$IPDIR/stamp"

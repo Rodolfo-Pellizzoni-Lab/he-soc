@@ -113,9 +113,12 @@ import std_cache_pkg::*;
 
     readshared_done_t readshared_done;
     logic [3:0]       updating_cache;
+    logic [2:0]       store_hold;
+    logic [2:0][63:0] store_hold_addr;
 
     logic [DCACHE_SET_ASSOC-1:0]         miss_invalidate_req;
     logic [DCACHE_INDEX_WIDTH-1:0]       miss_invalidate_addr;
+    logic [DCACHE_SET_ASSOC-1:0]         miss_refill_req;
 
     assign busy_o = |busy | miss_handler_busy;
 
@@ -155,6 +158,9 @@ import std_cache_pkg::*;
         .amo_addr_i           ( serving_amo_addr      ),
         .miss_invalidate_req_i   (miss_invalidate_req  ),
         .miss_invalidate_addr_i  (miss_invalidate_addr ),
+        .miss_refill_req_i       (miss_refill_req      ),
+        .store_hold_i         ( store_hold            ),
+        .store_hold_addr_i    ( store_hold_addr       ),
         .*
     );
 
@@ -203,6 +209,8 @@ import std_cache_pkg::*;
                 .snoop_invalidate_addr_i ( invalidate_addr       ),
                 .readshared_done_i     ( readshared_done         ),
                 .updating_cache_o      ( updating_cache    [i]   ),
+                .store_hold_o          ( store_hold        [i-1] ),
+                .store_hold_addr_o     ( store_hold_addr   [i-1] ),
                 .*
             );
         end
@@ -234,6 +242,7 @@ import std_cache_pkg::*;
         .snoop_invalidate_addr_i( invalidate_addr      ),
         .invalidate_req_o       ( miss_invalidate_req  ),
         .invalidate_addr_o      ( miss_invalidate_addr ),
+        .refill_req_o           ( miss_refill_req      ),
         .miss_req_i             ( miss_req             ),
         .miss_gnt_o             ( miss_gnt             ),
         .bypass_gnt_o           ( bypass_gnt           ),
@@ -385,6 +394,40 @@ import std_cache_pkg::*;
     assign shared_way[j] = rdata_ram[j].shared;
   end
 
+
+//pragma translate_off
+`ifndef VERILATOR
+    // Simulation monitor (2026-10-25, decoupled CCU lost-store hunt): a snoop controller write (UPDATE_SHARED or
+    // INVALIDATE, way = hit_way_q from its lookup) that lands on a way the miss handler has refilled since that lookup
+    // hits the fresh line, not the one the snoop looked up. The serial CCU never let a snoop hit overlap a refill.
+    logic                        mon_snoop_window;
+    logic [DCACHE_SET_ASSOC-1:0] mon_refilled_ways;
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+      if (!rst_ni) begin
+        mon_snoop_window  <= 1'b0;
+        mon_refilled_ways <= '0;
+      end else begin
+        if (i_snoop_cache_ctrl.state_q == i_snoop_cache_ctrl.EVAL_FLAGS) begin
+          mon_snoop_window  <= 1'b1;
+          mon_refilled_ways <= '0;   // a refill in this very cycle is added below (that assignment wins)
+        end else if (i_snoop_cache_ctrl.state_q == i_snoop_cache_ctrl.IDLE || i_snoop_cache_ctrl.state_q == i_snoop_cache_ctrl.SEND_CR_RESP) begin
+          mon_snoop_window  <= 1'b0;
+        end
+        // a refill (tag written, valid set) by the miss handler into the set the snoop looked up
+        if ((mon_snoop_window || i_snoop_cache_ctrl.state_q == i_snoop_cache_ctrl.EVAL_FLAGS) && we[0] && |req[0] && |be[0].tag && wdata[0].valid &&
+            addr[0][DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET] == i_snoop_cache_ctrl.mem_req_q.index[DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET]) begin
+          mon_refilled_ways <= (i_snoop_cache_ctrl.state_q == i_snoop_cache_ctrl.EVAL_FLAGS ? '0 : mon_refilled_ways) | req[0];
+          $display("%t [%m] MON refill into the snoop's set during its window: refill way %b, snoop hit_way %b, snoop state %0d, index %h",
+                   $time, req[0], i_snoop_cache_ctrl.hit_way_q, i_snoop_cache_ctrl.state_q, i_snoop_cache_ctrl.mem_req_q.index);
+        end
+        if ((i_snoop_cache_ctrl.state_q == i_snoop_cache_ctrl.UPDATE_SHARED || i_snoop_cache_ctrl.state_q == i_snoop_cache_ctrl.INVALIDATE) &&
+            we[1] && |req[1] && gnt[1] && |(mon_refilled_ways & i_snoop_cache_ctrl.hit_way_q))   // tag_cmp grants ports below the winner even without a request: require the snoop's own write
+          $error("%t [%m] MON SNOOP WRITE RACE: snoop state %0d writes way %b refilled by the miss handler since the lookup (index %h, refill tag %h)",
+                 $time, i_snoop_cache_ctrl.state_q, i_snoop_cache_ctrl.hit_way_q, i_snoop_cache_ctrl.mem_req_q.index, wdata[0].tag);
+      end
+    end
+`endif
+//pragma translate_on
 //pragma translate_off
     initial begin
         assert (DCACHE_LINE_WIDTH/AXI_DATA_WIDTH inside {2, 4, 8, 16}) else $fatal(1, "Cache line size needs to be a power of two multiple of AXI_DATA_WIDTH");

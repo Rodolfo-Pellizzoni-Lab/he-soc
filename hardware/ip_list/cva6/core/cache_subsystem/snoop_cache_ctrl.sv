@@ -11,7 +11,8 @@
 // Description: cache controller, driven by incoming snoop requests
 
 module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
-    parameter ariane_cfg_t ArianeCfg = ArianeDefaultConfig // contains cacheable regions
+    parameter ariane_cfg_t ArianeCfg = ArianeDefaultConfig, // contains cacheable regions
+    parameter int unsigned NR_CACHE_CTRL = 3                // cache controllers whose pending stores hold snoops
 ) (
   input  logic                               clk_i, // Clock
   input  logic                               rst_ni, // Asynchronous reset active low
@@ -44,9 +45,13 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
   input  logic [63:0]                        amo_addr_i,
   input  logic        [DCACHE_SET_ASSOC-1:0] miss_invalidate_req_i,
   input  logic      [DCACHE_INDEX_WIDTH-1:0] miss_invalidate_addr_i,
+  input  logic        [DCACHE_SET_ASSOC-1:0] miss_refill_req_i,      // refill written into these ways (address: miss_invalidate_addr_i)
   // to/from cache_ctrl
   input  logic                               updating_cache_i,
-  output readshared_done_t                   readshared_done_o
+  output readshared_done_t                   readshared_done_o,
+  // stores that own their line and have not written it yet (one per cache controller): snoops to that line wait
+  input  logic        [NR_CACHE_CTRL-1:0]    store_hold_i,
+  input  logic        [NR_CACHE_CTRL-1:0][63:0] store_hold_addr_i
 );
 
   // pragma translate_off
@@ -103,6 +108,18 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
 
   assign shared = |(shared_way_i & hit_way_i);
 
+  // A cache controller has a store that owns this line and has not written it yet: do not accept the snoop before
+  // the write (the controller needs only the local SRAM port to finish, so nothing waits on the CCU meanwhile).
+  logic store_hold_hit;
+  always_comb begin : store_hold_check
+    store_hold_hit = 1'b0;
+    for (int unsigned i = 0; i < NR_CACHE_CTRL; i++) begin
+      if (store_hold_i[i] &&
+          store_hold_addr_i[i][DCACHE_TAG_WIDTH+DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET] == snoop_port_i.ac.addr[DCACHE_TAG_WIDTH+DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET])
+        store_hold_hit = 1'b1;
+    end
+  end
+
   snoop_pkg::crresp_t cr_resp_d, cr_resp_q;
 
   snoop_pkg::acsnoop_t ac_snoop_d, ac_snoop_q;
@@ -112,10 +129,24 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
   logic                           miss_invalidate_collision;
   assign miss_invalidate_collision = |(miss_invalidate_req_q & hit_way_q) && (miss_invalidate_addr_q == mem_req_q.index);
 
+  // The miss handler refilled the way this snoop hit, after the snoop's lookup (EVAL_FLAGS) and before its status
+  // write: the way now holds another line (with a store merged into it and its dirty bits), so the write decided on
+  // the old line must not be applied; the response (decided on the old, clean line) still stands. With the serial CCU
+  // a snoop round never overlapped a refill; with the decoupled CCU it does, and this write cleared the dirty bits or
+  // the valid bit of freshly refilled lines (lost stores, hardware/docs/coherence.md).
+  logic  [DCACHE_SET_ASSOC-1:0]   miss_refill_req_d, miss_refill_req_q;
+  logic                           miss_refill_collision;
+  assign miss_refill_collision = |(miss_refill_req_q & hit_way_q);
+
   // FSM
   always_comb begin : cache_ctrl_fsm
 
     miss_invalidate_req_d = miss_invalidate_req_q | miss_invalidate_req_i; // default: sample and hold miss_invalidate_req_i
+    // refills into this snoop's set, held from the lookup on (a refill in the lookup cycle itself cannot happen: the
+    // miss handler's port request denies the snoop's read in that cycle)
+    miss_refill_req_d = miss_refill_req_q;
+    if (|miss_refill_req_i && miss_invalidate_addr_i[DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET] == mem_req_q.index[DCACHE_INDEX_WIDTH-1:DCACHE_BYTE_OFFSET])
+      miss_refill_req_d = miss_refill_req_q | miss_refill_req_i;
     // sample invalidate address
     if (|miss_invalidate_req_i) begin
       miss_invalidate_addr_d = miss_invalidate_addr_i;
@@ -154,12 +185,14 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
 
       IDLE: begin
         miss_invalidate_req_d = '0;
+        miss_refill_req_d = '0;
         cr_resp_d = '0;
         ac_snoop_d = '0;
         cacheline_word_sel_d = 1'b0;
 
         // we receive a snooping request
-        if (snoop_port_i.ac_valid == 1'b1 && flushing_i == 1'b0 && !(amo_valid_i == 1'b1 && amo_addr_i[63:DCACHE_BYTE_OFFSET] == snoop_port_i.ac.addr[63:DCACHE_BYTE_OFFSET])) begin
+        if (snoop_port_i.ac_valid == 1'b1 && flushing_i == 1'b0 && !(amo_valid_i == 1'b1 && amo_addr_i[63:DCACHE_BYTE_OFFSET] == snoop_port_i.ac.addr[63:DCACHE_BYTE_OFFSET]) &&
+            !store_hold_hit) begin
           start_req_o = 1'b1;
           snoop_port_o.ac_ready = 1'b1;
           // save the request details
@@ -191,6 +224,7 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
 
       WAIT_GNT: begin
         miss_invalidate_req_d = '0;
+        miss_refill_req_d = '0;
         if (!updating_cache_i) begin
           req_o = '1;
           if (gnt_i)
@@ -242,40 +276,50 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
       end
 
       UPDATE_SHARED: begin
-        req_o = hit_way_q;
-        we_o = 1'b1;
-        for (int unsigned i = 0; i < DCACHE_SET_ASSOC; i++) begin
-          if (hit_way_q[i]) be_o.vldrty[i] = '1;
-        end
-        // leave data be to 0 - don't overwrite
-        be_o.data = 0;
-        // keep dirty flag as it was
-        data_o.dirty = |(dirty_way_q & hit_way_q) ? '1 : '0;
-        // if entry was invalidated, then avoid validating it again
-        data_o.valid = miss_invalidate_collision ? 1'b0 : 1'b1;
-        // change shared the state
-        data_o.shared = 1'b1;
-        if (gnt_i) begin
+        if (miss_refill_collision) begin
+          // the way holds a new line now: nothing to mark shared, answer with what was looked up
           state_d = SEND_CR_RESP;
-          readshared_done_o.valid = 1'b1;
-          readshared_done_o.addr = {mem_req_q.tag, mem_req_q.index};
+        end else begin
+          req_o = hit_way_q;
+          we_o = 1'b1;
+          for (int unsigned i = 0; i < DCACHE_SET_ASSOC; i++) begin
+            if (hit_way_q[i]) be_o.vldrty[i] = '1;
+          end
+          // leave data be to 0 - don't overwrite
+          be_o.data = 0;
+          // keep dirty flag as it was
+          data_o.dirty = |(dirty_way_q & hit_way_q) ? '1 : '0;
+          // if entry was invalidated, then avoid validating it again
+          data_o.valid = miss_invalidate_collision ? 1'b0 : 1'b1;
+          // change shared the state
+          data_o.shared = 1'b1;
+          if (gnt_i) begin
+            state_d = SEND_CR_RESP;
+            readshared_done_o.valid = 1'b1;
+            readshared_done_o.addr = {mem_req_q.tag, mem_req_q.index};
+          end
         end
       end
 
       INVALIDATE: begin
-        req_o = hit_way_q;
-        we_o = 1'b1;
-        for (int unsigned i = 0; i < DCACHE_SET_ASSOC; i++) begin
-          if (hit_way_q[i]) be_o.vldrty[i] = '1;
-        end
-        data_o.dirty = '0;
-        data_o.valid = 1'b0;
-        data_o.shared = 1'b0;
-        // signal invalidate to the miss_handler
-        // we are not blocked by the miss_handler here
-        invalidate_o = 1'b1;
-        if (gnt_i) begin
+        if (miss_refill_collision) begin
+          // the way holds a new line now: the looked-up line is gone from this cache already
           state_d = SEND_CR_RESP;
+        end else begin
+          req_o = hit_way_q;
+          we_o = 1'b1;
+          for (int unsigned i = 0; i < DCACHE_SET_ASSOC; i++) begin
+            if (hit_way_q[i]) be_o.vldrty[i] = '1;
+          end
+          data_o.dirty = '0;
+          data_o.valid = 1'b0;
+          data_o.shared = 1'b0;
+          // signal invalidate to the miss_handler
+          // we are not blocked by the miss_handler here
+          invalidate_o = 1'b1;
+          if (gnt_i) begin
+            state_d = SEND_CR_RESP;
+          end
         end
       end
 
@@ -323,6 +367,7 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
       ac_snoop_q <= '0;
       miss_invalidate_addr_q <= '0;
       miss_invalidate_req_q <= '0;
+      miss_refill_req_q <= '0;
     end else begin
       state_q <= state_d;
       mem_req_q <= mem_req_d;
@@ -335,6 +380,7 @@ module snoop_cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
       ac_snoop_q <= ac_snoop_d;
       miss_invalidate_addr_q <= miss_invalidate_addr_d;
       miss_invalidate_req_q <= miss_invalidate_req_d;
+      miss_refill_req_q <= miss_refill_req_d;
     end
   end
 

@@ -281,7 +281,7 @@ module cva6_synth_wrap
   ariane_ace::req_t [ariane_soc::NumCVA6-1:0] ace_core_req;     // QoS tag in user[QOS_TAG_WIDTH-1:0]
   ariane_ace::resp_t [ariane_soc::NumCVA6-1:0] ace_ariane_resp;
 
-  logic [ariane_soc::NumCVA6-1:0][1:0] hart_id;
+  logic [ariane_soc::NumCVA6-1:0][7:0] hart_id;   // two bits would wrap the IDs of a fifth core and up
 
   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core;
 
@@ -504,7 +504,7 @@ module cva6_synth_wrap
       .clk_i                ( clk_i                 ),
       .rst_ni               ( rst_ni                ),
       .boot_addr_i          ( ariane_soc::ROMBase   ), // start fetching from ROM
-      .hart_id_i            ( { 62'h0, hart_id[i] } ),
+      .hart_id_i            ( { 56'h0, hart_id[i] } ),
    `ifdef USE_APLIC
       .imsic_csr_i          ( imsic_csr_i[i]        ),
       .imsic_csr_o          ( imsic_csr_o[i]        ),

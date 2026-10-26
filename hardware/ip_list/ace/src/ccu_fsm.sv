@@ -1,6 +1,11 @@
 `include "ace/assign.svh"
 `include "ace/typedef.svh"
 
+// Coherency control unit state machine: one shareable transaction at a time through the snoop round, with
+// (DecoupledReads) the memory read of a transaction handed to the memory side so the next transaction can start
+// while the LLC answers; the responses of those reads return to their initiators by AXI id through the R channel
+// and are tracked in a small in-flight table that blocks a new transaction to a line still in flight.
+// hardware/docs/ccu_model.md has the measurements and the model behind this.
 module ccu_fsm
 #(
     parameter int unsigned DcacheLineWidth = 0,
@@ -10,7 +15,13 @@ module ccu_fsm
     parameter type mst_req_t    = logic,
     parameter type mst_resp_t   = logic,
     parameter type snoop_req_t  = logic,
-    parameter type snoop_resp_t = logic
+    parameter type snoop_resp_t = logic,
+    // a read that needs memory leaves the state machine as soon as its AR is accepted (its R comes back by id);
+    // 0 restores the original behaviour (the state machine waits in READ_MEM for the last beat)
+    parameter bit          DecoupledReads = 1'b1,
+    // reads in flight at once (one per CCU port is enough for the blocking CVA6 miss handler; the DMA port may
+    // have more); when the table is full the read waits in READ_MEM as before
+    parameter int unsigned NumInflight = 8
 ) (
     //clock and reset
     input                               clk_i,
@@ -28,6 +39,7 @@ module ccu_fsm
 
     localparam int unsigned DcacheLineWords = DcacheLineWidth / AxiDataWidth;
     localparam int unsigned MstIdxBits      = $clog2(NoMstPorts);
+    localparam int unsigned LineOffsetBits  = $clog2(DcacheLineWidth / 8);
 
     enum logic [5:0] {
       IDLE,                      // 0
@@ -95,6 +107,102 @@ module ccu_fsm
     prio_t prio_d, prio_q;
 
     // ----------------------
+    // Reads in flight (DecoupledReads): line address and id of every memory read handed over and not yet
+    // answered with its last beat. A new request to one of those lines waits in IDLE until the read returns.
+    // ----------------------
+    localparam int unsigned AddrW = $bits(ccu_req_holder.ar.addr);
+    localparam int unsigned IdW   = $bits(ccu_req_holder.ar.id);
+    localparam int unsigned LineW = AddrW - LineOffsetBits;
+
+    logic [NumInflight-1:0]              inflight_valid_q;
+    logic [NumInflight-1:0][LineW-1:0]   inflight_lo_q, inflight_hi_q;   // first and last line of the burst
+    logic [NumInflight-1:0][IdW-1:0]     inflight_id_q;
+    logic                                inflight_free;
+    logic [$clog2(NumInflight)-1:0]      inflight_free_idx;
+    logic                                conflict_ar, conflict_aw;
+    logic                                ar_take, aw_take;       // a request that may leave IDLE now
+    logic                                hand_over;              // this cycle's AR to memory is decoupled
+    logic                                own_r;                  // the state machine drives its own R beats
+    logic                                mem_r_pop;              // last beat of a decoupled read passes through
+    logic [IdW-1:0]                      read_mem_id_q;          // id of the read READ_MEM waits for
+    logic [LineW-1:0]                    ar_lo, ar_hi, aw_lo, aw_hi, hold_lo, hold_hi;
+
+    // the lines a burst touches: INCR from its address, WRAP its aligned window, FIXED one line
+    function automatic void burst_lines(input logic [AddrW-1:0] addr, input axi_pkg::len_t len,
+                                        input axi_pkg::size_t size, input axi_pkg::burst_t burst,
+                                        output logic [LineW-1:0] lo, output logic [LineW-1:0] hi);
+        logic [AddrW-1:0] bytes, first, last;
+        bytes = (AddrW'(len) + AddrW'(1)) << size;
+        if (burst == axi_pkg::BURST_WRAP) first = addr & ~(bytes - AddrW'(1));
+        else                              first = addr;
+        if (burst == axi_pkg::BURST_FIXED) last = addr;
+        else                               last = first + bytes - AddrW'(1);
+        lo = first[AddrW-1:LineOffsetBits];
+        hi = last[AddrW-1:LineOffsetBits];
+    endfunction
+
+    always_comb begin
+        inflight_free     = 1'b0;
+        inflight_free_idx = '0;
+        for (int i = NumInflight-1; i >= 0; i--) begin
+            if (!inflight_valid_q[i]) begin
+                inflight_free     = 1'b1;
+                inflight_free_idx = i[$clog2(NumInflight)-1:0];
+            end
+        end
+        burst_lines(ccu_req_i.ar.addr, ccu_req_i.ar.len, ccu_req_i.ar.size, ccu_req_i.ar.burst, ar_lo, ar_hi);
+        burst_lines(ccu_req_i.aw.addr, ccu_req_i.aw.len, ccu_req_i.aw.size, ccu_req_i.aw.burst, aw_lo, aw_hi);
+        burst_lines(ccu_req_holder.ar.addr, ccu_req_holder.ar.len, ccu_req_holder.ar.size, ccu_req_holder.ar.burst,
+                    hold_lo, hold_hi);
+        conflict_ar = 1'b0;
+        conflict_aw = 1'b0;
+        for (int i = 0; i < NumInflight; i++) begin
+            if (inflight_valid_q[i] && ar_lo <= inflight_hi_q[i] && ar_hi >= inflight_lo_q[i]) conflict_ar = 1'b1;
+            if (inflight_valid_q[i] && aw_lo <= inflight_hi_q[i] && aw_hi >= inflight_lo_q[i]) conflict_aw = 1'b1;
+            // AXI returns same-id read data in order: a read with the id of one in flight waits, so that an
+            // answer from a snooped L1 cannot overtake memory data still on its way (the DMA port's reads)
+            if (inflight_valid_q[i] && inflight_id_q[i] == ccu_req_i.ar.id) conflict_ar = 1'b1;
+        end
+        ar_take = ccu_req_i.ar_valid & !conflict_ar;
+        aw_take = ccu_req_i.aw_valid & !conflict_aw;
+    end
+
+    // a decoupled memory read leaves now
+    assign hand_over = DecoupledReads && (state_q == SEND_AXI_REQ_R) && ccu_resp_i.ar_ready &&
+                       !ccu_req_holder.ar.lock && inflight_free;
+    // the state machine answers from the snoop data or with the CleanUnique response: memory R beats wait
+    assign own_r     = (state_q == WAIT_INVALID_R) || (state_q == READ_SNP_DATA);
+    assign mem_r_pop = ccu_resp_i.r_valid && ccu_req_o.r_ready && ccu_resp_i.r.last;
+
+    always_ff @(posedge clk_i, negedge rst_ni) begin
+        if (!rst_ni) begin
+            inflight_valid_q <= '0;
+            inflight_lo_q    <= '0;
+            inflight_hi_q    <= '0;
+            inflight_id_q    <= '0;
+            read_mem_id_q    <= '0;
+        end else begin
+            // the last beat of a read in flight retires its entry (the oldest with that id: AXI keeps same-id order)
+            if (mem_r_pop) begin
+                for (int i = 0; i < NumInflight; i++) begin
+                    if (inflight_valid_q[i] && inflight_id_q[i] == ccu_resp_i.r.id) begin
+                        inflight_valid_q[i] <= 1'b0;
+                        break;
+                    end
+                end
+            end
+            if (hand_over) begin
+                inflight_valid_q[inflight_free_idx] <= 1'b1;
+                inflight_lo_q[inflight_free_idx]    <= hold_lo;
+                inflight_hi_q[inflight_free_idx]    <= hold_hi;
+                inflight_id_q[inflight_free_idx]    <= ccu_req_holder.ar.id;
+            end
+            if (state_q == SEND_AXI_REQ_R) read_mem_id_q <= ccu_req_holder.ar.id;
+            else if (state_q == WRITE_MEM) read_mem_id_q <= ccu_req_holder.aw.id;
+        end
+    end
+
+    // ----------------------
     // Current State Block
     // ----------------------
     always_ff @(posedge clk_i, negedge rst_ni) begin : ccu_present_state
@@ -123,18 +231,18 @@ module ccu_fsm
         IDLE: begin
             initiator_d = '0;
             prio_d = '0;
-            //  wait for incoming valid request from master
-            if((ccu_req_i.ar_valid & !ccu_req_i.aw_valid) |
-               (ccu_req_i.ar_valid & prio_q.waiting_r) |
-               (ccu_req_i.ar_valid & !prio_q.waiting_w)) begin
+            //  wait for incoming valid request from master (one to a line with a read in flight waits)
+            if((ar_take & !aw_take) |
+               (ar_take & prio_q.waiting_r) |
+               (ar_take & !prio_q.waiting_w)) begin
                 state_d = DECODE_R;
                 initiator_d[ccu_req_i.ar.id[SlvAxiIDWidth+:MstIdxBits]] = 1'b1;
-                prio_d.waiting_w = ccu_req_i.aw_valid;
-            end else if((ccu_req_i.aw_valid & !ccu_req_i.ar_valid) |
-                        (ccu_req_i.aw_valid & prio_q.waiting_w)) begin
+                prio_d.waiting_w = aw_take;
+            end else if((aw_take & !ar_take) |
+                        (aw_take & prio_q.waiting_w)) begin
                 state_d = DECODE_W;
                 initiator_d[ccu_req_i.aw.id[SlvAxiIDWidth+:MstIdxBits]] = 1'b1;
-                prio_d.waiting_r = ccu_req_i.ar_valid;
+                prio_d.waiting_r = ar_take;
             end else begin
                 state_d = IDLE;
             end
@@ -231,17 +339,19 @@ module ccu_fsm
         end
 
         SEND_AXI_REQ_R: begin
-            // wait for responding slave to assert ar_ready
+            // wait for responding slave to assert ar_ready; a decoupled read then leaves the state machine
             if(ccu_resp_i.ar_ready !='b1) begin
                 state_d = SEND_AXI_REQ_R;
+            end else if (hand_over) begin
+                state_d = IDLE;
             end else begin
                 state_d = READ_MEM;
             end
         end
 
         READ_MEM: begin
-            // wait for responding slave to assert r_valid
-            if(ccu_resp_i.r_valid && ccu_req_i.r_ready) begin
+            // wait for responding slave to send the last beat of this read (other reads' beats pass meanwhile)
+            if(ccu_resp_i.r_valid && ccu_req_i.r_ready && ccu_resp_i.r.id == read_mem_id_q) begin
                 if(ccu_resp_i.r.last) begin
                     state_d = IDLE;
                 end else begin
@@ -309,9 +419,12 @@ module ccu_fsm
         end
 
         WRITE_MEM: begin
-            // wait for responding slave to send b_valid
+            // wait for responding slave to send b_valid. The read response of an atomic (aw.atop[5]) passes
+            // through to the initiator by id whenever it comes, before or after B (with DecoupledReads the R
+            // pass-through is on in every state but the two that send the state machine's own R beats), so
+            // the state machine does not wait for it; without DecoupledReads it waits in READ_MEM as before.
             if((ccu_resp_i.b_valid && ccu_req_i.b_ready)) begin
-                  if(ccu_req_holder.aw.atop [5]) begin
+                  if(ccu_req_holder.aw.atop [5] && !DecoupledReads) begin
                     state_d = READ_MEM;
                   end else begin
                     state_d = IDLE;
@@ -339,6 +452,14 @@ module ccu_fsm
         ccu_req_o  = '0;
         ccu_resp_o = '0;
         s2m_req_o  = '0;
+
+        // memory R beats go to their initiator (by id, through the mux) whenever the state machine is not
+        // sending R beats of its own: the reads in flight, and the read READ_MEM waits for
+        if (!own_r) begin
+            ccu_req_o.r_ready   =   ccu_req_i.r_ready;
+            ccu_resp_o.r        =   ccu_resp_i.r;
+            ccu_resp_o.r_valid  =   ccu_resp_i.r_valid;
+        end
 
         case(state_q)
         IDLE: begin
@@ -442,14 +563,10 @@ module ccu_fsm
             // forward request to slave (RAM)
             ccu_req_o.ar_valid  =   'b1;
             ccu_req_o.ar        =   ccu_req_holder.ar;
-            ccu_req_o.r_ready   =   ccu_req_holder.r_ready ;
         end
 
         READ_MEM: begin
-            // indicate slave to send data on r channel
-            ccu_req_o.r_ready   =   ccu_req_i.r_ready ;
-            ccu_resp_o.r        =   ccu_resp_i.r;
-            ccu_resp_o.r_valid  =   ccu_resp_i.r_valid;
+            // the R beats pass through (above)
         end
 
         //---------------------
@@ -521,16 +638,16 @@ module ccu_fsm
         if(!rst_ni) begin
             ccu_req_holder <= '0;
         end else if(state_q == IDLE &&
-                    ((ccu_req_i.ar_valid & !ccu_req_i.aw_valid) |
-                     (ccu_req_i.ar_valid & prio_q.waiting_r) |
-                     (ccu_req_i.ar_valid & !prio_q.waiting_w))) begin
+                    ((ar_take & !aw_take) |
+                     (ar_take & prio_q.waiting_r) |
+                     (ar_take & !prio_q.waiting_w))) begin
             ccu_req_holder.ar       <=  ccu_req_i.ar;
             ccu_req_holder.ar_valid <=  ccu_req_i.ar_valid;
             ccu_req_holder.r_ready  <=  ccu_req_i.r_ready;
 
         end  else if(state_q == IDLE &&
-                    ((ccu_req_i.aw_valid & !ccu_req_i.ar_valid) |
-                     (ccu_req_i.aw_valid & prio_q.waiting_w))) begin
+                    ((aw_take & !ar_take) |
+                     (aw_take & prio_q.waiting_w))) begin
             ccu_req_holder.aw       <=  ccu_req_i.aw;
             ccu_req_holder.aw_valid <=  ccu_req_i.aw_valid;
         end
@@ -657,6 +774,8 @@ module ccu_fsm
       end
     end
 
+  // beats of the state machine's own R response (snoop data, CleanUnique done); memory beats passing through
+  // belong to other transactions and do not count
   always_ff @ (posedge clk_i, negedge rst_ni) begin
     if(!rst_ni) begin
       r_last <= 1'b0;
@@ -665,7 +784,7 @@ module ccu_fsm
       if(state_q == IDLE) begin
         r_last <= 1'b0;
         r_eot  <= 1'b0;
-      end else if (ccu_req_i.r_ready & ccu_resp_o.r_valid) begin
+      end else if (own_r & ccu_req_i.r_ready & ccu_resp_o.r_valid) begin
         r_last <= !r_last;
         if (ccu_resp_o.r.last)
           r_eot <= 1'b1;

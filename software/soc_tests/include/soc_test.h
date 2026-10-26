@@ -62,17 +62,26 @@ static inline int soc_test_end(void) {
   return soc_fails > 126 ? 126 : soc_fails;
 }
 
-// ---- multi-core: wake cores 2 and 3 through APMU counter-overflow interrupts (as software/quad_boot does)
+// ---- multi-core: wake cores 2 .. SOC_NUM_CORES-1 through APMU counter-overflow interrupts (as software/quad_boot
+// does for cores 2 and 3): the boot ROM parks hart h (h >= 2) in wfi until PLIC source 156 + h - 2, the overflow
+// of APMU counter h - 2, reaches its S-mode context 2h + 1. Build with -DSOC_NUM_CORES=<n> for an n-core SoC
+// (hardware NUM_CVA6=<n>); core 1 is started by the runtime through the mailbox.
+#ifndef SOC_NUM_CORES
+#define SOC_NUM_CORES 4
+#endif
+// width of the CCU source-port field at the bottom of the SoC AXI user word: ariane_axi_soc::QosUserLsb =
+// clog2(SOC_NUM_CORES + 1), the cores plus the socket's DMA port (3 bits up to 7 cores, 4 bits up to 15)
+#define SOC_SRC_BITS ((SOC_NUM_CORES + 1) <= 2 ? 1 : (SOC_NUM_CORES + 1) <= 4 ? 2 : (SOC_NUM_CORES + 1) <= 8 ? 3 : \
+                      (SOC_NUM_CORES + 1) <= 16 ? 4 : 5)
 #define SOC_PLIC_BASE 0x0C000000UL
 static inline void soc_wake_all(void) {
-  REG32(SOC_PLIC_BASE + 156 * 4) = 1;                            // priority of APMU IRQ 156 (-> hart 2)
-  REG32(SOC_PLIC_BASE + 0x2280 + (156 / 32) * 4) = 1u << (156 % 32);   // enable, context 5 (hart 2 S-mode)
-  REG32(SOC_PLIC_BASE + 157 * 4) = 1;                            // APMU IRQ 157 (-> hart 3)
-  REG32(SOC_PLIC_BASE + 0x2380 + (157 / 32) * 4) = 1u << (157 % 32);   // context 7 (hart 3 S-mode)
-  REG32(EVENT_INFO_BASE_ADDR) = OVERFLOW_EN;
-  REG32(COUNTER_BASE_ADDR) = 0x40000000;
-  REG32(EVENT_INFO_BASE_ADDR + COUNTER_BUNDLE_SIZE) = OVERFLOW_EN;
-  REG32(COUNTER_BASE_ADDR + COUNTER_BUNDLE_SIZE) = 0x40000000;
+  for (int h = 2; h < SOC_NUM_CORES; h++) {
+    int id = 156 + (h - 2), ctx = 2 * h + 1, k = h - 2;
+    REG32(SOC_PLIC_BASE + id * 4) = 1;                                          // priority of the APMU IRQ
+    REG32(SOC_PLIC_BASE + 0x2000 + 0x80 * ctx + (id / 32) * 4) = 1u << (id % 32);   // enable it for hart h, S-mode
+    REG32(EVENT_INFO_BASE_ADDR + k * COUNTER_BUNDLE_SIZE) = OVERFLOW_EN;        // counter k overflows at once
+    REG32(COUNTER_BASE_ADDR + k * COUNTER_BUNDLE_SIZE) = 0x40000000;
+  }
 }
 
 SOC_SRAM static volatile uint64_t soc_barrier_count;

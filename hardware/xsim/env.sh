@@ -14,7 +14,8 @@ fi
 BENDER_TARGETS="-t rtl -t use_idma -t test -t tb -t vip -t cva6 -t scm_use_latch_scm -t aia_msi -t aia_embedded -t cv64a6_imafdc_sv39_wb"
 
 # SoC configuration (every block is compiled with these)
-SOC_DEFINES="WT_DCACHE USE_LOCAL_JTAG NO_L3_CONNECTION CODE_IN_L2 EXCLUDE_CLUSTER EXCLUDE_ETHERNET XILINX_ETHERNET COMMON_CELLS_ASSERTS_OFF"
+# SOC_EXTRA_DEFINES="NUM_CVA6=8" (NAME or NAME=VALUE, space separated) adds RTL defines, e.g. the core count
+SOC_DEFINES="WT_DCACHE USE_LOCAL_JTAG NO_L3_CONNECTION CODE_IN_L2 EXCLUDE_CLUSTER EXCLUDE_ETHERNET XILINX_ETHERNET COMMON_CELLS_ASSERTS_OFF${SOC_EXTRA_DEFINES:+ $SOC_EXTRA_DEFINES}"
 # Xilinx IP simulated with the IP's own sources (xilinx_ip.sh generates them from Vivado into $WORK/xilinx_ip):
 # the AXI DMA of the Ethernet subsystem. Its libraries are listed in $WORK/xilinx_ip/libs.txt for xelab -L.
 XILINX_IP_DIR=$WORK/xilinx_ip

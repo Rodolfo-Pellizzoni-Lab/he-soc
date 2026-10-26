@@ -19,8 +19,12 @@
 `define QUAD_CORE
 package ariane_soc;
 
-  // 2~4 number of cores
-  `ifdef QUAD_CORE
+  // Number of CVA6 cores. NUM_CVA6=<n> (a +define, see hardware/Makefile and xsim/env.sh) sizes the CCU, the
+  // CLINT, the PLIC contexts, the debug module, the APMU ports and the AXI user field for n cores; without it
+  // QUAD_CORE gives the four cores every flow in this tree builds, else two.
+  `ifdef NUM_CVA6
+   localparam NumCVA6 = `NUM_CVA6;
+  `elsif QUAD_CORE
    localparam NumCVA6 = 4;
   `else
    localparam NumCVA6 = 2;

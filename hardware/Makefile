@@ -204,6 +204,12 @@ ifdef quad-core
   compile_fpga += QUAD_CORE
 endif
 
+# NUM_CVA6=<n> (make variable or environment): n CVA6 cores instead of the QUAD_CORE four (include/ariane_soc_pkg.sv)
+ifdef NUM_CVA6
+  compile_flag += +define+NUM_CVA6=$(NUM_CVA6)
+  compile_fpga += NUM_CVA6=$(NUM_CVA6)
+endif
+
 ifdef exclude-cluster
   questa-cmd += +EXCLUDE_CLUSTER=$(exclude-cluster)
   compile_flag +=  +define+EXCLUDE_CLUSTER
