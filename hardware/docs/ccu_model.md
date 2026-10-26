@@ -159,6 +159,14 @@ when shared, and lines lost to sharing) were rewritten for the new behaviour (at
 from the Q, B1 and R phases). t_stopm, the stop_machine port that found the eight-core livelock, passes on the final version with
 4 cores (20 rounds) and with 8 cores and side effects (10 rounds).
 
+## Open issue (blocking): stale words under concurrent load
+
+With two or more harts streaming, the decoupled CCU loses single 8-byte stores on the VCU118 (about one per 20 M
+words per hart at 2 harts, more at 8), with LLC-resident buffers as well, while the serial-CCU bitstream is clean
+under the same stress. The stale word is always the lower word of its 16-byte line, the one whose store missed
+and triggered the refill. See cores.md ("Open, blocking") for the measurements and the hypothesis; the change
+must not be merged before this is understood and fixed.
+
 ## Verification
 
 | library | what | result |

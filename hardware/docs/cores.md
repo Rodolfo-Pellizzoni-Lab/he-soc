@@ -242,9 +242,20 @@ serial unit). `bw` sweeps as above, MB/s, every phase of every hart overlapped (
 
 Reads scale almost linearly to seven loaded harts (each at 87 % of its solo 12.3 MB/s), 5.6 times the serial
 unit's 13.6 MB/s ceiling at the same point; writes 4.4 times. More CPUs online no longer cost the single hart
-anything (12.3 to 12.6 MB/s with 8, 6 or 4 online). **Open:** the phase with all eight harts streaming did not
-finish within 40 minutes in the sweep script (Linux itself stayed responsive: the file copy after the timeout
-worked); it is being reproduced with per-process diagnostics (`board8/bw8_diag.sh`).
+anything (12.3 to 12.6 MB/s with 8, 6 or 4 online). **Open, blocking (2026-10-25 23:00): data corruption under concurrent load with the decoupled CCU.** A verifying
+stress (`bw/chk.c` in the session scratchpad: each hart fills a private buffer with an address/round-tagged
+pattern, copies it and checks every word, 20 rounds) loses single 8-byte words on the new bitstream and not on
+`cores8_fix`: 8 harts x 4 MiB: 6 to 14 bad words of 42 M per hart on 6 of 8 harts; 4 harts: 2 bad; 2 harts: 2 bad
+each; 1 hart: 0; 8 harts x 48 KiB (everything LLC-resident): 20 bad, so the LLC miss path is not needed. The old
+bitstream: 0 bad on all 8 harts. Every bad word holds the previous round's value (a lost store, or a stale copy
+written back over it) and every one of the 30-odd seen sits at offset 0 of its 16-byte line, never at offset 8:
+the word whose store missed and triggered the refill is the one that goes stale, its neighbour (stored as a hit
+right after) is right. Working hypothesis: an ordering between the refill and the store that caused it inside
+the L1 (or a duplicate line), exposed because a core's refill data can now arrive while it is being snooped for
+another core's transaction, which the serial unit never allowed to overlap. The bare-metal twin
+`software/soc_tests/t_chk` stalls the simulator on the 8-core library (zero-time loop, stall trace pending) and
+is running on the 4-core library. The 8-hart bw phase that did not finish once was probably a casualty of the
+same bug; it completed in a second run (82 MB/s DRAM reads, 83 LLC hits from eight harts).
 
 ## Verified in xsim
 
