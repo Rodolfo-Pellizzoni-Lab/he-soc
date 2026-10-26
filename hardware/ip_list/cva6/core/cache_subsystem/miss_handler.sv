@@ -65,6 +65,9 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
     input  logic [63:0]                                 snoop_invalidate_addr_i,
     output logic [DCACHE_SET_ASSOC-1:0]                 invalidate_req_o,
     output logic [DCACHE_INDEX_WIDTH-1:0]               invalidate_addr_o,
+    // a refill written into a way (SAVE_CACHELINE: tag, data and status at once), same address as invalidate_addr_o.
+    // The snoop controller must not apply a status write decided on an older lookup of that way (coherence.md)
+    output logic [DCACHE_SET_ASSOC-1:0]                 refill_req_o,
 
     input  logic [NR_PORTS-1:0][55:0]                   mshr_addr_i,
     output logic [NR_PORTS-1:0]                         mshr_addr_matches_o,
@@ -184,6 +187,8 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
     assign invalidate_addr_o = addr_o;
     for (genvar i = 0; i < DCACHE_SET_ASSOC; i++) begin
         assign invalidate_req_o[i] = (req_o[0] && we_o && !data_o.valid) ? (be_o.vldrty[i].valid) : 1'b0;
+        // only SAVE_CACHELINE writes the tag
+        assign refill_req_o[i]     = ((|req_o) && we_o && (|be_o.tag)) ? (be_o.vldrty[i].valid) : 1'b0;
     end
 
     // ID for regular (non-bypass) AXI bus
