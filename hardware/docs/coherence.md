@@ -211,11 +211,17 @@ Simulation, libraries recompiled with the fix:
 | 4 cores | t_part alone (3 h, 49 ms simulated) | TEST PASS 202 checks |
 | 4 cores | t_stopm | TEST PASS 9 checks |
 
-Board (VCU118, bitstream `cores8_fix2_r1`: the fix on the eight-core decoupled-CCU design, built on rpsrvr1; setup
-is met everywhere but 37 endpoints of the Ethernet SGMII serdes at -1.03 ns, hold only in the known adv_timer /
-uDMA classes; Ethernet still works: t_eth passes and Linux netboots), 2026-10-26:
+Board (VCU118, 2026-10-26, bitstreams `cores8_fix2_r1` and `cores8_fix2_r1b`: the fix on the eight-core
+decoupled-CCU design, both built on rpsrvr1 from the same synthesis. `cores8_fix2_r1` (default directives) misses
+setup on 37 endpoints of the Ethernet SGMII serdes at -1.03 ns, with hold only in the known adv_timer / uDMA
+reset-clear classes; Ethernet still works (t_eth passes, Linux netboots). `cores8_fix2_r1b` (place
+`SSI_SpreadLogic_high`, route `AlternateCLBRouting`, as the branch's other eight-core bitstreams) meets setup on
+every endpoint; its 630 hold-failing endpoints are all the known classes (621 uDMA reset-clear pins at 0.07 ns or
+less, 9 adv_timer clock-as-data), none in the cores, the CCU or the LLC, checked on the routed checkpoint. **It is
+the reference eight-core bitstream.** Both ran the whole table below with the same outcome, the `r1b` numbers are
+shown where they differ; the bitstreams live in `hardware/xsim/work/mcp/fpga/<name>/alsaqr_xilinx.bit`):
 
-| Program | `cores8_dec3` (before) | `cores8_fix2_r1` (after) |
+| Program | `cores8_dec3` (before) | `cores8_fix2_r1` / `cores8_fix2_r1b` (after) |
 |---|---|---|
 | t_chk CHK_SHARED=2 (shared lines loaded only), 8 cores x 40 rounds x 512 KB | 22 to 882 bad words per core | 0 bad on all eight cores |
 | t_chk CHK_SHARED=1 (one shared access in eight a store) | up to 4868 bad per core | 0 bad |
@@ -223,7 +229,7 @@ uDMA classes; Ethernet still works: t_eth passes and Linux netboots), 2026-10-26
 | t_chk private regions only | 0 bad | 0 bad |
 | t_stopm / t_smp / t_qos / t_iotag, 8-core builds | pass | TEST PASS 17 / 82 / 63 / 27 checks |
 | soc suite (4-core builds) | - | 9 pass; t_qos, t_iotag and t_part fail only their QoS-tag checks (the 4-core tag layout on 8 cores, as in simulation); t_eth 37 checks |
-| Linux 6.1.183, 8 CPUs, Ethernet boot | shell in 85 s | shell in 85 s (three boots) |
+| Linux 6.1.183, 8 CPUs, Ethernet boot | shell in 85 s | shell in 85 s (three boots on each bitstream) |
 | Linux `chk`, 8 harts x 4 MiB x 20 rounds (the stress that found the bug) | 6 to 14 bad words per hart on 6 of 8 harts | 0 bad on all 8 harts (42 M words each, 75 s) |
 | Linux `chk` with a read-back of every stored word, 8 harts x 10 rounds | Linux hung within 5 minutes (no console, no network) | 0 bad, 40 s, Linux fine |
-| Linux bandwidth sweep, 8 harts (cores.md) | DRAM reads 82 MB/s, LLC hits 83, writes 58 | 82.4 / 82.5 / 58.2 MB/s, memcpy 68.7; 7 harts 76.7: the fix costs nothing |
+| Linux bandwidth sweep, 8 harts (cores.md) | DRAM reads 82 MB/s, LLC hits 83, writes 58 | 82.4 / 82.5 / 58.2 MB/s, memcpy 68.7 (`r1b`: 69.1); 7 harts 76.7: the fix costs nothing |

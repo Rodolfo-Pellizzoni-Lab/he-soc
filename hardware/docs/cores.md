@@ -253,7 +253,11 @@ which only a snoop hit (a shared line, i.e. kernel data under Linux) can trigger
 overlap; the bare-metal `t_chk` with shared lines reproduces it in 20 seconds (22 to 4868 bad words per core on
 this bitstream, 0 with the fix). Mechanism, reproducer, fix and verification: hardware/docs/coherence.md. The
 8-hart bw phase that did not finish once was most likely the same race on a kernel line; it completed in a second
-run (82 MB/s DRAM reads, 83 LLC hits from eight harts).
+run (82 MB/s DRAM reads, 83 LLC hits from eight harts). The fixed design's reference bitstream is `cores8_fix2_r1b`
+(commit 324e6233 and later, built on rpsrvr1 with `fpga_build env NUM_CVA6=8 place=SSI_SpreadLogic_high
+route=AlternateCLBRouting`, setup met on every endpoint, hold failures only in the uDMA reset-clear and adv_timer
+classes): same bandwidth as this one (82.4 / 82.5 / 58.2 MB/s from eight harts, 76.7 from seven), 0 bad words in
+every `chk` and `t_chk` mode, Linux 8 CPUs to the shell in 85 s three times out of three.
 
 ## Verified in xsim
 
