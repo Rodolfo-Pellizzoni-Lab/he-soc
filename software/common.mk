@@ -19,7 +19,7 @@ endif
 
 utils_dir = $(SW_HOME)/inc/
 
-inc_dirs = . drivers/inc string_lib/inc padframe/inc fpga_padframe/inc udma udma/cpi udma/i2c udma/spim udma/uart udma/sdio apb_timer gpio
+inc_dirs = . drivers/inc string_lib/inc padframe/inc fpga_padframe/inc udma udma/cpi udma/i2c udma/spim udma/uart udma/sdio apb_timer gpio pmu
 
 src_dirs = . drivers/src string_lib/src udma/uart padframe/src fpga_padframe/src
 

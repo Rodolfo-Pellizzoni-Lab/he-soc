@@ -91,9 +91,15 @@ hardware/regressions/regression_netlist_reports
 hardware/fpga/alsaqr/alsaqr.runs/
 hardware/fpga/alsaqr/alsaqr.srcs/
 hardware/fpga/alsaqr/alsaqr.ip_user_files/
+hardware/fpga/alsaqr/alsaqr.sim/
+hardware/fpga/alsaqr/tcl/ips/*/*.sim/
 hardware/fpga/alsaqr/tcl/ips/*/*.gen/
 hardware/fpga/timing_constr.xdc
 hardware/fpga/.tmpCRC/
 hardware/fpga/cong/
 hardware/fpga/clockInfo.txt
 hardware/fpga/iter_*_CongestedCLBsAndNets.txt
+
+# xsim artifacts
+*.pb
+

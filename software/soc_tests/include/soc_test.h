@@ -79,8 +79,8 @@ static inline void soc_wake_all(void) {
     int id = 156 + (h - 2), ctx = 2 * h + 1, k = h - 2;
     REG32(SOC_PLIC_BASE + id * 4) = 1;                                          // priority of the APMU IRQ
     REG32(SOC_PLIC_BASE + 0x2000 + 0x80 * ctx + (id / 32) * 4) = 1u << (id % 32);   // enable it for hart h, S-mode
-    REG32(EVENT_INFO_BASE_ADDR + k * COUNTER_BUNDLE_SIZE) = OVERFLOW_EN;        // counter k overflows at once
-    REG32(COUNTER_BASE_ADDR + k * COUNTER_BUNDLE_SIZE) = 0x40000000;
+    REG32(EVENT_INFO_ADDR(k)) = OVERFLOW_EN;                                    // counter k overflows at once
+    REG32(COUNTER_ADDR(k)) = 0x40000000;
   }
 }
 

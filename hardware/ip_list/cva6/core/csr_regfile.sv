@@ -78,6 +78,9 @@ module csr_regfile import ariane_pkg::*; #(
     output logic [AsidWidth-1:0]  vs_asid_o,
     output logic[riscv::PPNW-1:0] hgatp_ppn_o,
     output logic [VmidWidth-1:0]  vmid_o,
+    // Context CSRs (Sdtrig)
+    output logic [riscv::SCONTEXTW-1:0] scontext_o,
+    output logic [riscv::HCONTEXTW-1:0] hcontext_o,
     // external interrupts
     input  logic [1:0]            irq_i,                      // external interrupt in
     input  logic                  clic_irq_shv_i,             // selective hardware vectoring bit
@@ -190,6 +193,10 @@ module csr_regfile import ariane_pkg::*; #(
     riscv::xlen_t htval_q,     htval_d;
     riscv::xlen_t htinst_q,    htinst_d;
     riscv::envcfg_rv_t henvcfg_q, henvcfg_d;
+
+    // Context Registers (Sdtrig)
+    logic [riscv::SCONTEXTW-1:0] scontext_q, scontext_d;
+    logic [riscv::HCONTEXTW-1:0] mcontext_q, mcontext_d;
 
     riscv::xlen_t vstvec_q,    vstvec_d;
     riscv::xlen_t vsscratch_q, vsscratch_d;
@@ -414,6 +421,7 @@ module csr_regfile import ariane_pkg::*; #(
                         csr_rdata[27:16] = 12'(mcid_q);
                     end
                 end
+                riscv::CSR_SCONTEXT: csr_rdata = {{(riscv::XLEN-riscv::SCONTEXTW){1'b0}}, scontext_q};
                 // hypervisor mode registers
                 riscv::CSR_HSTATUS: begin
                     if(~ariane_pkg::RVH) read_access_exception = 1'b1;           
@@ -472,6 +480,12 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_HENVCFG: begin
                     if(~ariane_pkg::RVH) read_access_exception = 1'b1;
                     else csr_rdata = henvcfg_q[riscv::XLEN-1:0];
+                end
+                // hcontext aliases the hcontext field of mcontext 
+                riscv::CSR_HCONTEXT,
+                riscv::CSR_MCONTEXT: begin
+                    if(~ariane_pkg::RVH) read_access_exception = 1'b1;
+                    else csr_rdata = {{(riscv::XLEN-riscv::HCONTEXTW){1'b0}}, mcontext_q};
                 end
                 // machine mode registers
                 riscv::CSR_MSTATUS:            csr_rdata = mstatus_extended;
@@ -819,6 +833,8 @@ module csr_regfile import ariane_pkg::*; #(
             htinst_d            = htinst_q;
             henvcfg_d           = henvcfg_q;
         end
+        scontext_d              = scontext_q;
+        mcontext_d              = mcontext_q;
 
         menvcfg_d               = menvcfg_q;
         senvcfg_d               = senvcfg_q;
@@ -1072,6 +1088,7 @@ module csr_regfile import ariane_pkg::*; #(
                         mcid_d = csr_wdata[16 +: ariane_pkg::QOS_MCID_WIDTH];
                     end
                 end
+                riscv::CSR_SCONTEXT: scontext_d = csr_wdata[riscv::SCONTEXTW-1:0];
                 //hypervisor mode registers
                 riscv::CSR_HSTATUS: begin
                     if(~ariane_pkg::RVH) begin 
@@ -1192,6 +1209,11 @@ module csr_regfile import ariane_pkg::*; #(
                         // this instruction has side-effects
                         flush_o = 1'b1;
                     end
+                end
+                riscv::CSR_HCONTEXT,
+                riscv::CSR_MCONTEXT: begin
+                    if(~ariane_pkg::RVH) update_access_exception = 1'b1;
+                    else mcontext_d = csr_wdata[riscv::HCONTEXTW-1:0];
                 end
                 riscv::CSR_MSTATUS: begin
                     mstatus_d      = {{64-riscv::XLEN{1'b0}}, csr_wdata};
@@ -2128,6 +2150,8 @@ module csr_regfile import ariane_pkg::*; #(
     assign asid_o           = satp_q.asid[AsidWidth-1:0];
     assign vs_asid_o        = ariane_pkg::RVH ? vsatp_q.asid[AsidWidth-1:0] : '0;
     assign vmid_o           = ariane_pkg::RVH ? hgatp_q.vmid[VmidWidth-1:0] : '0;
+    assign scontext_o       = scontext_q;
+    assign hcontext_o       = ariane_pkg::RVH ? mcontext_q : '0;
     assign sum_o            = mstatus_q.sum;
     assign vs_sum_o         = ariane_pkg::RVH ? vsstatus_q.sum : '0;
     assign hu_o             = ariane_pkg::RVH ? hstatus_q.hu : '0;
@@ -2233,6 +2257,8 @@ module csr_regfile import ariane_pkg::*; #(
             htval_q                <= {riscv::XLEN{1'b0}};
             htinst_q               <= {riscv::XLEN{1'b0}};
             henvcfg_q              <= '0;
+            scontext_q             <= '0;
+            mcontext_q             <= '0;
             // virtual supervisor mode registers
             vsstatus_q             <= 64'b0;
             vsepc_q                <= {riscv::XLEN{1'b0}};
@@ -2310,6 +2336,8 @@ module csr_regfile import ariane_pkg::*; #(
             htval_q                <= htval_d;
             htinst_q               <= htinst_d;
             henvcfg_q              <= henvcfg_d;
+            scontext_q             <= scontext_d;
+            mcontext_q             <= mcontext_d;
             // virtual supervisor mode registers
             vsstatus_q             <= vsstatus_d;
             vsepc_q                <= vsepc_d;

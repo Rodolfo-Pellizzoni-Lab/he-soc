@@ -50,9 +50,9 @@ module pmu_top import pmu_pkg::*; #(
     input logic                      clk_i,
     input logic                      rst_ni,
     input pmu_event_t [NUM_PORT-1:0] port_i,
-    // AXI4 master port request, configuration
+    // AXI4-Lite master port request, configuration
     output req_lite_t                master_req_o,
-    // AXI4 master port response, configuration
+    // AXI4-Lite master port response, configuration
     input  resp_lite_t               master_resp_i,
     // AXI4-Lite slave port response, configuration
     input  req_lite_t                conf_req_i,
@@ -346,7 +346,7 @@ module pmu_top import pmu_pkg::*; #(
     logic                   [NUM_COUNTER-1:0] event_info_ctrl;
     pmu_pkg::event_info_t   [NUM_COUNTER-1:0] event_info_val;
 
-    // Signals the counter operation requested by the PMU core to each core.
+    // Signals the counter operation requested by the PMU core to each counter.
     apmu_ibex_pkg::pmc_op_e [NUM_COUNTER-1:0]    per_counter_op;
 
     // Sets when a new MemGuard round starts. Is de-asserted in the next clock cycle.
