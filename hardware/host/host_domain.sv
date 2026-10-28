@@ -401,7 +401,9 @@ module host_domain
    ariane_axi_soc::resp_lite_t axi_lite_perfc_cfg_resp;
 
    logic  [APMU_NUM_COUNTER-1:0] pmu_intr_o;
-   pmu_pkg::pmu_event_t [2 * ariane_soc::NumCVA6:0] spu_o;
+   // APMU event ports: element i is port i + 1 (ariane_soc::Apmu*Idx): the cores' EVUs, the SPUs on the cores' CCU
+   // ports, the SPU on the LLC memory port, the SPU on the accelerator socket's DMA
+   pmu_pkg::pmu_event_t [ariane_soc::ApmuNumPorts-1:0] spu_o;
 
 
    XBAR_TCDM_BUS axi_bridge_2_interconnect[AXI64_2_TCDM32_N_PORTS]();
@@ -896,7 +898,7 @@ axi_spu_top #(
      .spu_mst            ( mem_axi_bus_spu_mst         ),  // SPU -> slowdown -> DRAM timing model -> memory
      .ar_src_i           ( spu_mem_ar_src              ),
      .aw_src_i           ( spu_mem_aw_src              ),
-     .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
+     .e_out              ( spu_o[ariane_soc::ApmuMemSpuIdx] )   // APMU port 2*NumCVA6+1
    );
 `endif // XSIM_CUT_i_spu_llc_mem
 
@@ -1001,10 +1003,20 @@ axi_spu_top #(
      .out             ( axi_iopmp_rp    )
    );
 
+   // pragma translate_off
+   initial begin : p_apmu_port_assert
+     // an event select names a port by its PORT_ID 1..ApmuNumPorts in pmu_pkg::PORT_ID_BITS bits: a higher port
+     // would count for a lower one (pmu_port compares the masked PORT_ID with the select's value)
+     assert (ariane_soc::ApmuNumPorts < 2**pmu_pkg::PORT_ID_BITS)
+       else $fatal(1, "APMU: %0d event ports, the %0d-bit PORT_ID names ports 1..%0d", ariane_soc::ApmuNumPorts,
+                   pmu_pkg::PORT_ID_BITS, 2**pmu_pkg::PORT_ID_BITS - 1);
+   end
+   // pragma translate_on
+
    // The PMU only works with 32-bit AXI4-Lite port.
 `ifndef XSIM_CUT_i_pmu_top // xsim bisect
    pmu_top #(
-     .NUM_PORT         ( (ariane_soc::NumCVA6)* 2 + 1   ),
+     .NUM_PORT         ( ariane_soc::ApmuNumPorts       ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
      .ISPM_NUM_WORDS   ( 2048                           ),  // 8 KB size
      .DSPM_BASE_ADDR   ( 32'h1042_9000                    ),  // follows 8 KiB ISPM
@@ -1147,7 +1159,8 @@ axi_spu_top #(
         .udma_tx_l3_axi_slave ( udma_tx_l3_axi_bus   ),
 
         // EVU 
-        .spu_core_o           ( spu_o[ariane_soc::NumCVA6 +: ariane_soc::NumCVA6]),
+        .spu_core_o           ( spu_o[ariane_soc::ApmuCoreSpuIdx +: ariane_soc::NumCVA6]),
+        .spu_accel_o          ( spu_o[ariane_soc::ApmuAccelSpuIdx] ),
         // APMU
 `ifdef XSIM_V_IN
     .pmu_intr_i('0),
@@ -1178,7 +1191,7 @@ axi_spu_top #(
 `endif
         .perfc_cfg_req_i       ( axi_lite_perfc_cfg_req  ),
         .perfc_cfg_resp_o       ( axi_lite_perfc_cfg_resp ),
-        .perfc_evu_status_resp_o( spu_o[0 +: ariane_soc::NumCVA6]) 
+        .perfc_evu_status_resp_o( spu_o[ariane_soc::ApmuEvuIdx +: ariane_soc::NumCVA6]) 
     );
 `endif // XSIM_CUT_i_cva6_subsystem
 

@@ -5,7 +5,7 @@ Custom accelerators plug into the SoC in place of the PULP cluster (the SoC is b
 
 ```
 CPU --AXI4, cluster window 0x1000_0000-0x103F_FFFF--> accel_socket --register port--> slot 0..7
-slot 0..7 --memory port--> round-robin --> axi_from_mem --AXI4--> host xbar (cluster master port) --> DRAM, SRAM, ...
+slot 0..7 --memory port--> round-robin --> axi_from_mem --AXI4--> APMU SPU --> CCU port NumCVA6 --> DRAM, SRAM, ...
 slot 0..7 --irq_o--> OR --> PLIC source 8 = interrupt ID 9 (the cluster end-of-computation line)
 ```
 
@@ -14,7 +14,7 @@ slot 0..7 --irq_o--> OR --> PLIC source 8 = interrupt ID 9 (the cluster end-of-c
 | Registers of slot `s` | `0x1000_0000 + s * 0x1_0000`, 64 KB, 32-bit registers |
 | Empty slot / past slot 7 | DECERR, read data `0xdeadbeef` (CVA6 takes no exception on AXI errors: software just sees the data) |
 | QoS probe `0x103F_0000` (8 bytes) | read `+0x0`: AXI user field of that read; `+0x4`: user field of the last write there (QoS tag, see `hardware/docs/qos.md`) |
-| Tag policy of slot `s`: `0x103F_0100 + 8*s` | `+0` TAG_POLICY (RW): bit 31 FORCE, `[11:0]` the user field to stamp on the slot's DMA while forced; `+4` LAST_USER (R): the user field of the slot's most recent DMA request, after the policy (see "QoS tags" below) |
+| Tag policy of slot `s`: `0x103F_0100 + 8*s` | `+0` TAG_POLICY (RW): bit 31 FORCE, `[UserWidth-1:0]` (`[11:0]` with four cores, `[12:0]` with eight) the user field to stamp on the slot's DMA while forced; `+4` LAST_USER (R): the user field of the slot's most recent DMA request, after the policy (see "QoS tags" below) |
 | Accelerator does not acknowledge in 4096 cycles | SLVERR, read data `0xdeadbeef` (the simulation does not hang) |
 | 64-bit CPU access | two register accesses, low word first |
 | Atomics (AMO) to the window | refused, SLVERR |
@@ -69,7 +69,20 @@ Software still orders its own writes before the start (`fence` before the START 
 stores are posted) and reads the result after DONE / the interrupt.
 
 Rules for the DMA master, from the CCU's snoop-data path: single-beat 64-bit requests inside one 16-byte line
-(len 0, size 3), AXI ID 0. `axi_from_mem` in `accel_socket.sv` issues exactly that for the slots' memory ports.
+(len 0, size 3), AXI ID 0. `axi_from_mem` in `accel_socket.sv` issues exactly that for the slots' memory ports. Its
+round-robin arbiter keeps a waiting request's slot until the grant, so the AXI request it becomes does not change
+before its handshake (until 2026-10-28 a slot earlier in the round-robin order could take a waiting request over,
+which changed or withdrew the AR/AW: an SPU counts such a request twice, and two writing slots could mix AW and W).
+
+**Monitoring.** The APMU's SPU `i_spu_accel` (`host/cva6_subsystem.sv`) sits on the socket's DMA master in front of its
+port of the coherence unit, as the cores' SPUs sit in front of theirs: APMU port `2*NumCVA6+2` (10 with four cores,
+`ariane_soc::ApmuAccelSpuIdx`). It counts the accelerators' DRAM read and write requests and their responses (with
+the latency) before the coherence unit and the LLC, hits and misses alike, every event with source 4 (`CcuAccelPort`),
+the code the SPU on the LLC memory port (port 9) gives the same requests; there source 4 shows the part that reached
+DRAM. It sees nothing of the cores or the Ethernet DMA, does not count DMA to the on-chip SRAM or the LLC scratchpad,
+and does not record the slot. Event selects `ACC_RD_REQ` .. `ACC_WR_RES` (`0xAF4F1F` .. `0xAF4F4F`,
+`software/quad_boot/pmu_defines.h`); `software/soc_tests/t_srcid` checks them (16 of each for a 16-word copy, the
+same as port 9's source 4 outside the LLC window, and 0 while only the cores or the Ethernet DMA are busy).
 
 What the port costs (`software/soc_tests/t_dma`, slot 0 `example`, one word in flight, cycles per 64-bit word,
 read + write): the CCU handles one snooped transaction at a time and each one is a snoop round trip through the
@@ -96,11 +109,12 @@ accelerator's DMA is tagged too. The socket supports both ways of tagging I/O tr
   latches it when START is written (`TAG` register, `0x28`, read-only) and presents it on `mem_user_o` with every
   DMA request of that run: **the accelerator's traffic is charged to the hart that started the work**, including its
   source port, so software can read back which hart that was.
-- **The socket decides.** `TAG_POLICY` of the slot (`0x103F_0100 + 8*s`, bit 31 FORCE, `[11:0]` the tag) makes the
-  socket stamp an OS-chosen tag on the slot's DMA instead of whatever the accelerator presents: the device as its
-  own QoS principal, the way an IOMMU's device context assigns IDs to a device. The accelerator still sees the
-  requester on `reg_user_i`; it just cannot choose the tag. `LAST_USER` (`+4`) reads back what the last request
-  carried, so software can verify either policy from the CPU.
+- **The socket decides.** `TAG_POLICY` of the slot (`0x103F_0100 + 8*s`, bit 31 FORCE, the tag in the user word's
+  bits: `[11:0]` with four cores, `[12:0]` with eight, AT included) makes the socket stamp an OS-chosen tag on the
+  slot's DMA instead of whatever the accelerator presents: the device as its own QoS principal, the way an IOMMU's
+  device context assigns IDs to a device. The accelerator still sees the requester on `reg_user_i`; it just cannot
+  choose the tag. `LAST_USER` (`+4`) reads back what the last request carried, so software can verify either policy
+  from the CPU.
 
 The socket is the trusted tagging point: an accelerator can only ask for a tag, and the policy register, which lives
 in the socket's own window, can override it. The CCU writes its port index into the low `QosUserLsb` bits of the

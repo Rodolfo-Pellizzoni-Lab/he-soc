@@ -32,7 +32,7 @@
 #define ACCEL_USER(port, rcid, mcid) ((uint32_t)(port) | ((uint32_t)(rcid) << ACCEL_SRC_BITS) | ((uint32_t)(mcid) << (ACCEL_SRC_BITS + 4)))
 #define ACCEL_TAG_REG        0x28                                          // template: user field latched at START (R)
 #define ACCEL_QOS_PROBE      (ACCEL_WINDOW + 0x3F0000UL)                   // returns the user field of the read itself
-#define ACCEL_TAG_POLICY(s)  (ACCEL_WINDOW + 0x3F0100UL + (unsigned long)(s) * 8)   // RW: bit 31 FORCE, [11:0] tag
+#define ACCEL_TAG_POLICY(s)  (ACCEL_WINDOW + 0x3F0100UL + (unsigned long)(s) * 8)   // RW: bit 31 FORCE, [11:0] tag ([12:0] at 8 cores)
 #define ACCEL_LAST_USER(s)   (ACCEL_TAG_POLICY(s) + 4)                     // R: user field of the slot's last DMA request
 #define ACCEL_POLICY_FORCE   0x80000000u
 

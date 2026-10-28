@@ -70,6 +70,7 @@ module cva6_subsystem
 
   // APMU
   output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core_o,
+  output pmu_pkg::pmu_event_t                           spu_accel_o,   // the SPU on the accelerator socket's DMA
   // PMU Interrupt Signal
   input  logic [APMU_NUM_COUNTER-1:0]  pmu_intr_i,
 
@@ -607,8 +608,8 @@ module cva6_subsystem
   // CcuDmaEth of the wrapper's DMA-port array is CCU port CcuAccelPort / CcuEthPort (ariane_soc), the source the CCU
   // writes into the master's requests. Both keep their own IDs (socket: 0; Ethernet: 0/2/4), which fit the CCU's
   // 4-bit ID that the wrapper cuts them to, and each gets a register stage on AW and AR (one spill register each; W,
-  // B and R pass through) under ndmreset_n, as the 2:1 mux they used to share had. An SPU on the socket's traffic
-  // would sit between socket_dma_req/resp and dma_mst_req/resp[CcuDmaAccel].
+  // B and R pass through) under ndmreset_n, as the 2:1 mux they used to share had. The APMU's SPU on the socket's
+  // DMA (i_spu_accel, below) sits on cluster_axi_slave in front of socket_dma_req: it sees the socket's DMA alone.
   ariane_axi_soc::req_slv_t  socket_dma_req, eth_dma_req;
   ariane_axi_soc::resp_slv_t socket_dma_resp, eth_dma_resp;
   // by CCU DMA port: the masters (as the one-port muxes below take them, one-element arrays) and the CCU side
@@ -617,8 +618,78 @@ module cva6_subsystem
   ariane_axi_soc::req_slv_t  [ariane_soc::NumCcuDmaPorts-1:0]      ccu_dma_req;
   ariane_axi_soc::resp_slv_t [ariane_soc::NumCcuDmaPorts-1:0]      ccu_dma_resp;
   ariane_axi_soc::req_t      cluster_xbar_idle_req;
+
+`ifdef APMU_IP
+  // SPU on the accelerator socket's DMA (APMU port 2*NumCVA6+2, ariane_soc::ApmuAccelSpuIdx), like the SPUs in front
+  // of the cores' CCU ports: on the socket's own bus before its CCU port, so it counts the accelerators' requests
+  // before the coherence unit and the LLC (hits and misses alike) and nothing else (the Ethernet DMA has its own CCU
+  // port; the CPU reaches the socket's registers through cluster_axi_master). It only watches (axi_spu_top: every
+  // channel is a continuous assign from spu_slv to spu_mst, only its sampling is registered), runs on the DMA path's
+  // clock and reset, and its events go straight to the APMU, as the LLC memory port SPU's do. Events and address rule
+  // as on the other SPUs: 1 read request, 2 write request, 3 read response, 4 write response, DRAM addresses only
+  // (not the on-chip SRAM or the LLC scratchpad); every event has source CcuAccelPort, the code the LLC memory port's
+  // SPU gives the same requests (ariane_axi_soc::mem_src). The slot is not recorded. CAM: at most 4 socket requests
+  // are in flight (accel_socket MaxReq = its axi_from_mem's MaxRequests), reads and writes together, all with ID 0.
+  AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH           ),
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH           )
+  ) socket_spu_mst();
+
+  ariane_soc::addr_map_rule_t [1:0] spu_accel_addr_map;
+  assign spu_accel_addr_map[0] = '{
+        idx: 0,
+        start_addr: ariane_soc::DebugBase,
+        end_addr:   ariane_soc::HYAXIBase
+  };
+  assign spu_accel_addr_map[1] = '{
+        idx: 1,
+        start_addr: ariane_soc::HYAXIBase,
+        end_addr:   ariane_soc::HYAXIBase + ariane_soc::HYAXILength
+  };
+  localparam logic [ariane_soc::MemSrcWidth-1:0] SpuAccelSrc = ariane_soc::MemSrcWidth'(ariane_soc::CcuAccelPort);
+
+  axi_spu_top #(
+    // Static configuration parameters of the cache.
+    .SetAssociativity   ( ariane_soc::LLC_SET_ASSOC   ),
+    .NumLines           ( ariane_soc::LLC_NUM_LINES   ),
+    .NumBlocks          ( ariane_soc::LLC_NUM_BLOCKS  ),
+    // Source ID Specifications: the constant SpuAccelSrc on ar_src_i / aw_src_i
+    .SourceIDStart      (  0                          ),
+    .SourceIDEnd        (  ariane_soc::MemSrcWidth-1  ),
+    .ExtSource          (  1'b1                       ),
+    // AXI4 Specifications: the socket bus's full ID
+    .IdWidth            ( ariane_soc::IdWidthSlave    ),
+    .AddrWidth          ( AXI_ADDRESS_WIDTH           ),
+    .DataWidth          ( AXI_DATA_WIDTH              ),
+    // Address Indexing
+    .N_ADDR_RULES       (  2                          ),
+    .addr_rule_t        ( ariane_soc::addr_map_rule_t ),
+    // FIFO and CAM Parameters: CAM_DEPTH twice the socket's 4 requests in flight
+    .CAM_DEPTH          (  8                          ),
+`ifndef TARGET_SYNTHESIS
+    .SPU_NAME           ( "spu_accel"                 ),
+`endif
+    .FIFO_DEPTH         (  8                          )
+  ) i_spu_accel (
+    .clk_i              ( clk_i                       ),
+    .rst_ni             ( ndmreset_n                  ),
+    .addr_map_i         ( spu_accel_addr_map          ),
+    .spu_slv            ( cluster_axi_slave           ),
+    .spu_mst            ( socket_spu_mst              ),  // SPU -> socket_dma_req -> the socket's CCU DMA port
+    .ar_src_i           ( SpuAccelSrc                 ),
+    .aw_src_i           ( SpuAccelSrc                 ),
+    .e_out              ( spu_accel_o                 )
+  );
+  `AXI_ASSIGN_TO_REQ(socket_dma_req, socket_spu_mst)
+  `AXI_ASSIGN_FROM_RESP(socket_spu_mst, socket_dma_resp)
+`else
+  // No SPU: the socket's bus feeds its CCU DMA port directly.
   `AXI_ASSIGN_TO_REQ(socket_dma_req, cluster_axi_slave)
   `AXI_ASSIGN_FROM_RESP(cluster_axi_slave, socket_dma_resp)
+  assign spu_accel_o = '0;
+`endif
 
   assign dma_mst_req[ariane_soc::CcuDmaAccel][0] = socket_dma_req;
   assign socket_dma_resp                         = dma_mst_resp[ariane_soc::CcuDmaAccel][0];

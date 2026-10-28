@@ -29,10 +29,11 @@ alongside the APMU and the per-core EVUs.
   `axi_spu_top`, `ExtSource = 1` makes it the `ar_src_i` / `aw_src_i` input instead, sampled
   with the request, so the instance can derive it from the ID, the user field or both. In both
   variants a response event (R, B) reports the source of the request it answers, kept per
-  outstanding request next to its start time. AlSaqr's SPU on the LLC memory port uses
-  `ExtSource`; the APMU README lists its source codes. That SPU sits between the LLC and the
-  slowdown regulator, so its response latencies include the slowdown's and the DRAM timing
-  model's delays (`hardware/host/host_domain.sv`).
+  outstanding request next to its start time. AlSaqr's SPUs on the LLC memory port and on
+  the accelerator socket's DMA use `ExtSource` (see "In AlSaqr"); the APMU README lists the
+  source codes. The memory-port SPU sits between the LLC and the slowdown regulator, so its
+  response latencies include the slowdown's and the DRAM timing model's delays
+  (`hardware/host/host_domain.sv`).
 - A write response is counted once, also when it is held valid for several cycles (both
   variants; before 2026-10-25 a stalled B counted once per cycle).
 
@@ -56,6 +57,25 @@ alongside the APMU and the per-core EVUs.
 Depends on the PULP `axi`, `ace`, and `apmu` packages (see [`Bender.yml`](./Bender.yml));
 reusable AXI `typedef`/`assign` macros are in [`include/axi/`](./include/axi).
 
+## In AlSaqr
+
+With *N* cores (APMU ports in brackets for four cores; the port map is `ariane_soc::Apmu*Idx`, the APMU README has
+the event selects):
+
+| Instance | Where | APMU port | Source | `CAM_DEPTH` |
+|---|---|---|---|---|
+| `i_spu_core_llc` (`ace_spu_top`), one per core | `hardware/host/cva6_synth_wrap.sv`, between core *c* and its port of the coherence unit | *N*+1+*c* (5-8) | bit 0 of the core's AXI ID: it does not tell masters apart, the port is the core | 17 |
+| `i_spu_llc_mem` (`axi_spu_top`) | `hardware/host/host_domain.sv`, between the LLC's memory port and the slowdown regulator | 2*N*+1 (9) | `ExtSource`: `ariane_axi_soc::mem_src`, the master the request came from | 17 |
+| `i_spu_accel` (`axi_spu_top`) | `hardware/host/cva6_subsystem.sv`, on the accelerator socket's DMA master in front of its port of the coherence unit | 2*N*+2 (10) | `ExtSource`: the constant `ariane_soc::CcuAccelPort` (4), the code `i_spu_llc_mem` gives the socket's requests | 8 |
+
+All of them count DRAM addresses only (rule 1 of the same 2-rule map, `[HYAXIBase, HYAXIBase + HYAXILength)`) and run
+on the SoC clock. The cores' SPUs reach the APMU through a 4-entry CDC FIFO each, the other two directly. The socket's
+SPU sees the accelerators' DMA before the coherence unit and the LLC (hits and misses alike) and nothing else, not the
+Ethernet DMA, which has a port of its own. Each CAM holds one entry per outstanding request of its direction, inserted
+whatever the address, so `CAM_DEPTH` must be at least the master's reads (writes) in flight: a request that finds the
+CAM full still counts, but a response of its ID then goes uncounted. The socket has at most 4 requests in flight, reads
+and writes together, all with ID 0.
+
 ## Simulation
 
 ```
@@ -66,11 +86,8 @@ cd scripts
 python3 post_sim_script.py <TbMasters> <TbNumReads> <TbNumWrites>
 ```
 
-Testbench sources are in [`test/`](./test) (`tb_spu.sv`, `spu_test.sv`). In the full SoC,
-one `ace_spu_top` per core (`i_spu_core_llc`, APMU ports 5-8 with four cores) sits in
-`hardware/host/cva6_synth_wrap.sv` between the core and the coherence unit; its source is bit 0
-of the core's AXI ID, so it does not tell masters apart (the port is the core). The
-`axi_spu_top` at the LLC↔memory port (APMU port 9 with four cores) is in `hardware/host/host_domain.sv`.
+Testbench sources are in [`test/`](./test) (`tb_spu.sv`, `spu_test.sv`). The instances in
+the full SoC are listed in "In AlSaqr" above.
 
 ## License
 

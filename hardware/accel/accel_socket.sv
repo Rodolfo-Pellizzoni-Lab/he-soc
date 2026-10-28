@@ -1,7 +1,8 @@
 // Accelerator socket: takes the place of the PULP cluster when EXCLUDE_CLUSTER is set.
 //
 //   CPU  --AXI4 (cluster window 0x1000_0000..0x103F_FFFF)--> slave FSM --reg port--> accel_slots
-//   accel_slots --mem ports--> round-robin arbiter --> axi_from_mem --AXI4--> host xbar (DRAM, L2 SPM, ...)
+//   accel_slots --mem ports--> round-robin arbiter --> axi_from_mem --AXI4--> the APMU's SPU --> the socket's port
+//     of the coherence unit (host/cva6_subsystem.sv) --> DRAM, L2 SPM, ...
 //   accel_slots --irq--> PLIC source 8 (interrupt ID 9, the cluster end-of-computation line)
 //
 // Slot i owns the 64 KB window 0x1000_0000 + i * 0x1_0000. Accesses to an empty slot or past the last slot get
@@ -20,7 +21,8 @@
 // of a slot carries the user field the slot asks for (mem_user_o; the template latches reg_user_i at START, so its
 // DMA is tagged with the hart that started the work). The socket is the trusted tagging point: per slot, the
 // policy register at 0x103F_0100 + 8*s can FORCE a tag the OS chose instead (the IOMMU device-context model):
-//   +0  TAG_POLICY  RW  bit 31 FORCE; [11:0] the user field to stamp on the slot's DMA while FORCE is set
+//   +0  TAG_POLICY  RW  bit 31 FORCE; [UserWidth-1:0] (ariane_axi_soc: [11:0] with four cores, [12:0] with eight)
+//                       the user field to stamp on the slot's DMA while FORCE is set
 //   +4  LAST_USER   R   the user field of the slot's most recent DMA request, after the policy
 // The CCU writes its port index into the low QosUserLsb bits of the user field, so those bits are cleared here.
 //
@@ -69,6 +71,16 @@ module accel_socket #(
   logic [NumSlots-1:0][31:0] pol_q;
   logic [NumSlots-1:0][15:0] last_user_q;
   localparam logic [15:0] PortBitsMask = 16'((1 << ariane_axi_soc::QosUserLsb) - 1);
+  // the user field TAG_POLICY can force: all of the SoC's (ariane_axi_soc::UserWidth bits, 12 with four cores and 13
+  // with eight), under the FORCE bit; the socket's user fields are 16 bits
+  localparam int unsigned PolUserW = ariane_axi_soc::UserWidth;
+  localparam logic [31:0] PolMask  = 32'h8000_0000 | 32'((1 << PolUserW) - 1);
+  // pragma translate_off
+  initial begin : p_user_width_assert
+    assert (PolUserW <= 16)
+      else $fatal(1, "accel_socket: the %0d-bit SoC user field does not fit its 16-bit tags", PolUserW);
+  end
+  // pragma translate_on
 
   accel_slots #(.NumSlots(NumSlots)) i_slots (
     .clk_i, .rst_ni,
@@ -130,7 +142,7 @@ module accel_socket #(
   function automatic logic [31:0] policy_write(logic [31:0] old, logic [31:0] wd, logic [3:0] be);
     logic [31:0] v = old;
     for (int b = 0; b < 4; b++) if (be[b]) v[8*b +: 8] = wd[8*b +: 8];
-    return {v[31], 19'b0, v[11:0]};   // bit 31 FORCE, [11:0] the user field; the rest reads as 0
+    return v & PolMask;   // bit 31 FORCE, [PolUserW-1:0] the user field; the rest reads as 0
   endfunction
   function automatic logic [63:0] next_addr(logic [63:0] a, logic [2:0] size, logic [1:0] burst);
     return (burst == axi_pkg::BURST_FIXED) ? a : ((a >> size) + 64'd1) << size;
@@ -274,7 +286,8 @@ module accel_socket #(
 
   // ------------------------------------------------------------------ memory side: round-robin over the slots
   localparam int unsigned MaxReq = 4;
-  logic [SlotW-1:0] rr_q, sel;
+  logic [SlotW-1:0] rr_q, sel, hold_sel_q;
+  logic             hold_q;
   logic             dn_req, dn_gnt, dn_rvalid, dn_err;
   logic [63:0]      dn_rdata;
 
@@ -294,7 +307,14 @@ module accel_socket #(
   logic [$clog2(MaxReq):0]      cnt_q;
   logic [$clog2(MaxReq)-1:0]    wp_q, rp_q;
 
-  assign sel    = pick(m_req, rr_q);
+  // The request on axi_from_mem becomes an AXI AR (or AW and W) whose payload and valid must not change before its
+  // handshake: while it waits for its grant, keep its slot (hold_q), also when a slot earlier in round-robin order
+  // asks meanwhile. Picked afresh every cycle, such a slot took over a waiting request: the AR/AW changed or was
+  // withdrawn (the APMU's SPU, which counts a request at its first valid cycle, would count it twice), and with two
+  // writing slots one slot's W could go out with the other's AW. A slot holds its request until it is granted (port
+  // contract), so the held slot still asks; should it not, the arbiter picks again rather than grant a slot that
+  // does not ask. The round-robin order moves on at each grant, as before.
+  assign sel    = (hold_q && m_req[hold_sel_q]) ? hold_sel_q : pick(m_req, rr_q);
   assign dn_req = (|m_req) && (cnt_q != MaxReq);
   for (genvar i = 0; i < NumSlots; i++) begin : gen_route
     assign m_gnt[i]    = dn_req && dn_gnt && (sel == i);
@@ -306,21 +326,50 @@ module accel_socket #(
   // the user field of the request being granted: the slot's own tag, or the one the policy register forces;
   // the port bits are the CCU's to write
   logic [15:0] sel_user;
-  assign sel_user = (pol_q[sel][31] ? {4'b0, pol_q[sel][11:0]} : m_user[sel]) & ~PortBitsMask;
+  assign sel_user = (pol_q[sel][31] ? 16'(pol_q[sel][PolUserW-1:0]) : m_user[sel]) & ~PortBitsMask;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       rr_q <= '0; ord_q <= '0; cnt_q <= '0; wp_q <= '0; rp_q <= '0; last_user_q <= '0;
+      hold_q <= 1'b0; hold_sel_q <= '0;
     end else begin
       if (dn_req && dn_gnt) begin
         ord_q[wp_q] <= sel; wp_q <= wp_q + 1'b1;
         rr_q <= SlotW'((sel + 1) % NumSlots);
         last_user_q[sel] <= sel_user;
       end
+      // a request waits for its grant: keep its slot until then
+      hold_q <= dn_req && !dn_gnt;
+      if (dn_req && !dn_gnt) hold_sel_q <= sel;
       if (dn_rvalid) rp_q <= rp_q + 1'b1;
       cnt_q <= cnt_q + (dn_req && dn_gnt) - dn_rvalid;
     end
   end
+
+`ifndef SYNTHESIS
+  // The rule above, checked in simulation (axi_lite_from_mem states it as SVA, which the xsim flow elaborates without,
+  // --ignore_assertions): a request waiting for its grant keeps its slot and its fields.
+  logic             chk_wait_q, chk_we_q;
+  logic [SlotW-1:0] chk_sel_q;
+  logic [63:0]      chk_addr_q, chk_wdata_q;
+  logic [7:0]       chk_strb_q;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      chk_wait_q <= 1'b0; chk_we_q <= 1'b0; chk_sel_q <= '0; chk_addr_q <= '0; chk_wdata_q <= '0; chk_strb_q <= '0;
+    end else begin
+      if (chk_wait_q && (!dn_req || sel != chk_sel_q || m_addr[sel] != chk_addr_q || m_we[sel] != chk_we_q ||
+                         (chk_we_q && (m_wdata[sel] != chk_wdata_q || m_strb[sel] != chk_strb_q))))
+        $error("accel_socket: the memory request of slot %0d (addr 0x%0h, we %0d) changed before its grant",
+               chk_sel_q, chk_addr_q, chk_we_q);
+      chk_wait_q  <= dn_req && !dn_gnt;
+      chk_sel_q   <= sel;
+      chk_we_q    <= m_we[sel];
+      chk_addr_q  <= m_addr[sel];
+      chk_wdata_q <= m_wdata[sel];
+      chk_strb_q  <= m_strb[sel];
+    end
+  end
+`endif
 
   // axi_from_mem ties the AXI user fields to 0: carry the granted requests' user fields alongside it, in per-channel
   // FIFOs (it issues one AW+W or one AR per granted request, in grant order on each channel), and put them on the

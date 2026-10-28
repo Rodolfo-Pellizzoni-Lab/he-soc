@@ -113,6 +113,18 @@ package ariane_soc;
   localparam int unsigned NumMemSrcs  = NumCcuPorts + NrSlaves - 1;
   localparam int unsigned MemSrcWidth = 4;
 
+  // ---- APMU event ports (host_domain: spu_o, the APMU's port_i). Element i is APMU port i + 1, the PORT_ID an event
+  // select names (pmu_port_wrap): the cores' EVUs (ports 1..NumCVA6), the SPUs on the cores' CCU ports
+  // (NumCVA6+1..2*NumCVA6, cva6_synth_wrap), the SPU on the LLC memory port (2*NumCVA6+1, host_domain) and the SPU on
+  // the accelerator socket's DMA (2*NumCVA6+2, cva6_subsystem): ports 1-4, 5-8, 9 and 10 with four cores, 1-8, 9-16,
+  // 17 and 18 with eight. The highest port must fit pmu_pkg::PORT_ID_BITS (checked in host_domain): port 10 fits the
+  // 4 bits, 18 does not, so eight cores need the APMU's wider fields.
+  localparam int unsigned ApmuEvuIdx      = 0;
+  localparam int unsigned ApmuCoreSpuIdx  = NumCVA6;
+  localparam int unsigned ApmuMemSpuIdx   = 2 * NumCVA6;
+  localparam int unsigned ApmuAccelSpuIdx = 2 * NumCVA6 + 1;
+  localparam int unsigned ApmuNumPorts    = 2 * NumCVA6 + 2;
+
   /// Number of synchronization registers to insert on the async pointers
   localparam CdcSyncStages   = 3;
 

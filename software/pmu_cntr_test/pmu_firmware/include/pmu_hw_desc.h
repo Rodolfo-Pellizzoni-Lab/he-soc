@@ -37,6 +37,7 @@
 //   Port  7    : SPU Core 2 <-> LLC
 //   Port  8    : SPU Core 3 <-> LLC
 //   Port  9    : SPU LLC <-> Main Memory
+//   Port 10    : SPU on the accelerator socket's DMA (ACC_* in quad_boot/pmu_defines.h)
 // =============================================================================
 
 // -----------------------------------------------------------------------------

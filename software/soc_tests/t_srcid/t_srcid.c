@@ -25,6 +25,10 @@
 //      DMA finds every line it touches in DRAM and in no L1 (no snoop data, no write-back for a core); in the phase it
 //      only writes the tail-descriptor registers and polls the status registers. Needs the Xilinx Ethernet
 //      (xilinx-ethernet=1, as every flow builds it and t_eth needs it).
+// The APMU's SPU on the accelerator socket's DMA (port 10, in front of the socket's port of the coherence unit) sees
+// D's 16 reads and 16 writes and their responses, all from source 4, and as D's buffers are outside the LLC window
+// that is also what port 9 credits to source 4; in every other phase it sees nothing (the cores and the Ethernet DMA
+// have ports of their own).
 // Every request gets its response, credited to the same source, and the sources add up to the port's totals. Only
 // the cores, the socket and the Ethernet DMA touch DRAM here; writes the coherence unit issues itself and LLC
 // evictions are not exercised. An instruction fetch that misses the LLC is a DRAM read of the core that runs it, also
@@ -65,14 +69,20 @@
 #define ETH_POLLS 200000UL
 #endif
 
-// APMU counters from 2 on (0 and 1 wake cores 2 and 3), port 9: for each SPU event (1 read request, 2 write request,
-// 3 read response, 4 write response) one counter per source 0..NSRC-1, then one for every source (28 counters)
+// All 32 APMU counters, set up once soc_wake_all has woken cores 2 and 3 with counters 0 and 1 and released them:
+// 0-27 port 9, for each SPU event (1 read request, 2 write request, 3 read response, 4 write response) one counter
+// per source 0..NSRC-1, then one for every source; 28-31 port 10, its four events (from source 4, as all of them are)
 #define EV(ev, src) (0x9F0F0Fu | ((unsigned)(src) << 12) | ((unsigned)(ev) << 4))
 #define EV_ALL(ev)  (0x9F000Fu | ((unsigned)(ev) << 4))
 #define NEV         4
-#define CTR0        2
-#define NCTR        (NEV * (NSRC + 1))
-#define CTR(e, s)   ((e) * (NSRC + 1) + (s))     // event e = 0..3, source s (NSRC: every source)
+#define CTR0        0
+#define NMEM        (NEV * (NSRC + 1))           // port 9's counters
+#define NCTR        (NMEM + NEV)                 // and port 10's
+#define CTR(e, s)   ((e) * (NSRC + 1) + (s))     // port 9: event e = 0..3, source s (NSRC: every source)
+#define ACC(e)      (NMEM + (e))                 // port 10: event e = 0..3
+#if CTR0 + NCTR > NUM_COUNTER
+#error "t_srcid needs more counters than the APMU has"
+#endif
 #define RD_REQ 0
 #define WR_REQ 1
 #define RD_RES 2
@@ -105,6 +115,7 @@ static int    eth_up;                                  // eth_bringup()'s result
 static const uint8_t eth_mac[6] = { 0x00, 0x0A, 0x35, 0x01, 0x02, 0x03 };   // Xilinx OUI, as in t_eth
 
 static void ctr_setup(void) {
+  static const uint32_t acc_sel[NEV] = { ACC_RD_REQ, ACC_WR_REQ, ACC_RD_RES, ACC_WR_RES };   // port 10
   for (int e = 0; e < NEV; e++)
     for (int s = 0; s <= NSRC; s++) {
       int i = CTR0 + CTR(e, s);
@@ -112,6 +123,12 @@ static void ctr_setup(void) {
       REG32(EVENT_INFO_BASE_ADDR + i * COUNTER_BUNDLE_SIZE) = 0;
       REG32(COUNTER_BASE_ADDR    + i * COUNTER_BUNDLE_SIZE) = 0;
     }
+  for (int e = 0; e < NEV; e++) {
+    int i = CTR0 + ACC(e);
+    REG32(EVENT_SEL_BASE_ADDR  + i * COUNTER_BUNDLE_SIZE) = acc_sel[e];
+    REG32(EVENT_INFO_BASE_ADDR + i * COUNTER_BUNDLE_SIZE) = 0;
+    REG32(COUNTER_BASE_ADDR    + i * COUNTER_BUNDLE_SIZE) = 0;
+  }
 }
 
 // every counter at one moment: read them all until two reads in a row agree; returns 0 if they did not settle
@@ -235,9 +252,9 @@ int thread_entry(int cid, int nc) {
   soc_install_trap_guard();
   if (cid == 0) {
     soc_test_begin("t_srcid");
-    ctr_setup();
     eth_up = eth_bringup();
     soc_wake_all();
+    ctr_setup();                    // after soc_wake_all, which uses counters 0 and 1 and then releases them
     return 0;                       // core 0 continues in main()
   }
   run(cid);
@@ -298,6 +315,24 @@ int main(void) {
     for (int s = 0; s < NSRC; s++) rd_all += d[CTR(RD_REQ, s)];
     CHECK(sums_ok, "source %d, %s: sources 0-%d do not add up to the port's totals (reads %u of %u)", src, what[k],
           NSRC - 1, rd_all, d[CTR(RD_REQ, NSRC)]);
+    // port 10, the socket's SPU: D's DMA, all of it reaching DRAM (port 9, source 4), and nothing in other phases
+    uint32_t acc[NEV];
+    for (int e = 0; e < NEV; e++) acc[e] = d[ACC(e)];
+    if (k == 2) {
+      printf("source %d, %s: port 10 (the socket's SPU) read requests %u, write requests %u, responses %u read %u "
+             "write\r\n", src, what[k], acc[RD_REQ], acc[WR_REQ], acc[RD_RES], acc[WR_RES]);
+      CHECK(acc[RD_REQ] == ND && acc[WR_REQ] == ND && acc[RD_RES] == ND && acc[WR_RES] == ND,
+            "source %d, %s: port 10 saw %u reads, %u writes, %u read and %u write responses, expected %d each", src,
+            what[k], acc[RD_REQ], acc[WR_REQ], acc[RD_RES], acc[WR_RES], ND);
+      CHECK(acc[RD_REQ] == rd && acc[WR_REQ] == wr && acc[RD_RES] == d[CTR(RD_RES, src)] &&
+            acc[WR_RES] == d[CTR(WR_RES, src)],
+            "source %d, %s: port 10 (%u %u %u %u) and port 9's source %d (%u %u %u %u) differ", src, what[k],
+            acc[RD_REQ], acc[WR_REQ], acc[RD_RES], acc[WR_RES], src, rd, wr, d[CTR(RD_RES, src)], d[CTR(WR_RES, src)]);
+    } else {
+      CHECK(acc[RD_REQ] + acc[WR_REQ] + acc[RD_RES] + acc[WR_RES] == 0,
+            "source %d, %s: %u requests and %u responses on port 10 (the socket's SPU), expected none", src, what[k],
+            acc[RD_REQ] + acc[WR_REQ], acc[RD_RES] + acc[WR_RES]);
+    }
   }
   return soc_test_end();
 }

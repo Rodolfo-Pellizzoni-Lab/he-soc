@@ -86,10 +86,11 @@
 /// ****************************
 /// Event select = {port value, port mask, source value, source mask, event value, event mask}, a nibble each
 /// (hardware/ip_list/apmu/src/pmu_pkg.sv). Ports with NumCVA6 = 4: 1-4 the cores' EVUs, 5-8 the SPUs on the cores'
-/// ports to the LLC (one per core), 9 the SPU on the LLC's memory port. SPU events: 1 read request, 2 write request,
+/// ports to the LLC (one per core), 9 the SPU on the LLC's memory port, 10 the SPU on the accelerator socket's DMA
+/// (ariane_soc::Apmu*Idx: 1..N, N+1..2N, 2N+1, 2N+2 with N cores). SPU events: 1 read request, 2 write request,
 /// 3 read response, 4 write response. An event value of 0 turns the counter off.
-// Read requests from Core X to LLC (LLC_RD_REQ etc. match any port: the memory port 9 and the EVUs' events with
-// the same event ID count too)
+// Read requests from Core X to LLC (LLC_RD_REQ etc. match any port: the memory port 9, the socket's port 10 and the
+// EVUs' events with the same event ID count too)
 #define LLC_RD_REQ          0x00001F
 #define LLC_RD_REQ_CORE_0   0x5F001F
 #define LLC_RD_REQ_CORE_1   0x6F001F
@@ -162,6 +163,21 @@
 #define MEM_RD_RES_DMA     MEM_RD_RES_ACCEL
 #define MEM_WR_RES_DMA     MEM_WR_RES_ACCEL
 
+/// *****************************************************
+/// Defines for the accelerator socket's DMA (port 10)
+/// *****************************************************
+/// Port 10 (2*NumCVA6+2): the SPU on the accelerator socket's DMA master, in front of its port of the coherence unit
+/// (hardware/host/cva6_subsystem.sv, i_spu_accel). It sees every DRAM request of the accelerators before the LLC, hits
+/// and misses alike, and nothing else (not the Ethernet DMA, not the cores, not the on-chip SRAM or LLC scratchpad).
+/// Every event has source 4, the socket's code on port 9 too; which slot made the request is not recorded. Port 9's
+/// MEM_*_ACCEL count the part of it that reached DRAM. The values here are the four-core ones.
+#define ACC_RD_REQ         0xAF4F1F
+#define ACC_WR_REQ         0xAF4F2F
+#define ACC_RD_RES         0xAF4F3F
+#define ACC_WR_RES         0xAF4F4F
+// Read requests of every source on port 10 (all of them are source 4's)
+#define ACC_RD_REQ_ANY     0xAF001F
+
 /// ***************************************
 /// Defines for the cores' EVUs (ports 1-4)
 /// ***************************************
@@ -180,6 +196,8 @@
 /// **********************************************************************
 /// Note: The following define only works if the response (X_RES_X) events are selected
 //        using the corresponding Event Select Register.
+//        An event-info counter adds the info of one port per cycle: when several ports match it in the same cycle,
+//        the highest-numbered one's is used (pmu_port_wrap.sv), so select a single port (port 10 wins over 9).
 #define ADD_RESP_LAT   0x8001E0
 #define ADD_MEM_ONLY   0x808E10
 #define OVERFLOW_EN    0x1000000   // counter bit 30 (overflow) raises PLIC source 156 + counter index

@@ -84,10 +84,14 @@ A counter's Event Sel register is {port value [23:20], port mask [19:16], source
 event value [7:4], event mask [3:0]} (`pmu_pkg::event_sel_cfg_t`). The counter counts an event when
 `(mask & field) == value` holds for all three fields and the event value is not 0: an event value of 0 turns the
 counter off (`pmu_port.sv`), so no select counts every event of a port; count each event ID on a counter of its own.
-Ports with four cores: 1-4 the cores' EVUs, 5-8 the SPUs on the cores' ports to the LLC, 9 the SPU on the LLC memory
-port (all DRAM traffic). SPU events: 1 read request, 2 write request, 3 read response, 4 write response. On ports 5-8
-the source is bit 0 of the core's AXI ID (`i_spu_core_llc` in `hardware/host/cva6_synth_wrap.sv`), which does not tell
-masters apart: the port is the core.
+Ports with *N* cores: 1..*N* the cores' EVUs, *N*+1..2*N* the SPUs on the cores' ports to the LLC, 2*N*+1 the SPU on
+the LLC memory port (all DRAM traffic), 2*N*+2 the SPU on the accelerator socket's DMA (below). With four cores that is
+1-4, 5-8, 9 and 10, with eight 1-8, 9-16, 17 and 18 (`ariane_soc::Apmu*Idx`: element *i* of `spu_o` in
+`hardware/host/host_domain.sv` is port *i* + 1). A select names a port by its 4-bit `PORT_ID` (`pmu_pkg::PORT_ID_BITS`),
+which holds ports 1-15: with more ports (eight cores, until the APMU's fields are widened) the simulation stops at
+time 0. SPU events: 1 read request, 2 write request, 3 read response, 4 write response. On ports 5-8 the source is
+bit 0 of the core's AXI ID (`i_spu_core_llc` in `hardware/host/cva6_synth_wrap.sv`), which does not tell masters
+apart: the port is the core.
 
 On ports 1-4 the event field is a bitmap of the core's four EVU slots, bit *s* set in a cycle in which slot *s* sees
 its event, and the source is 0: slot *s* of core *c* is the select with port value *c* + 1 and event value and mask
@@ -135,6 +139,23 @@ and LLC flushes for source 0. The numbers follow the package when masters are ad
 eight-core simulation stops at time 0 until the field is widened. Examples: `0x9F4F1F` counts the socket DMA's read
 requests, `0x9F5F1F` the Ethernet DMA's, `0x9F001F` every read request on port 9 (`software/quad_boot/pmu_defines.h`;
 `software/soc_tests/t_srcid` checks them).
+
+Port 2*N*+2 (10 with four cores) is an SPU on the accelerator socket's DMA master (`i_spu_accel` in
+`hardware/host/cva6_subsystem.sv`), in front of the socket's port of the coherence unit as the cores' SPUs are in front
+of theirs. It sees the accelerators' requests before the coherence unit and the LLC, so every DRAM request counts once,
+LLC hit or miss, and nothing else: the Ethernet DMA has a coherence-unit port of its own, and the CPU's accesses to the
+socket's registers take another path. Its events are those of the other SPUs, for DRAM addresses only (DMA to the
+on-chip SRAM or the LLC scratchpad does not count): a request carries its size in bytes (8 for every socket request), a
+response its latency in cycles. Every event has source 4 (`CcuAccelPort`), the code port 9 gives the socket's requests
+too; which slot made a request is not recorded. Next to port 9 it tells what of the socket's traffic reached DRAM: port
+9's source 4 is all of it outside the LLC window, inside the window only the refills its LLC misses cause (and the
+evictions they force). Examples: `0xAF4F1F` read requests, `0xAF4F3F` read responses (`ACC_*` in
+`software/quad_boot/pmu_defines.h`; `software/soc_tests/t_srcid` compares them with port 9's source 4 and requires 0
+while only the cores or the Ethernet DMA are busy).
+
+A counter that adds or compares Event Info (latency or size sums, `ADD_RESP_LAT`) takes one port's info per cycle: when
+several ports match it in the same cycle, the highest-numbered port's info is used and the others' are lost
+(`pmu_port_wrap.sv`), so give such a counter a single port. A counter without Event Info adds up every matching port.
 
 > **Implementation note.** The AXI4-Lite reads/writes are serviced by AlSaqr's
 > `axi_lite_regs` IP, which expects a *contiguous* byte array, whereas the counters are
