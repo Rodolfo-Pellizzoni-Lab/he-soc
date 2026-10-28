@@ -53,6 +53,10 @@ module perf_counters import ariane_pkg::*; #(
   input  logic [NumPorts-1:0][DCACHE_SET_ASSOC-1:0]miss_vld_bits_i,  //For Cache eviction (3ports-LOAD,STORE,PTW)
   input  logic                                    i_tlb_flush_i,
   input  logic                                    stall_issue_i,  //stall-read operands
+  
+  input logic scontext_change_i,
+  input logic hcontext_change_i,
+  
   input logic [(ariane_pkg::NumPerfEvents * ariane_pkg::EventIDBits)-1:0] perfc_evu_req,   //PerfCounters EVENTID Request.
   input  logic [(ariane_pkg::NumPCMilesRegs * riscv::VLEN)-1:0]            pcmiles_evu_req, //PC Milestones to Track.
   output [ariane_pkg::NumPerfEvents-1:0]                                   perfc_evu_resp,  //Status of each Performance Counter Event Represented by its ID.
@@ -295,6 +299,8 @@ module perf_counters import ariane_pkg::*; #(
         .int_event_en(|int_event),
         .fp_event_en(|fp_event),
         .stall_issue_en(stall_issue_i),
+        .scontext_change_en(scontext_change_i),
+        .hcontext_change_en(hcontext_change_i),
         .perfc_req(perfc_evu_req),           
         .pcmiles_req(pcmiles_evu_req),
         .commit_pc(commit_instr_i),

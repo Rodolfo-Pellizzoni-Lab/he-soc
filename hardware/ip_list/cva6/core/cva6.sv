@@ -674,6 +674,9 @@ module cva6 import ariane_pkg::*; #(
   logic [ariane_pkg::QOS_RCID_WIDTH-1:0] qos_rcid;
   logic [ariane_pkg::QOS_MCID_WIDTH-1:0] qos_mcid;
 
+  logic [riscv::SCONTEXTW-1:0] scontext_q, scontext_csr;
+  logic [riscv::HCONTEXTW-1:0] hcontext_q, hcontext_csr;
+
   csr_regfile #(
     .AsidWidth              ( ASID_WIDTH                    ),
     .VmidWidth              ( VMID_WIDTH                    ),
@@ -721,7 +724,7 @@ module cva6 import ariane_pkg::*; #(
     .en_translation_o       ( enable_translation_csr_ex     ),
     .en_g_translation_o     ( enable_g_translation_csr_ex   ),
     .en_ld_st_translation_o ( en_ld_st_translation_csr_ex   ),
-    .en_ld_st_g_translation_o ( en_ld_st_g_translation_csr_ex   ),
+    .en_ld_st_g_translation_o( en_ld_st_g_translation_csr_ex),
     .sum_o                  ( sum_csr_ex                    ),
     .vs_sum_o               ( vs_sum_csr_ex                 ),
     .mxr_o                  ( mxr_csr_ex                    ),
@@ -732,6 +735,8 @@ module cva6 import ariane_pkg::*; #(
     .vs_asid_o              ( vs_asid_csr_ex                ),
     .hgatp_ppn_o            ( hgatp_ppn_csr_ex              ),
     .vmid_o                 ( vmid_csr_ex                   ),
+    .scontext_o             ( scontext_csr                  ),
+    .hcontext_o             ( hcontext_csr                  ),
     .tvm_o                  ( tvm_csr_id                    ),
     .tw_o                   ( tw_csr_id                     ),
     .vtw_o                  ( vtw_csr_id                    ),
@@ -768,6 +773,12 @@ module cva6 import ariane_pkg::*; #(
   // EVU response wires (connected to perf_counters instance)
   logic [ariane_pkg::NumPerfEvents-1:0] perfc_evu_resp_o;
   logic [ariane_pkg::NumPCMilesRegs-1:0] pcmiles_evu_resp_o;
+  logic scontext_change_q, hcontext_change_q, scontext_change, hcontext_change;
+
+  // Event detector
+  assign scontext_change = (scontext_csr != scontext_q); 
+  assign hcontext_change = (hcontext_csr != hcontext_q);
+  
   if (PERF_COUNTER_EN) begin: gen_perf_counter
   perf_counters #(
     .NumPorts            ( NumPorts                  )
@@ -802,35 +813,59 @@ module cva6 import ariane_pkg::*; #(
     .miss_vld_bits_i     ( miss_vld_bits             ),
     .i_tlb_flush_i       ( flush_tlb_ctrl_ex         ),
     .stall_issue_i       ( stall_issue               ),
-    .perfc_evu_req     (perfc_evu_req_i),
-    .pcmiles_evu_req    (pcmiles_evu_req_i),
-    .perfc_evu_resp     (perfc_evu_resp_o),
-    .pcmiles_evu_resp   (pcmiles_evu_resp_o)
+    .scontext_change_i   ( scontext_change           ),
+    .hcontext_change_i   ( hcontext_change           ),
+    .perfc_evu_req       ( perfc_evu_req_i           ),
+    .pcmiles_evu_req     ( pcmiles_evu_req_i         ),
+    .perfc_evu_resp      ( perfc_evu_resp_o          ),
+    .pcmiles_evu_resp    ( pcmiles_evu_resp_o        )
   );
  end else begin: gen_no_perf_counter
    assign overflow_perf_csr = '0;
    assign overflow_irq_perf_csr = 1'b0;
  end
 
- //Performance Counters Event Unit Packet Generation
-  // The following block is used to configure the Performance Counters EVU Packets to be sent to the PMU
-  // The EVU sends pcmiles_evu_resp_o as a simple wire. 
-  // So, we need this register here to keep things in sync with the Event Status Values 
-  // as that is registered there in the Event Unit
-  logic [ariane_pkg::NumPCMilesRegs-1:0] pcmiles_resp_temp;
+  // Performance Counters Event Unit Packet Generation
+  // The following block builds the Performance Counters EVU packets sent to the PMU.
+  // EVU event statuses arrive 2 cycles after the event, so priv_lvl and v are delayed by 2 cycles
+  // to give s_id the privilege level the event happened in. The context values and their change
+  // flags are registered once: e_info then carries the new context in the cycle its event status does.
+  riscv::priv_lvl_t priv_lvl_q1, priv_lvl_q;
+  logic v_q1, v_q;
 
   always_ff@(posedge clk_i) begin
     if(!rst_ni) begin
-      pcmiles_resp_temp <= '0;
+      priv_lvl_q1 <= riscv::PRIV_LVL_U; priv_lvl_q <= riscv::PRIV_LVL_U;
+      v_q1 <= '0; v_q <= '0; 
+      scontext_q <= '0;
+      hcontext_q <= '0;
+      scontext_change_q <= '0;
+      hcontext_change_q <= '0;
     end else begin
-      pcmiles_resp_temp <= pcmiles_evu_resp_o;
+      priv_lvl_q1 <= priv_lvl_q; priv_lvl_q <= priv_lvl;
+      v_q1 <= v_q; v_q <= v;
+      scontext_q <= scontext_csr;
+      hcontext_q <= hcontext_csr;
+      scontext_change_q <= scontext_change;
+      hcontext_change_q <= hcontext_change;
     end
+  end
+
+  ariane_pkg::event_info_t e_info;
+  always_comb begin : eventInfoMux 
+    e_info = '0;
+    if (hcontext_change_q) 
+      e_info = hcontext_q;
+    else if (scontext_change_q)
+      e_info = scontext_q;
+    else if(|pcmiles_evu_resp_o)
+      e_info = pcmiles_evu_resp_o;
   end
 
   always_comb begin 
     perfc_evu_status_resp.e_id     =   perfc_evu_resp_o;
-    perfc_evu_status_resp.e_info   =   pcmiles_resp_temp;
-    perfc_evu_status_resp.s_id     =   0;
+    perfc_evu_status_resp.e_info   =   e_info;
+    perfc_evu_status_resp.s_id     =   {1'b0, v_q1, priv_lvl_q1};
   end
 
   // ------------
