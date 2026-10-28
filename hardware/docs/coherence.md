@@ -8,7 +8,8 @@ interactive-simulation traces of the eight-core library.
 
 ## The pieces
 
-**CCU** (`ace_ccu_top.sv`, one instance, `NumCVA6 + 1` slave ports: the cores and the accelerator socket's DMA).
+**CCU** (`ace_ccu_top.sv`, one instance, `NumCVA6 + 2` slave ports: the cores, the accelerator socket's DMA and the
+Xilinx Ethernet's DMA).
 Every core's AXI master goes through an `ace_trs_dec` + `axi_demux` pair: WriteBack and the NoSnoop transactions go
 straight to the memory mux, everything shareable (ReadShared, ReadUnique, ReadOnce, CleanUnique, WriteUnique,
 atomics) is serialised by an `axi_mux` into **one `ccu_fsm`** that handles **one transaction at a time**:

@@ -4,8 +4,9 @@
 //   +0x0_0000  AXI Ethernet subsystem (axi_ethernet 7.2: TEMAC + SGMII-over-LVDS PCS/PMA, 256 KB)
 //   +0x4_0000  AXI DMA (axi_dma 7.1, scatter-gather with the Ethernet control/status streams, 64 KB)
 // The DMA's three AXI masters (descriptors, TX reads, RX writes) are muxed and split into single beats, which
-// is what the coherence unit's DMA port takes (cva6_synth_wrap.sv): received frames and descriptor
-// updates are snooped against the cores' L1 data caches, as Linux 5.10 (no non-coherent DMA on RISC-V) needs.
+// is what its own port of the coherence unit takes (ariane_soc::CcuEthPort, cva6_synth_wrap.sv): received frames
+// and descriptor updates are snooped against the cores' L1 data caches, as Linux 5.10 (no non-coherent DMA on
+// RISC-V) needs.
 // Both IPs run on the SoC clock. Interrupts: the subsystem's, the DMA's TX (MM2S) and RX (S2MM) channels.
 //
 // On the FPGA, eth_sgmii and eth_dma are the generated IPs (hardware/fpga/alsaqr/tcl/ips/{eth,eth_dma}); in
@@ -26,7 +27,7 @@ module xilinx_eth_subsys
   input  logic          clk_i,
   input  logic          rst_ni,
   AXI_BUS.Slave         slv,          // the xbar's Ethernet port
-  output dma_req_t      dma_req_o,    // single-beat, IDs 0/2/4: for the CCU's DMA port
+  output dma_req_t      dma_req_o,    // single-beat, IDs 0/2/4: for its CCU port (ariane_soc::CcuEthPort)
   input  dma_resp_t     dma_resp_i,
   output logic          mac_irq_o,
   output logic          tx_irq_o,

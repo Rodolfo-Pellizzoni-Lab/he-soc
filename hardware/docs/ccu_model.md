@@ -117,8 +117,8 @@ their first atomic; t_eth lost one frame in 33 checks):
 - bursts: a DMA read of several beats spans several 16-byte lines, so the table holds the first and last line of
   the burst (INCR from its address, WRAP its aligned window) and a new request waits if its own range overlaps;
 - AXI ordering: read data of one id must return in order. A port with two reads outstanding under one id (the
-  DMA port; a core has one miss at a time) could get the second answered from a snooped L1 before the first's
-  memory data arrived, so a read whose id matches a read in flight waits as well.
+  Ethernet's DMA port; a core has one miss at a time) could get the second answered from a snooped L1 before the
+  first's memory data arrived, so a read whose id matches a read in flight waits as well.
 
 Measured with t_bw on the four-core library (cycles per 16-byte line; the model's prediction in brackets):
 

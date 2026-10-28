@@ -1,9 +1,10 @@
 # Number of CVA6 cores
 
-`ariane_soc_pkg::NumCVA6` sizes the whole host: the CCU ports (`NumCVA6 + 1`, the extra one is the accelerator
-socket's DMA port), the CLINT, the PLIC contexts (`2 * NumCVA6`), the debug module, the APMU event ports, the
-QoS monitor and the port-index field at the bottom of the SoC AXI user word (`QosUserLsb = $clog2(NumCVA6 + 1)`,
-see `qos.md`). It is 4 under `QUAD_CORE` (set in the package itself) and can be overridden with a define:
+`ariane_soc_pkg::NumCVA6` sizes the whole host: the CCU ports (`NumCVA6 + 2`, the extra two are the DMA ports of the
+accelerator socket and of the Xilinx Ethernet), the CLINT, the PLIC contexts (`2 * NumCVA6`), the debug module, the
+APMU event ports, the QoS monitor and the port-index field at the bottom of the SoC AXI user word (`QosUserLsb =
+$clog2(NumCVA6 + 2)`, see `qos.md`). It is 4 under `QUAD_CORE` (set in the package itself) and can be overridden
+with a define:
 
 | Flow | How |
 |---|---|

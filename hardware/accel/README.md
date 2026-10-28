@@ -58,14 +58,15 @@ transient value of "default, then override" writes through ports, which can loop
 
 ## Memory, caches and DMA
 
-The socket's memory port is a port of the coherence unit (`host/cva6_synth_wrap.sv`, CCU port `NumCVA6` = 4, next
-to the four cores): every read is an ACE ReadOnce and every write a WriteUnique in the shareable domain, the same
-transactions the cores use for their own uncached accesses. A read therefore returns the data a core still holds
-dirty in its write-back L1, and a write invalidates the cores' copies (after a write-back when one was dirty) before
-it reaches the LLC or the DRAM. The port never caches anything and answers every snoop with "no data". Buffers
-shared with an accelerator can live anywhere (DRAM, the LLC window, the on-chip SRAM) and need **no cache
-maintenance on either side**. Software still orders its own writes before the start (`fence` before the START
-register write: the cores' uncached stores are posted) and reads the result after DONE / the interrupt.
+The socket's memory port is a port of the coherence unit (`host/cva6_synth_wrap.sv`, CCU port `NumCVA6` = 4,
+`ariane_soc::CcuAccelPort`, next to the four cores; the Xilinx Ethernet's DMA has the next one, 5, `CcuEthPort`):
+every read is an ACE ReadOnce and every write a WriteUnique in the shareable domain, the same transactions the cores
+use for their own uncached accesses. A read therefore returns the data a core still holds dirty in its write-back
+L1, and a write invalidates the cores' copies (after a write-back when one was dirty) before it reaches the LLC or
+the DRAM. The port never caches anything and answers every snoop with "no data". Buffers shared with an accelerator
+can live anywhere (DRAM, the LLC window, the on-chip SRAM) and need **no cache maintenance on either side**.
+Software still orders its own writes before the start (`fence` before the START register write: the cores' uncached
+stores are posted) and reads the result after DONE / the interrupt.
 
 Rules for the DMA master, from the CCU's snoop-data path: single-beat 64-bit requests inside one 16-byte line
 (len 0, size 3), AXI ID 0. `axi_from_mem` in `accel_socket.sv` issues exactly that for the slots' memory ports.

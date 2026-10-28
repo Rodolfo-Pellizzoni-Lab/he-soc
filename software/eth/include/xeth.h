@@ -3,8 +3,8 @@
 // PLIC, IDs XETH_TX_IRQ / XETH_RX_IRQ, for tests and for Linux). Register names follow the Linux driver
 // (drivers/net/ethernet/xilinx/xilinx_axienet.h), so the two can be read side by side.
 //
-// Memory: descriptors and frame buffers may live in cached DRAM: the DMA enters the SoC through the coherence
-// unit's DMA port (snooped reads, invalidating writes), so no cache maintenance is needed. The same code runs in
+// Memory: descriptors and frame buffers may live in cached DRAM: the DMA enters the SoC through a port of its own
+// on the coherence unit (snooped reads, invalidating writes), so no cache maintenance is needed. The same code runs in
 // xsim against tb/eth_sgmii_model.sv (a loopback MAC) and on the VCU118 against the real IP and the DP83867 PHY.
 #ifndef XETH_H
 #define XETH_H

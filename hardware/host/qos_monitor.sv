@@ -63,7 +63,7 @@ module qos_monitor #(
   int unsigned ar_n [int unsigned];
   int unsigned aw_n [int unsigned];
   int unsigned n_ok, n_ccu, n_other, n_evict, n_err;
-  int unsigned sock_tags[int unsigned];   // llc_in: user fields seen from the socket's CCU port (src >= NumCVA6)
+  int unsigned sock_tags[int unsigned];   // llc_in: user fields seen from the CCU's DMA ports (src >= NumCVA6)
 
   initial begin n_ok = 0; n_ccu = 0; n_other = 0; n_evict = 0; n_err = 0; end
 
@@ -121,7 +121,7 @@ module qos_monitor #(
         if (found) n_ccu++;
       end
       if (!found) begin
-        if (u == 0 || src >= ariane_soc::NumCVA6) n_other++;   // not from a core: the socket's DMA port of the CCU
+        if (u == 0 || src >= ariane_soc::NumCVA6) n_other++;   // not from a core: a DMA port of the CCU
         if (src >= ariane_soc::NumCVA6) sock_tags[u] = sock_tags.exists(u) ? sock_tags[u] + 1 : 1;
         else                                       error(is_w ? 1 : 0, addr, u);
       end

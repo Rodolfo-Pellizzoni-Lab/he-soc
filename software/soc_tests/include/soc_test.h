@@ -71,9 +71,10 @@ static inline int soc_test_end(void) {
 #define SOC_NUM_CORES 4
 #endif
 // width of the CCU source-port field at the bottom of the SoC AXI user word: ariane_axi_soc::QosUserLsb =
-// clog2(SOC_NUM_CORES + 1), the cores plus the socket's DMA port (3 bits up to 7 cores, 4 bits up to 15)
-#define SOC_SRC_BITS ((SOC_NUM_CORES + 1) <= 2 ? 1 : (SOC_NUM_CORES + 1) <= 4 ? 2 : (SOC_NUM_CORES + 1) <= 8 ? 3 : \
-                      (SOC_NUM_CORES + 1) <= 16 ? 4 : 5)
+// clog2(SOC_NUM_CORES + 2), the cores plus the accelerator socket's and the Ethernet's DMA ports (3 bits up to 6
+// cores, 4 bits up to 14)
+#define SOC_SRC_BITS ((SOC_NUM_CORES + 2) <= 2 ? 1 : (SOC_NUM_CORES + 2) <= 4 ? 2 : (SOC_NUM_CORES + 2) <= 8 ? 3 : \
+                      (SOC_NUM_CORES + 2) <= 16 ? 4 : 5)
 #define SOC_PLIC_BASE 0x0C000000UL
 #define SOC_WAKE_CYCLES 200000                                   // bound on the wait for the woken cores to start
 #define SOC_WAKE_MASK ((uint32_t)((1ull << SOC_NUM_CORES) - 1) & ~3u)   // the harts it wakes: 2 .. SOC_NUM_CORES-1

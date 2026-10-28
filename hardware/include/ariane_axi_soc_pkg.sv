@@ -22,8 +22,8 @@ package ariane_axi_soc;
 
     // AXI user field of the SoC buses:
     //   [QosUserLsb-1:0]                       source port of a CCU request, written by the CCU: the cores
-    //                                          0..NumCVA6-1, then the DMA port shared by the accelerator socket and the
-    //                                          Ethernet DMA (ariane_soc::NumCcuPorts, CcuDmaPort); 0 from other masters
+    //                                          0..NumCVA6-1, then the accelerator socket's and the Ethernet's DMA ports
+    //                                          (ariane_soc::CcuAccelPort, CcuEthPort); 0 from other masters
     //   [QosUserLsb +: ariane_pkg::QOS_TAG_WIDTH] QoS tag {AT, MCID, RCID} of the requesting hart (Ssqosid srmcfg,
     //                                          for CBQRI capacity / bandwidth controllers); 0 from other masters
     localparam int unsigned QosUserLsb = ariane_soc::CcuSrcWidth;

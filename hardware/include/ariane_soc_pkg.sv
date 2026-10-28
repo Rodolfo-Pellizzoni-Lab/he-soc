@@ -80,11 +80,19 @@ package ariane_soc;
   localparam IdWidthSlave  = IdWidth + XbarPortWidth;
 
   // ---- Masters of the coherence unit (CCU, cva6_synth_wrap): the NumCVA6 cores are its ports 0..NumCVA6-1, then
-  // its DMA port, which the accelerator socket and the Xilinx Ethernet DMA share (cva6_subsystem). Every number and
-  // width that depends on how many masters the CCU has derives from these.
-  localparam int unsigned NumCcuDmaPorts = 1;
+  // its DMA ports, one per DMA master (cva6_subsystem): element k of the wrapper's DMA-port array is CCU port
+  // CcuDmaPort + k. Both DMA ports exist in every build (without XILINX_ETHERNET the Ethernet's request is 0), so the
+  // source numbers do not depend on build options. Every number and width that depends on how many masters the CCU
+  // has derives from these.
+  localparam int unsigned NumCcuDmaPorts = 2;
   localparam int unsigned NumCcuPorts    = NumCVA6 + NumCcuDmaPorts;
-  localparam int unsigned CcuDmaPort     = NumCVA6;
+  localparam int unsigned CcuDmaPort     = NumCVA6;   // the first DMA port
+  // The index in the wrapper's DMA-port array and the CCU port (the source the CCU writes: 4 and 5 with four cores,
+  // 8 and 9 with eight) of the accelerator socket's DMA and of the Xilinx Ethernet's AXI DMA
+  localparam int unsigned CcuDmaAccel    = 0;
+  localparam int unsigned CcuDmaEth      = 1;
+  localparam int unsigned CcuAccelPort   = CcuDmaPort + CcuDmaAccel;
+  localparam int unsigned CcuEthPort     = CcuDmaPort + CcuDmaEth;
   // The CCU writes the port a request came from (its "source") into the low CcuSrcWidth bits of the AXI user field
   // (ace_ccu_top; ariane_axi_soc::QosUserLsb), and the source travels with the request to the memory.
   localparam int unsigned CcuSrcWidth    = (NumCcuPorts > 1) ? $clog2(NumCcuPorts) : 1;
@@ -99,9 +107,9 @@ package ariane_soc;
   localparam int unsigned RemapSrcWidth   = IdWidth - RemapSlotWidth;
 
   // ---- Source of a request at the LLC memory port, as the APMU's SPU there reports it (host_domain,
-  // ariane_axi_soc::mem_src): 0..NumCcuPorts-1 the CCU source (the cores, then the DMA port), NumCcuPorts + p - 1
-  // for crossbar master p >= 1. MemSrcWidth is the APMU's source field (pmu_pkg::SOURCE_ID_BITS, checked in
-  // host_domain), which must hold all NumMemSrcs.
+  // ariane_axi_soc::mem_src): 0..NumCcuPorts-1 the CCU source (the cores, then CcuAccelPort and CcuEthPort),
+  // NumCcuPorts + p - 1 for crossbar master p >= 1. MemSrcWidth is the APMU's source field (pmu_pkg::SOURCE_ID_BITS,
+  // checked in host_domain), which must hold all NumMemSrcs.
   localparam int unsigned NumMemSrcs  = NumCcuPorts + NrSlaves - 1;
   localparam int unsigned MemSrcWidth = 4;
 

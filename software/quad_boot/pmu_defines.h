@@ -118,9 +118,10 @@
 /// Defines for LLC to/from Main Memory
 /// ***********************************
 /// Port 9 (2*NumCVA6+1). Its source field is the source of the request (hardware/include/ariane_soc_pkg.sv,
-/// ariane_axi_soc::mem_src): 0-3 the cores, 4 the DMA port (the accelerator socket and the Ethernet DMA), then one
-/// per other crossbar master p, NumCcuPorts + p - 1: 5 debug module, 8 uDMA TX, 9 uDMA RX, 10 iDMA through the IOMMU,
-/// 11 IOMMU data structures. A response counts for the source of its request.
+/// ariane_axi_soc::mem_src): 0-3 the cores, 4 the accelerator socket's DMA, 5 the Xilinx Ethernet's DMA (each a port
+/// of the coherence unit of its own), then one per other crossbar master p, NumCcuPorts + p - 1: 6 debug module,
+/// 9 uDMA TX, 10 uDMA RX, 11 iDMA through the IOMMU, 12 IOMMU data structures. A response counts for the source of
+/// its request. The values here are the four-core ones.
 // Read and write requests / responses of every source
 #define MEM_RD_REQ   0x9F001F
 #define MEM_WR_REQ   0x9F002F
@@ -144,11 +145,22 @@
 #define MEM_WR_RES_CORE_1  0x9F1F4F
 #define MEM_WR_RES_CORE_2  0x9F2F4F
 #define MEM_WR_RES_CORE_3  0x9F3F4F
-// The same for the DMA port
-#define MEM_RD_REQ_DMA     0x9F4F1F
-#define MEM_WR_REQ_DMA     0x9F4F2F
-#define MEM_RD_RES_DMA     0x9F4F3F
-#define MEM_WR_RES_DMA     0x9F4F4F
+// The same for the accelerator socket's DMA (source 4)
+#define MEM_RD_REQ_ACCEL   0x9F4F1F
+#define MEM_WR_REQ_ACCEL   0x9F4F2F
+#define MEM_RD_RES_ACCEL   0x9F4F3F
+#define MEM_WR_RES_ACCEL   0x9F4F4F
+// ... and for the Xilinx Ethernet's DMA (source 5)
+#define MEM_RD_REQ_ETH     0x9F5F1F
+#define MEM_WR_REQ_ETH     0x9F5F2F
+#define MEM_RD_RES_ETH     0x9F5F3F
+#define MEM_WR_RES_ETH     0x9F5F4F
+// The old names: source 4 is the accelerator socket's DMA only; it no longer includes the Ethernet DMA, which
+// shared that port until it had one of its own (MEM_*_ETH)
+#define MEM_RD_REQ_DMA     MEM_RD_REQ_ACCEL
+#define MEM_WR_REQ_DMA     MEM_WR_REQ_ACCEL
+#define MEM_RD_RES_DMA     MEM_RD_RES_ACCEL
+#define MEM_WR_RES_DMA     MEM_WR_RES_ACCEL
 
 /// ***************************************
 /// Defines for the cores' EVUs (ports 1-4)

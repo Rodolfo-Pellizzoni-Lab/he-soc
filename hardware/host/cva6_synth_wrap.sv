@@ -98,9 +98,10 @@ module cva6_synth_wrap
   // Timer facilities
   input  logic [ariane_soc::NumCVA6-1:0]      time_irq_i,   // timer interrupt in (async)
   input  logic [ariane_soc::NumCVA6-1:0]      debug_req_i,  // debug request (async)
-  // accelerator socket DMA master (same clock), made coherent with the L1 data caches through a CCU port
-  input  ariane_axi_soc::req_slv_t            dma_req_i,
-  output ariane_axi_soc::resp_slv_t           dma_resp_o,
+  // DMA masters (same clock), each made coherent with the L1 data caches through a CCU port of its own: element k is
+  // CCU port DmaCcuPort + k, [ariane_soc::CcuDmaAccel] the accelerator socket, [CcuDmaEth] the Xilinx Ethernet DMA
+  input  ariane_axi_soc::req_slv_t  [ariane_soc::NumCcuDmaPorts-1:0] dma_req_i,
+  output ariane_axi_soc::resp_slv_t [ariane_soc::NumCcuDmaPorts-1:0] dma_resp_o,
 
   // memory side, AXI Master
   // AXI4 MASTER
@@ -205,7 +206,7 @@ module cva6_synth_wrap
 );
 
   localparam  CVA6AXiIdWidth = 4; // Do not change, CVA6 from planV only supports IdWidth = 4
-  // CCU ports: the cores, plus the DMA port (accelerator socket and Ethernet DMA) as a non-caching port (see below)
+  // CCU ports: the cores, then the DMA ports (accelerator socket, Ethernet DMA) as non-caching ports (see below)
   localparam  NumCcuPorts   = ariane_soc::NumCcuPorts;
   localparam  DmaCcuPort    = ariane_soc::CcuDmaPort;
   localparam  CCUAxiIdWidth = CVA6AXiIdWidth + $clog2(NumCcuPorts) + $clog2(NumCcuPorts+1);
@@ -217,8 +218,19 @@ module cva6_synth_wrap
     assert ($clog2(NumCcuPorts) == ariane_axi_soc::QosUserLsb)
       else $fatal(1, "CCU source port: the CCU writes %0d user bits, ariane_axi_soc reserves %0d", $clog2(NumCcuPorts),
                   ariane_axi_soc::QosUserLsb);
-    assert (ariane_soc::NumCcuDmaPorts == 1 && DmaCcuPort == ariane_soc::NumCVA6)
-      else $fatal(1, "this wrapper wires exactly one CCU DMA port, after the cores (dma_req_i)");
+    // gen_ariane drives CCU ports 0..NumCVA6-1 and gen_dma_port one port per element of dma_req_i from DmaCcuPort on:
+    // together they must be every CCU port, or a port is left undriven
+    assert (DmaCcuPort == ariane_soc::NumCVA6 && NumCcuPorts == ariane_soc::NumCVA6 + ariane_soc::NumCcuDmaPorts)
+      else $fatal(1, "CCU ports: %0d cores and %0d DMA ports from port %0d do not make the %0d ports",
+                  ariane_soc::NumCVA6, ariane_soc::NumCcuDmaPorts, DmaCcuPort, NumCcuPorts);
+    // the named DMA ports are elements of dma_req_i, and their CCU ports (the sources the CCU writes) match
+    assert (ariane_soc::CcuDmaAccel < ariane_soc::NumCcuDmaPorts && ariane_soc::CcuDmaEth < ariane_soc::NumCcuDmaPorts
+            && ariane_soc::CcuDmaAccel != ariane_soc::CcuDmaEth
+            && ariane_soc::CcuAccelPort == DmaCcuPort + ariane_soc::CcuDmaAccel
+            && ariane_soc::CcuEthPort == DmaCcuPort + ariane_soc::CcuDmaEth)
+      else $fatal(1, "CCU DMA ports: socket at index %0d (port %0d), Ethernet at %0d (port %0d) of %0d from port %0d",
+                  ariane_soc::CcuDmaAccel, ariane_soc::CcuAccelPort, ariane_soc::CcuDmaEth, ariane_soc::CcuEthPort,
+                  ariane_soc::NumCcuDmaPorts, DmaCcuPort);
   end
   // pragma translate_on
 
@@ -664,94 +676,106 @@ module cva6_synth_wrap
   end // block: gen_ariane
 
   // ------------------------------------------------------------------------------------------------
-  // Accelerator socket DMA as a CCU port. The socket's AXI master (al_saqr, cluster master port) used to enter
+  // DMA masters as CCU ports. The accelerator socket's AXI master (al_saqr, cluster master port) used to enter
   // the host xbar directly, after the coherence unit, so its traffic was invisible to the cores' write-back L1
-  // data caches (software/soc_tests/t_dma measured it). Here it becomes the CCU's port DmaCcuPort: every read
-  // is a ReadOnce and every write a WriteUnique in the inner shareable domain, which the CCU already handles
-  // for the cores' own uncached accesses: a read takes dirty data from a core's L1, a write invalidates the
-  // cores' copies (after a write-back if one was dirty) before reaching memory. The port never caches
-  // anything, so it answers every snoop with "no data" one cycle after accepting it. The socket issues
-  // single-beat 64-bit requests with ID 0, as the CCU's snoop-data path requires (one 16-byte line).
+  // data caches (software/soc_tests/t_dma measured it). Here every DMA master has a CCU port of its own, port
+  // DmaCcuPort + k for element k of dma_req_i (the socket at ariane_soc::CcuAccelPort, the Xilinx Ethernet's AXI
+  // DMA at CcuEthPort), which is also the source the CCU writes into its requests. Every read is a ReadOnce and
+  // every write a WriteUnique in the inner shareable domain, which the CCU already handles for the cores' own
+  // uncached accesses: a read takes dirty data from a core's L1, a write invalidates the cores' copies (after a
+  // write-back if one was dirty) before reaching memory. The ports never cache anything, so each answers every
+  // snoop with "no data" one cycle after accepting it. Both masters issue single-beat 64-bit requests, as the
+  // CCU's snoop-data path requires (one 16-byte line): the socket with ID 0 (axi_from_mem), the Ethernet DMA with
+  // IDs 0, 2 and 4 (xilinx_eth_subsys), several in flight under one ID. That breaks the port demux's UniqueIds
+  // promise, harmlessly: they all take the shareable path, where the FSM keeps same-ID reads in order. The FSM's
+  // write-back of snooped dirty data carries {the port that held the data, the requester's ID}, so the two
+  // masters' write-backs can share an ID; the FSM has only one write in flight at a time.
   // ------------------------------------------------------------------------------------------------
-  ariane_ace::req_t  dma_ace_req;
-  ariane_ace::resp_t dma_ace_resp;
-  logic              dma_cr_pending_q;
+  for (genvar k = 0; k < ariane_soc::NumCcuDmaPorts; k++) begin : gen_dma_port
+    localparam int unsigned P = DmaCcuPort + k;   // its CCU port
 
-  always_comb begin
-    dma_ace_req = '0;
-    dma_ace_req.aw.id     = ariane_axi::id_t'(dma_req_i.aw.id);
-    dma_ace_req.aw.addr   = dma_req_i.aw.addr;
-    dma_ace_req.aw.len    = dma_req_i.aw.len;
-    dma_ace_req.aw.size   = dma_req_i.aw.size;
-    dma_ace_req.aw.burst  = dma_req_i.aw.burst;
-    dma_ace_req.aw.lock   = dma_req_i.aw.lock;
-    dma_ace_req.aw.cache  = dma_req_i.aw.cache;
-    dma_ace_req.aw.prot   = dma_req_i.aw.prot;
-    dma_ace_req.aw.qos    = dma_req_i.aw.qos;
-    dma_ace_req.aw.region = dma_req_i.aw.region;
-    dma_ace_req.aw.atop   = dma_req_i.aw.atop;
-    dma_ace_req.aw.user   = ariane_axi::user_t'(dma_req_i.aw.user);   // SoC layout; the CCU writes the port bits
-    dma_ace_req.aw.snoop  = 3'b000;    // WriteUnique ...
-    dma_ace_req.aw.domain = 2'b01;     // ... in the inner shareable domain: snooped
-    dma_ace_req.aw_valid  = dma_req_i.aw_valid;
-    dma_ace_req.w.data    = dma_req_i.w.data;
-    dma_ace_req.w.strb    = dma_req_i.w.strb;
-    dma_ace_req.w.last    = dma_req_i.w.last;
-    dma_ace_req.w.user    = ariane_axi::user_t'(dma_req_i.w.user);
-    dma_ace_req.w_valid   = dma_req_i.w_valid;
-    dma_ace_req.b_ready   = dma_req_i.b_ready;
-    dma_ace_req.ar.id     = ariane_axi::id_t'(dma_req_i.ar.id);
-    dma_ace_req.ar.addr   = dma_req_i.ar.addr;
-    dma_ace_req.ar.len    = dma_req_i.ar.len;
-    dma_ace_req.ar.size   = dma_req_i.ar.size;
-    dma_ace_req.ar.burst  = dma_req_i.ar.burst;
-    dma_ace_req.ar.lock   = dma_req_i.ar.lock;
-    dma_ace_req.ar.cache  = dma_req_i.ar.cache;
-    dma_ace_req.ar.prot   = dma_req_i.ar.prot;
-    dma_ace_req.ar.qos    = dma_req_i.ar.qos;
-    dma_ace_req.ar.region = dma_req_i.ar.region;
-    dma_ace_req.ar.user   = ariane_axi::user_t'(dma_req_i.ar.user);
-    dma_ace_req.ar.snoop  = 4'b0000;   // ReadOnce ...
-    dma_ace_req.ar.domain = 2'b01;     // ... in the inner shareable domain: snooped
-    dma_ace_req.ar_valid  = dma_req_i.ar_valid;
-    dma_ace_req.r_ready   = dma_req_i.r_ready;
-    // snoop channel: accept a snoop when no answer is pending, answer "no data, not shared, clean" next cycle
-    dma_ace_req.ac_ready  = !dma_cr_pending_q;
-    dma_ace_req.cr_valid  = dma_cr_pending_q;
-    dma_ace_req.cr_resp   = '0;
-    dma_ace_req.cd_valid  = 1'b0;
-  end
+    ariane_ace::req_t          dma_ace_req;
+    ariane_ace::resp_t         dma_ace_resp;
+    ariane_axi_soc::resp_slv_t dma_resp;
+    logic                      dma_cr_pending_q;
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni)                                          dma_cr_pending_q <= 1'b0;
-    else if (!dma_cr_pending_q && dma_ace_resp.ac_valid)  dma_cr_pending_q <= 1'b1;   // AC handshake
-    else if ( dma_cr_pending_q && dma_ace_resp.cr_ready)  dma_cr_pending_q <= 1'b0;   // CR handshake
-  end
+    always_comb begin
+      dma_ace_req = '0;
+      dma_ace_req.aw.id     = ariane_axi::id_t'(dma_req_i[k].aw.id);
+      dma_ace_req.aw.addr   = dma_req_i[k].aw.addr;
+      dma_ace_req.aw.len    = dma_req_i[k].aw.len;
+      dma_ace_req.aw.size   = dma_req_i[k].aw.size;
+      dma_ace_req.aw.burst  = dma_req_i[k].aw.burst;
+      dma_ace_req.aw.lock   = dma_req_i[k].aw.lock;
+      dma_ace_req.aw.cache  = dma_req_i[k].aw.cache;
+      dma_ace_req.aw.prot   = dma_req_i[k].aw.prot;
+      dma_ace_req.aw.qos    = dma_req_i[k].aw.qos;
+      dma_ace_req.aw.region = dma_req_i[k].aw.region;
+      dma_ace_req.aw.atop   = dma_req_i[k].aw.atop;
+      dma_ace_req.aw.user   = ariane_axi::user_t'(dma_req_i[k].aw.user);   // SoC layout; the CCU writes the port bits
+      dma_ace_req.aw.snoop  = 3'b000;    // WriteUnique ...
+      dma_ace_req.aw.domain = 2'b01;     // ... in the inner shareable domain: snooped
+      dma_ace_req.aw_valid  = dma_req_i[k].aw_valid;
+      dma_ace_req.w.data    = dma_req_i[k].w.data;
+      dma_ace_req.w.strb    = dma_req_i[k].w.strb;
+      dma_ace_req.w.last    = dma_req_i[k].w.last;
+      dma_ace_req.w.user    = ariane_axi::user_t'(dma_req_i[k].w.user);
+      dma_ace_req.w_valid   = dma_req_i[k].w_valid;
+      dma_ace_req.b_ready   = dma_req_i[k].b_ready;
+      dma_ace_req.ar.id     = ariane_axi::id_t'(dma_req_i[k].ar.id);
+      dma_ace_req.ar.addr   = dma_req_i[k].ar.addr;
+      dma_ace_req.ar.len    = dma_req_i[k].ar.len;
+      dma_ace_req.ar.size   = dma_req_i[k].ar.size;
+      dma_ace_req.ar.burst  = dma_req_i[k].ar.burst;
+      dma_ace_req.ar.lock   = dma_req_i[k].ar.lock;
+      dma_ace_req.ar.cache  = dma_req_i[k].ar.cache;
+      dma_ace_req.ar.prot   = dma_req_i[k].ar.prot;
+      dma_ace_req.ar.qos    = dma_req_i[k].ar.qos;
+      dma_ace_req.ar.region = dma_req_i[k].ar.region;
+      dma_ace_req.ar.user   = ariane_axi::user_t'(dma_req_i[k].ar.user);
+      dma_ace_req.ar.snoop  = 4'b0000;   // ReadOnce ...
+      dma_ace_req.ar.domain = 2'b01;     // ... in the inner shareable domain: snooped
+      dma_ace_req.ar_valid  = dma_req_i[k].ar_valid;
+      dma_ace_req.r_ready   = dma_req_i[k].r_ready;
+      // snoop channel: accept a snoop when no answer is pending, answer "no data, not shared, clean" next cycle
+      dma_ace_req.ac_ready  = !dma_cr_pending_q;
+      dma_ace_req.cr_valid  = dma_cr_pending_q;
+      dma_ace_req.cr_resp   = '0;
+      dma_ace_req.cd_valid  = 1'b0;
+    end
 
-  always_comb begin
-    dma_resp_o          = '0;
-    dma_resp_o.aw_ready = dma_ace_resp.aw_ready;
-    dma_resp_o.ar_ready = dma_ace_resp.ar_ready;
-    dma_resp_o.w_ready  = dma_ace_resp.w_ready;
-    dma_resp_o.b_valid  = dma_ace_resp.b_valid;
-    dma_resp_o.b.id     = $bits(dma_resp_o.b.id)'(dma_ace_resp.b.id);
-    dma_resp_o.b.resp   = dma_ace_resp.b.resp;
-    dma_resp_o.r_valid  = dma_ace_resp.r_valid;
-    dma_resp_o.r.id     = $bits(dma_resp_o.r.id)'(dma_ace_resp.r.id);
-    dma_resp_o.r.data   = dma_ace_resp.r.data;
-    dma_resp_o.r.resp   = dma_ace_resp.r.resp[1:0];   // the ACE shared/dirty bits are dropped
-    dma_resp_o.r.last   = dma_ace_resp.r.last;
-  end
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+      if (!rst_ni)                                          dma_cr_pending_q <= 1'b0;
+      else if (!dma_cr_pending_q && dma_ace_resp.ac_valid)  dma_cr_pending_q <= 1'b1;   // AC handshake
+      else if ( dma_cr_pending_q && dma_ace_resp.cr_ready)  dma_cr_pending_q <= 1'b0;   // CR handshake
+    end
 
-`ifdef APMU_IP
-  `ACE_ASSIGN_FROM_REQ(SPU_to_CCU[DmaCcuPort], dma_ace_req)
-  `ACE_ASSIGN_TO_RESP(dma_ace_resp, SPU_to_CCU[DmaCcuPort])
-`else
-  `ACE_ASSIGN_FROM_REQ(core_to_CCU[DmaCcuPort], dma_ace_req)
-  `ACE_ASSIGN_TO_RESP(dma_ace_resp, core_to_CCU[DmaCcuPort])
-`endif
-  `SNOOP_ASSIGN_FROM_RESP(CCU_to_core[DmaCcuPort], dma_ace_req)
-  `SNOOP_ASSIGN_TO_REQ(dma_ace_resp, CCU_to_core[DmaCcuPort])
+    always_comb begin
+      dma_resp          = '0;
+      dma_resp.aw_ready = dma_ace_resp.aw_ready;
+      dma_resp.ar_ready = dma_ace_resp.ar_ready;
+      dma_resp.w_ready  = dma_ace_resp.w_ready;
+      dma_resp.b_valid  = dma_ace_resp.b_valid;
+      dma_resp.b.id     = $bits(dma_resp.b.id)'(dma_ace_resp.b.id);
+      dma_resp.b.resp   = dma_ace_resp.b.resp;
+      dma_resp.r_valid  = dma_ace_resp.r_valid;
+      dma_resp.r.id     = $bits(dma_resp.r.id)'(dma_ace_resp.r.id);
+      dma_resp.r.data   = dma_ace_resp.r.data;
+      dma_resp.r.resp   = dma_ace_resp.r.resp[1:0];   // the ACE shared/dirty bits are dropped
+      dma_resp.r.last   = dma_ace_resp.r.last;
+    end
+    assign dma_resp_o[k] = dma_resp;
+
+  `ifdef APMU_IP
+    `ACE_ASSIGN_FROM_REQ(SPU_to_CCU[P], dma_ace_req)
+    `ACE_ASSIGN_TO_RESP(dma_ace_resp, SPU_to_CCU[P])
+  `else
+    `ACE_ASSIGN_FROM_REQ(core_to_CCU[P], dma_ace_req)
+    `ACE_ASSIGN_TO_RESP(dma_ace_resp, core_to_CCU[P])
+  `endif
+    `SNOOP_ASSIGN_FROM_RESP(CCU_to_core[P], dma_ace_req)
+    `SNOOP_ASSIGN_TO_REQ(dma_ace_resp, CCU_to_core[P])
+  end // block: gen_dma_port
 
   localparam ace_pkg::ccu_cfg_t CCU_CFG = '{
     NoSlvPorts: NumCcuPorts,

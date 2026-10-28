@@ -87,7 +87,7 @@ static inline void unlock_uart(void) {
 #define PLIC_CLAIM2     (PLIC_BASE + 0x207004UL)   /* context 7 */
 
 /* Event selects — MEM request counts, per core (SPU port 9 sources 0-3 = cores
- * 0-3 at main memory, 4 = the DMA port, more in software/quad_boot/pmu_defines.h).
+ * 0-3 at main memory, 4/5 = socket/Ethernet DMA, more in quad_boot/pmu_defines.h).
  * We count exactly the traffic that crosses the slowdown: per-core requests at
  * MAIN MEMORY, i.e. what the LLC could not satisfy and had to send to DRAM
  * through the regulator. 8 plain counters — no overflow, no interrupt. */

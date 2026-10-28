@@ -1,6 +1,6 @@
 // Change the ID width of an AXI request/response pair without any bookkeeping: IDs are zero-extended on the way
-// out and truncated on the way back. Only correct when the master's IDs fit in the narrower width (the DMA paths
-// into the coherence unit's DMA port, hardware/docs/ethernet.md). Everything else is copied field by field.
+// out and truncated on the way back. Only correct when the master's IDs fit in the narrower width (the Ethernet
+// DMA's path to its port of the coherence unit, hardware/docs/ethernet.md). Everything else is copied field by field.
 module axi_id_width_adapt #(
   parameter type slv_req_t  = logic,
   parameter type slv_resp_t = logic,

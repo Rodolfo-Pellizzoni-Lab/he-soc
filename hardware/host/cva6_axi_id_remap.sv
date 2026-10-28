@@ -204,9 +204,10 @@ module cva6_axi_id_remap #(
   // Output ID = {source, table index}. The source is the CCU port the request came from, which the CCU writes into
   // user[AxiSrcWidth-1:0] on both of its paths (ace_ccu_top): port i on its non-shareable path, and on the CCU FSM's
   // the requesting port, except that a write-back the FSM issues for snooped dirty data carries the port that held the
-  // data (ccu_fsm first_responder; its QoS tag stays the requester's). The cores are ports 0..NumCVA6-1, the DMA port
-  // shared by the accelerator socket and the Ethernet DMA follows them (ariane_soc). Only ZeroWidth bits of the source
-  // fit in the ID (ariane_soc::RemapSrcWidth): with fewer than AxiSrcWidth the ID keeps the source's low bits, and the
+  // data (ccu_fsm first_responder; its QoS tag stays the requester's). The cores are ports 0..NumCVA6-1, the
+  // accelerator socket's and the Ethernet's DMA ports follow them (ariane_soc). Only ZeroWidth bits of the source
+  // fit in the ID (ariane_soc::RemapSrcWidth): with fewer than AxiSrcWidth the ID keeps the source's low bits (with
+  // four cores the socket's source 4 gets core 0's prefix, the Ethernet's 5 core 1's, hardware/docs/qos.md), and the
   // full source stays in the user field, where the APMU's SPU on the LLC memory port reads it (host_domain).
   // The CCU's own ID ({outer mux input, inner mux input, core ID}) is not decoded here because its layout depends on
   // the number of CCU ports: the fixed positions used before ([8:6] == 3'b100 ? [5:4] : [7:6]) were written for the

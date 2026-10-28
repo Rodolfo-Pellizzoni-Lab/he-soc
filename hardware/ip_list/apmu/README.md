@@ -111,25 +111,30 @@ four 64-bit PC milestones follow in order, milestone *m* at `+0x10 + 8*m`. A slo
 core commits one of the milestone PCs, and bit *m* of the event's info field says which; an Event Info configuration
 that adds that bit counts one milestone (`software/c1_v2`).
 
-On port 9 the source says who caused the traffic (`hardware/include/ariane_soc_pkg.sv`, `ariane_axi_soc::mem_src`):
+On port 9 the source says who caused the traffic (`hardware/include/ariane_soc_pkg.sv`, `ariane_axi_soc::mem_src`;
+the numbers with four cores):
 
 | Source | Master |
 |---|---|
 | 0-3 | the cores (ports 0-3 of the coherence unit) |
-| 4 | the coherence unit's DMA port: the accelerator socket and the Xilinx Ethernet DMA |
-| 5 | debug module |
-| 6, 7 | cluster port, RoT (idle) |
-| 8, 9 | uDMA TX, uDMA RX |
-| 10, 11 | IOMMU completion port (iDMA), IOMMU data structures |
-| 12, 13 | IOPMP initiator (idle), APMU master (does not reach DRAM) |
+| 4 | the accelerator socket's DMA (coherence-unit port 4, `ariane_soc::CcuAccelPort`) |
+| 5 | the Xilinx Ethernet's AXI DMA (coherence-unit port 5, `CcuEthPort`) |
+| 6 | debug module |
+| 7, 8 | cluster port, RoT (idle) |
+| 9, 10 | uDMA TX, uDMA RX |
+| 11, 12 | IOMMU completion port (iDMA), IOMMU data structures |
+| 13, 14 | IOPMP initiator (idle), APMU master (does not reach DRAM) |
 
-The cores' and the DMA port's numbers are the coherence unit's source port, which travels in the AXI user field
-(`user[QosUserLsb-1:0]`, `hardware/docs/qos.md`). The other masters get `NumCcuPorts + p - 1` for crossbar port `p`.
-A response counts for the source of its request. A write-back the coherence unit issues for snooped dirty data counts
-for the core that held the data, an LLC eviction for the request whose miss caused it, and LLC flushes for source 0.
-The numbers follow the package when masters are added; the simulation checks that `NumMemSrcs` fits the 4-bit source
-field. Examples: `0x9F4F1F` counts the DMA port's read requests, `0x9F001F` every read request on port 9
-(`software/quad_boot/pmu_defines.h`; `software/soc_tests/t_srcid` checks them).
+The cores' and the two DMA masters' numbers are the coherence unit's source port, which travels in the AXI user field
+(`user[QosUserLsb-1:0]`, `hardware/docs/qos.md`). The other masters get `NumCcuPorts + p - 1` for crossbar port `p`
+(until the Ethernet DMA had a coherence-unit port of its own, source 4 was both DMAs and every number from the debug
+module's on was one lower). A response counts for the source of its request. A write-back the coherence unit issues
+for snooped dirty data counts for the core that held the data, an LLC eviction for the request whose miss caused it,
+and LLC flushes for source 0. The numbers follow the package when masters are added; the simulation checks that
+`NumMemSrcs` fits the 4-bit source field: the 15 codes of four cores do, the 19 of eight cores do not, so an
+eight-core simulation stops at time 0 until the field is widened. Examples: `0x9F4F1F` counts the socket DMA's read
+requests, `0x9F5F1F` the Ethernet DMA's, `0x9F001F` every read request on port 9 (`software/quad_boot/pmu_defines.h`;
+`software/soc_tests/t_srcid` checks them).
 
 > **Implementation note.** The AXI4-Lite reads/writes are serviced by AlSaqr's
 > `axi_lite_regs` IP, which expects a *contiguous* byte array, whereas the counters are

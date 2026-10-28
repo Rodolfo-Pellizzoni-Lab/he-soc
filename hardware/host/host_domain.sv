@@ -850,8 +850,8 @@ module host_domain
    };
 
    // Source of each request on the LLC memory port for the APMU (ariane_axi_soc::mem_src, ariane_soc::NumMemSrcs
-   // codes): for CVA6-port traffic the CCU source in the user field (the cores, then the DMA port of the accelerator
-   // socket and the Ethernet DMA), for every other crossbar master a code of its own. A response reports its request's.
+   // codes): for CVA6-port traffic the CCU source in the user field (the cores, then the accelerator socket's and the
+   // Ethernet's DMA ports), for every other crossbar master a code of its own. A response reports its request's.
    logic [ariane_soc::MemSrcWidth-1:0] spu_mem_ar_src, spu_mem_aw_src;
    assign spu_mem_ar_src = ariane_axi_soc::mem_src(mem_axi_bus_spu_o_bus.ar_id[ariane_soc::IdWidthSlave-1:0],
                                                    mem_axi_bus_spu_o_bus.ar_user);

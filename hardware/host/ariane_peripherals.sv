@@ -92,7 +92,7 @@ module ariane_peripherals
     input  pad_to_eth_t                                       pad_to_eth       ,
     output xeth_to_pad_t                                      xeth_to_pad      , // Xilinx Ethernet pins
     input  pad_to_xeth_t                                      pad_to_xeth      ,
-    output ariane_axi_soc::req_slv_t                          eth_dma_req_o    , // its DMA, for the CCU's DMA port
+    output ariane_axi_soc::req_slv_t                          eth_dma_req_o    , // its DMA, for its CCU port
     input  ariane_axi_soc::resp_slv_t                         eth_dma_resp_i   ,
 
     input logic                                               iopmp_irq_i      ,
