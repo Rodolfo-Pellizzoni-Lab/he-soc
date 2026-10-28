@@ -33,6 +33,11 @@ bootrom.elf bootrom.dump bootrom.bin: bootrom.S $(OBJS_C) bootrom.ld occamy.dtb
 	# cp bootrom.coe ../../../hardware/fpga/alsaqr/tcl/ips/boot_rom/boot_code.coe
 	python3 gen_rom_sv.py --binary bootrom.elf --vectors bootrom.sv
 
+# the FPGA's boot ROM image, fpga/alsaqr/tcl/ips/boot_rom/boot_code.coe, from bootrom.sv (then regenerate that IP)
+.PHONY: fpga-coe
+fpga-coe: bootrom.sv
+	python3 bootrom_sv2coe.py bootrom.sv ../../fpga/alsaqr/tcl/ips/boot_rom/boot_code.coe
+
 clean:
 	rm -rf *.bin *.coe *.dump src/*.o *.dtb
 
