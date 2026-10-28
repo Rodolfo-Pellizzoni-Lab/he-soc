@@ -5,27 +5,21 @@
  * using bubble sort. CVA6 then compares both results.
  *
  * DSPM communication layout (must match pmu_firmware/main.c):
- *   0x10428000: ibex_status   -- Ibex writes: 1=done, 0xDEAD=error
- *   0x10428004: sort_n        -- CVA6 writes number of elements
- *   0x10428010: input_array   -- CVA6 writes unsorted values
- *   0x10428090: output_array  -- Ibex writes its sorted result
+ *   DSPM+0x000: ibex_status   -- Ibex writes: 1=done, 0xDEAD=error
+ *   DSPM+0x004: sort_n        -- CVA6 writes number of elements
+ *   DSPM+0x010: input_array   -- CVA6 writes unsorted values
+ *   DSPM+0x090: output_array  -- Ibex writes its sorted result
  */
 
 #include "encoding.h"
 #include <stdio.h>
 #include <string.h>
 #include "utils.h"
+#include "../quad_boot/pmu_defines.h"
 
 /* Memory-mapped I/O helpers */
 #define write_32b(addr, val)  (*(volatile uint32_t *)(long)(addr) = (val))
 #define read_32b(addr)        (*(volatile uint32_t *)(long)(addr))
-
-/* PMU addresses (from pmu_defines.h) */
-#define PMC_STATUS_ADDR     0x10406000
-#define PMC_BOOT_ADDR       0x10406004
-#define ISPM_BASE_ADDR      0x10427000
-#define DSPM_BASE_ADDR      0x10428000
-#define PERIOD_ADDR         0x10405008
 
 /* DSPM communication slots */
 #define IBEX_STATUS_ADDR    (DSPM_BASE_ADDR + 0x000)
@@ -120,13 +114,17 @@ int main(int argc, char const *argv[]) {
         write_32b(DSPM_BASE_ADDR + i, 0);
     asm volatile ("fence iorw, iorw" ::: "memory");
 
-    if (text_size == 0 || text_size > 4096) {
+    if (text_size == 0 || text_size > ISPM_SIZE) {
         printf("ERROR: bad firmware text size %u\r\n", text_size);
         while (1) asm volatile ("wfi");
     }
 
-    memcpy((void *)ISPM_BASE_ADDR,              _binary_text_section_bin_start, text_size);
-    memcpy((void *)(DSPM_BASE_ADDR + 0x200),    _binary_data_rodata_bss_bin_start, data_size);
+    /* Word stores, not memcpy: the SPMs lose byte stores (see ISPM_BASE_ADDR in quad_boot/pmu_defines.h). The
+     * wrappers align each image to 8 bytes, so rounding the size up reads only their padding. */
+    for (uint32_t i = 0; i < (text_size + 3) / 4; i++)
+        write_32b(ISPM_BASE_ADDR + i * 4, ((const uint32_t *)_binary_text_section_bin_start)[i]);
+    for (uint32_t i = 0; i < (data_size + 3) / 4; i++)
+        write_32b(DSPM_BASE_ADDR + 0x200 + i * 4, ((const uint32_t *)_binary_data_rodata_bss_bin_start)[i]);
     asm volatile ("fence iorw, iorw" ::: "memory");
     printf("    text=%u bytes, data=%u bytes\r\n", text_size, data_size);
 

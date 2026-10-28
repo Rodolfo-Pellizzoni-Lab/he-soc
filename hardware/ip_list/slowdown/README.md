@@ -75,8 +75,8 @@ treats them separately, because throughput and latency are different knobs.
 ### 1. Request path → throughput regulation  (`throughput_regulator.sv`)
 
 The idea: **queue every incoming request, and release at most one address to
-memory every `Throughput_timer_param` cycles.** That single rule is what caps
-bandwidth.
+memory every `Throughput_timer_param + 1` cycles** (11 on the platform). That
+single rule is what caps bandwidth.
 
 ```
         AR in ─▶┌──────────┐                    ┌─────────────┐
@@ -101,8 +101,13 @@ Key design choices, and *why* each one matters:
 - **Reads and writes have separate queues (`ar_fifo`, `aw_fifo`, `dw_fifo`).**
   AXI reads and writes are independent channels. If they shared a queue, a write
   waiting for its data could sit in front of a read and block it. Separate queues
-  let reads and writes make progress independently — a stalled write can never
-  hold up a read.
+  mean a queued write never sits in front of a queued read. They still share the
+  one release slot: an address offered downstream and waiting for `READY` holds
+  it for both directions (`release_pending`, step 2 below), so a write whose AW
+  memory back-pressures holds up the reads until it is accepted (and an AR the
+  writes). Behind the DRAM timing model that takes 8 write responses buffered and
+  8 more writes outstanding in the model, e.g. a burst of evictions at a large
+  `LAT_WR`.
 
 - **One shared throttle, and its countdown only starts *after* an accept.** A
   single down-counter (`period_cnt`) gates releases. The exact sequence for one
@@ -119,12 +124,14 @@ Key design choices, and *why* each one matters:
   3. **Handshake (`VALID & READY`)** → three things happen together: the FIFO
      **pops**, the counter **reloads** to `Throughput_timer_param − 1`, and the
      FSM returns to `WAIT`.
-  4. The countdown now runs (`period_cnt` → 0); no new address is offered until it
-     reaches 0.
+  4. The countdown now runs (`period_cnt` → 0, `Throughput_timer_param − 1`
+     cycles); a grant needs it at 0, and the granted address goes on the bus one
+     cycle after the grant.
 
   So "reload on accept" means the counter restarts its countdown **on the
   handshake, never before** — which guarantees consecutive *accepted* requests
-  stay `≥ Throughput_timer_param` cycles apart no matter how irregular the
+  stay `≥ Throughput_timer_param + 1` cycles apart (11 on the platform: the
+  reload, 9 cycles of countdown, the grant) no matter how irregular the
   back-pressure. A 1-bit round-robin bit breaks ties when a read and a write are
   both ready.
 
@@ -243,7 +250,7 @@ the wrong id/data.
 
 | Parameter | Meaning | Platform value |
 |---|---|---|
-| `Throughput_timer_param` | Min cycles between accepted requests (the bandwidth cap) | `10` |
+| `Throughput_timer_param` | Throttle period: accepted requests are at least `Throughput_timer_param + 1` cycles apart (the bandwidth cap) | `10` (11 cycles) |
 | `Latency_param` | Cycles of delay added to every R and B response | `20` |
 | `Throughput_FIFO_depth` | Depth of each request queue (AR/AW/W) | `8` |
 
@@ -280,17 +287,26 @@ Two things your program must do for its traffic to actually be regulated:
    ```c
    write_32b(0x1A106000 + 0x1C, 0xA0000000);   // cache 0x8000_0000..0xA000_0000
    ```
-2. **Exceed the LLC** with a streaming, cache-line-strided working set, so the LLC
-   cannot absorb it and every access becomes a real memory request through the IP.
+2. **Miss the LLC**: exceed it with a streaming, cache-line-strided working set, or
+   flush it (`CfgFlush`, `0x1040_1008` = `0xFFFF`, plus `fence.i` for the L1) before
+   each phase, so every access becomes a real memory request through the IP.
 
-See the two reference tests:
+See the reference tests (TEST PASS/FAIL and exit code as the soc_tests,
+`software/soc_tests/include/soc_test.h`; working sets follow `fpga=1` as in t_sweep):
 
 - **`software/slowdown_qc/`** — 4 cores (2 read + 2 write), disjoint regions
-  > LLC. Proves multi-core traffic *flows* correctly and reports per-core
-  main-memory request counts. Runs to completion in-system.
-- **`software/slowdown_bw/`** — single core. *Measures* the regulation: streaming
-  read/write bandwidth (cycles per 64 B line vs. the throttle) and a pointer-chase
-  latency probe (cycles per dependent load, carrying the injected latency).
+  (> LLC on the board, 4 x 32 KB in RTL sim). Proves multi-core traffic *flows*
+  correctly: every core comes up and finishes, and its main-memory read count
+  covers its cold misses (per-core attribution at SPU port 9).
+- **`software/slowdown_st/`** — single core, set-conflict and streaming traffic
+  that keeps AR and AW busy for the in-RTL checker; checks the read and write-back
+  counts its access pattern forces.
+- **`software/slowdown_bw/`** — single core. *Measures* what one main-memory access
+  costs: a read stream, a write stream (and the write-back of its dirty lines) and
+  a pointer chase, each from flushed caches, with the port-9 requests and cycles
+  per request of each phase. One core has one data-cache miss in flight, so all of
+  them are bound by the miss latency (the chase's cycles per load include the
+  injected latency), not by the throttle: they are not bandwidth figures.
 
 ---
 
@@ -308,15 +324,25 @@ The suite drives millions of transactions with an in-testbench scoreboard that
 checks: no dropped/duplicated beats, correct burst lengths, id/data preserved,
 throughput spacing honored, exact latency, and AXI valid/payload stability.
 
-### Live observability in the full-platform sim — `trace_slowdown.log`
+### Checker and live observability in the full-platform sim
 
 `slowdown_mem_top.sv` carries a **simulation-only** (`translate_off`, so Vivado
-strips it from the bitstream) instrument that makes the regulator observable in a
-long platform run, like a core commit trace:
+strips it from the bitstream) instrument that checks the IP and makes the regulator
+observable in a long platform run, like a core commit trace:
 
-- **`trace_slowdown.log`** (in the sim's working dir): every downstream release
-  plus a periodic *full-state heartbeat* — FSM state, throttle counter, FIFO
-  occupancy, in-flight counts, and both boundaries' valid/ready.
+- **Checker**: dropped or duplicated beats (in-flight bounds, out never above in),
+  AXI valid and payload stability, and downstream addresses closer than
+  `Throughput_timer_param + 1` cycles are reported as `[slowdown]` `$error`s (the
+  first 20; all are counted). They are procedural checks, not SVA, so they also run
+  in the xsim flow, which elaborates with `--ignore_assertions`. A run's verdict
+  should fail on them; the end-of-sim summary repeats the count, reports what is
+  still inside the IP (an error when nothing moved for 20 000 cycles before the
+  end, in flight otherwise) and counts the same-cycle AR+AW intakes, which are legal.
+- **`+SLOWDOWN_TRACE=<file>`** (xsim: `-testplusarg SLOWDOWN_TRACE=<file>`): every
+  downstream release plus a periodic *full-state heartbeat* — FSM state, throttle
+  counter, FIFO occupancy, in-flight counts, and both boundaries' valid/ready. Off
+  by default: simulations share the xsim work directory, so give each run its own
+  file (e.g. in its run directory).
 - **Transcript**: a rare `[slowdown] alive:` liveness beat, and — if the IP is
   ever busy but makes no handshake for a long time — a **loud STALL report** that
   prints the exact upstream/downstream state, so a hang is instantly localized to
@@ -324,9 +350,10 @@ long platform run, like a core commit trace:
   regulator itself*, with no guessing.
 
 > Note on a common trap: during the traffic phase the software emits no UART, and
-> the regulator throttles to one request per `Throughput_timer_param` cycles, so a
-> large working set takes millions of cycles. **A silent sim is not a hung sim** —
-> check the heartbeat in `trace_slowdown.log`.
+> every miss waits for memory (one request per `Throughput_timer_param + 1` cycles
+> at the most), so a large working set takes millions of cycles. **A silent sim is
+> not a hung sim** — check the `[slowdown] alive:` beat in the transcript (every
+> 200 000 cycles), or the heartbeat in the trace file if you enabled one.
 
 ---
 

@@ -59,13 +59,17 @@ SECTIONS
     __cluster_code_end = . ;
     } > L3
 
-  /* bss: for uninitialized data */
+  /* bss: for uninitialized data, cleared by crt.S on hart 0 in board builds (_bss_start.._bss_end) */
   .sbss : {
+    . = ALIGN(8);
+    _bss_start = .;
     *(.sbss .sbss.* .gnu.linkonce.sb.*)
     *(.scommon)
   } > L3
   .bss : {
     *(.bss)
+    . = ALIGN(8);
+    _bss_end = .;
   } > L3
 
   /* thread-local data segment */
@@ -82,10 +86,13 @@ SECTIONS
     *(.tbss.end)
   } > L3
 
-  /* stack 256K */
+  /* stack: one 8 KB slice (stack + TLS) per hart, hart 0's at the top (crt.S) */
+  __stack_size = 0x2000;
+  __stack_harts = 8;            /* enough for the eight-core SoC too; crt.S parks a hart without a slice */
   .stack :
   {
-    . = . + 0x8000;
+    . = ALIGN(16);
+    . = . + __stack_harts * __stack_size;
     _stack = .;
   } > L3
 

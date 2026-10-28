@@ -7,7 +7,9 @@
 //            over F = 4 lines per set (the same lines again after F runs: fits in 4 ways); cycles per word
 // Phases set the three RCIDs' way masks, flush the LLC, run the actors, and measure; the phases are repeated with
 // the DRAM timing model at the 1 GHz LPDDR4 settings (hardware/docs/dram_model.md), where a miss costs what it
-// costs on a real system and the partition effects are the ones the checks hold the design to:
+// costs on a real system and the partition effects are the ones the checks hold the design to (on a memory that is
+// itself about as slow as that target for these misses, OPENDRAM=1 with 16x DRAM timing, the model adds next to
+// nothing: a calibration pass measures what it adds and the log says so):
 //   A0 app alone, all ways: hit latency        B0/B1 accel alone, all ways / 1 way
 //   S  everyone shares all 16 ways             P  app 8 ways, streamer 2, accel 6 (everything fits)
 //   Q  app 4 ways (too few), streamer 2, accel 6   R  app 8, streamer 2, accel 1 (too few)
@@ -30,8 +32,13 @@
 #define DM_LAT_RD  0x04
 #define DM_LAT_WR  0x08
 #define DM_OCC16   0x0C
+#define DM_RD_CNT  0x10
+#define DM_RD_LATE 0x18
+#define DM_HOLD_CY 0x20
 #define DM_ID      0x24
 #define DM_ID_VAL  0xD2A30001u
+#define LAT_1G     80                    // the 1 GHz LPDDR4-3200 target: LAT_RD and LAT_WR in target cycles,
+#define OCC16_1G   20                    // and 6.4 GB/s of bus time
 
 #define SET_STEP  0x10000UL              // 1024 sets x 64 B: lines 64 KB apart share an LLC set
 #define LINE      64UL
@@ -309,6 +316,37 @@ static void settle(void) {
   uart_wait_tx_done();
 }
 
+// ---- DRAM timing model at the 1 GHz target settings
+static void dm_on(void) {
+  REG32(DM + DM_CTRL) = 0;
+  REG32(DM + DM_LAT_RD) = LAT_1G; REG32(DM + DM_LAT_WR) = LAT_1G; REG32(DM + DM_OCC16) = OCC16_1G;
+  REG32(DM + DM_CTRL) = 3;                                   // enable, counters cleared
+}
+// The model can only hold data back, so it emulates the target only on a memory that answers sooner. OPENDRAM=1 with
+// 16x DRAM timing returns the first beat of a read that opens a new DRAM row, as the chase's random misses do, 72-81
+// cycles after the model accepts it, about the target's 80: there the model adds next to nothing and the model-on pass
+// measures the memory itself. What the model adds is its hold time, measured over one chain pass after a flush (every
+// hop an LLC miss); the late count would not tell, as a read held back a few cycles is not late. The model-on pass runs
+// either way: its strict checks need a slow memory, the model's or the memory's own. Returns 0 if the model saw the
+// pass's reads and held the average one back by less than half of LAT_RD.
+static int dm_calibrate(void) {
+  CHECK(llc_flush() == 0, "calibration: LLC flush did not finish");
+  dm_on();
+  chase(NLINES);
+  REG32(DM + DM_CTRL) = 0;                                   // the counters stop with the model
+  uint32_t rd = REG32(DM + DM_RD_CNT), late = REG32(DM + DM_RD_LATE), hold = REG32(DM + DM_HOLD_CY);
+  uint32_t per_rd = rd ? hold / rd : 0;
+  printf("DRAM timing model at the 1 GHz target settings, one chain pass from DRAM: %u reads, %u late, held back %u cycles "
+         "each on average\r\n", rd, late, per_rd);
+  CHECK(rd >= NLINES / 2, "calibration: the model saw %u reads for %d LLC misses", rd, NLINES);
+  int emulated = rd < NLINES / 2 || 2 * per_rd >= LAT_1G;
+  if (!emulated)
+    printf("1 GHz target not emulated: the model adds %u of the target's %d cycles per read, the rest is this memory's own "
+           "latency, so the pass below measures mostly the memory\r\n", per_rd, LAT_1G);
+  uart_wait_tx_done();
+  return emulated;
+}
+
 int main(void) {
   soc_test_begin("t_part");
   REG32(SOC_CTRL + LLC_CNT_EN) = 1;
@@ -321,10 +359,10 @@ int main(void) {
   CHECK(tag == ACCEL_USER(2, 3, 0), "TAG 0x%x: the accelerator did not inherit RCID 3 from core 2", tag);
   CHECK(last == ACCEL_USER(0, 3, 0), "LAST_USER 0x%x: the DMA did not carry RCID 3", last);
   if (REG32(DM + DM_ID) == DM_ID_VAL) {
-    REG32(DM + DM_CTRL) = 0;
-    REG32(DM + DM_LAT_RD) = 80; REG32(DM + DM_LAT_WR) = 80; REG32(DM + DM_OCC16) = 20;
-    REG32(DM + DM_CTRL) = 3;
-    pass("DRAM timing model on (1 GHz target, LPDDR4-3200: LAT 80, OCC16 20):", 1);
+    int emulated = dm_calibrate();
+    dm_on();
+    pass(emulated ? "DRAM timing model on (1 GHz target, LPDDR4-3200: LAT 80, OCC16 20):"
+                  : "DRAM timing model on, 1 GHz target not emulated (LAT 80, OCC16 20):", 1);
     REG32(DM + DM_CTRL) = 0;
   } else {
     printf("no DRAM timing model in this design: the strict checks are skipped\r\n");

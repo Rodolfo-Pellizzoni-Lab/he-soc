@@ -3,7 +3,7 @@
 // Two-sided verification:
 //   REQUEST PATH:  Upstream sends varied AXI4 traffic (light/heavy, single/burst,
 //                  all sideband attributes).  Downstream monitors confirm the
-//                  throughput regulator spaces requests >= THROUGHPUT cycles and
+//                  throughput regulator spaces requests >= THROUGHPUT+1 cycles and
 //                  that every sideband field arrives unmodified.
 //
 //   RESPONSE PATH: Downstream slave generates R/B responses.  History-based
@@ -130,7 +130,9 @@ end
 // SCOREBOARD B — Throughput checker
 //
 // Monitors downstream AR and AW handshakes.  Consecutive same-channel
-// handshakes must be spaced >= THROUGHPUT cycles apart.
+// handshakes must be spaced >= THROUGHPUT+1 cycles apart: the regulator
+// reloads its counter to THROUGHPUT-1 on an accept and offers the address
+// granted when it reaches 0 one cycle later.
 // =========================================================================
 longint unsigned cyc;   // free-running cycle counter
 always_ff @(posedge clk or negedge rst_n)
@@ -150,9 +152,9 @@ always @(posedge clk) begin
             if (dn_ar_cnt > 0) begin
                 sp_ar = longint'(cyc) - longint'(last_dn_ar_cyc);
                 if (!quiet) $display("[TPUT %0t] AR#%0d spacing=%0d cyc (expect>=%0d)",
-                         $time, dn_ar_cnt, sp_ar, THROUGHPUT);
-                if (sp_ar < longint'(THROUGHPUT) - 1) begin
-                    $warning("[TPUT] AR spacing %0d < %0d — VIOLATION", sp_ar, THROUGHPUT);
+                         $time, dn_ar_cnt, sp_ar, THROUGHPUT + 1);
+                if (sp_ar < longint'(THROUGHPUT) + 1) begin
+                    $error("[TPUT] AR spacing %0d < %0d — VIOLATION", sp_ar, THROUGHPUT + 1);
                     tput_ar_viols = tput_ar_viols + 1;
                 end
             end
@@ -163,9 +165,9 @@ always @(posedge clk) begin
             if (dn_aw_cnt > 0) begin
                 sp_aw = longint'(cyc) - longint'(last_dn_aw_cyc);
                 if (!quiet) $display("[TPUT %0t] AW#%0d spacing=%0d cyc (expect>=%0d)",
-                         $time, dn_aw_cnt, sp_aw, THROUGHPUT);
-                if (sp_aw < longint'(THROUGHPUT) - 1) begin
-                    $warning("[TPUT] AW spacing %0d < %0d — VIOLATION", sp_aw, THROUGHPUT);
+                         $time, dn_aw_cnt, sp_aw, THROUGHPUT + 1);
+                if (sp_aw < longint'(THROUGHPUT) + 1) begin
+                    $error("[TPUT] AW spacing %0d < %0d — VIOLATION", sp_aw, THROUGHPUT + 1);
                     tput_aw_viols = tput_aw_viols + 1;
                 end
             end
@@ -953,7 +955,7 @@ initial begin
 
     // =================================================================
     // T2: Pipelined reads — fill FIFO, let throughput regulator drain.
-    //     Verifies FIFO queueing, spacing >= THROUGHPUT, and ordering.
+    //     Verifies FIFO queueing, spacing >= THROUGHPUT+1, and ordering.
     // =================================================================
     $display("=== T2: Pipelined reads (%0d, filling FIFO) ===", FIFO_DEPTH);
     for (int i = 0; i < int'(FIFO_DEPTH); i++)

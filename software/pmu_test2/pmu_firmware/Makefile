@@ -4,8 +4,11 @@ CC      = riscv64-unknown-elf-gcc
 OBJDUMP = riscv64-unknown-elf-objdump
 OBJCOPY = riscv64-unknown-elf-objcopy
 
-# RV32IM: Ibex has M extension (RV32MFast)
-CFLAGS = -march=rv32im -mabi=ilp32 -mcmodel=medlow \
+# RV32IM: Ibex has M extension (RV32MFast). GCC 12 and later need _zicsr for the CSR instructions in crt0.s (older
+# ones reject it), so add it when the toolchain takes it
+ZICSR := $(shell echo 'csrr a0, mcycle' | $(CC) -march=rv32im_zicsr -mabi=ilp32 -x assembler -c -o /dev/null - \
+                   2>/dev/null && echo _zicsr)
+CFLAGS = -march=rv32im$(ZICSR) -mabi=ilp32 -mcmodel=medlow \
          -Wall -ffreestanding -O2 -nostdlib \
          -I include
 

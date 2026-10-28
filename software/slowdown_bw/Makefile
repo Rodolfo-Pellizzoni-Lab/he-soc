@@ -4,11 +4,12 @@ XLEN := 64
 RISCV_PREFIX ?= /opt/riscv64/bin/riscv64-unknown-elf-
 
 export SW_HOME := $(shell cd .. && pwd)
-include $(shell pwd)/../common.mk
+# soc_tests/common.mk: common.mk plus the include paths of soc_test.h (CHECK, TEST PASS/FAIL)
+include $(shell pwd)/../soc_tests/common.mk
 
 # ==============================================================================
-# Single-core bandwidth + latency characterization of the slowdown IP.
-#   make build      # -> slowdown_bw.riscv
+# Single-core cost of a main-memory access through the slowdown IP (latency-bound).
+#   make build      # -> slowdown_bw.riscv (fpga=1: the board's 2 MB working set)
 #   make all        # -> also emits hyperram*.slm and copies them to hardware/
 # ==============================================================================
 

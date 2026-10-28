@@ -303,37 +303,37 @@ module cva6_synth_wrap
   // Here is how it will be configured
   // {start_addr: 32'h1060_6000, end_addr: 32'h1060_6100}  // PerfCountersEVU
   /* 1. For Core-0:
-        a. EventID0  = 0x10606000
-        b. EventID1  = 0x10606004
-        c. EventID2  = 0x10606008
-        d. EventID3  = 0x1060600C
+        a. EventID slot 3 = 0x10606000
+        b. EventID slot 2 = 0x10606004
+        c. EventID slot 1 = 0x10606008
+        d. EventID slot 0 = 0x1060600C
         e. PC_TRACK0 = 0x10606010
         f. PC_TRACK1 = 0x10606018
         g. PC_TRACK2 = 0x10606020
         h. PC_TRACK3 = 0x10606028
     2. For Core-1:
-        a. EventID0  = 0x10606030
-        b. EventID1  = 0x10606034
-        c. EventID2  = 0x10606038
-        d. EventID3  = 0x1060603C
+        a. EventID slot 3 = 0x10606030
+        b. EventID slot 2 = 0x10606034
+        c. EventID slot 1 = 0x10606038
+        d. EventID slot 0 = 0x1060603C
         e. PC_TRACK0 = 0x10606040
         f. PC_TRACK1 = 0x10606048
         g. PC_TRACK2 = 0x10606050
         h. PC_TRACK3 = 0x10606058
     3. For Core-2:
-        a. EventID0  = 0x10606060
-        b. EventID1  = 0x10606064
-        c. EventID2  = 0x10606068
-        d. EventID3  = 0x1060606C
+        a. EventID slot 3 = 0x10606060
+        b. EventID slot 2 = 0x10606064
+        c. EventID slot 1 = 0x10606068
+        d. EventID slot 0 = 0x1060606C
         e. PC_TRACK0 = 0x10606070
         f. PC_TRACK1 = 0x10606078
         g. PC_TRACK2 = 0x10606080
         h. PC_TRACK3 = 0x10606088
     4. For Core-3:
-        a. EventID0  = 0x10606090
-        b. EventID1  = 0x10606094
-        c. EventID2  = 0x10606098
-        d. EventID3  = 0x1060609C
+        a. EventID slot 3 = 0x10606090
+        b. EventID slot 2 = 0x10606094
+        c. EventID slot 1 = 0x10606098
+        d. EventID slot 0 = 0x1060609C
         e. PC_TRACK0 = 0x106060A0
         f. PC_TRACK1 = 0x106060A8
         g. PC_TRACK2 = 0x106060B0
@@ -341,6 +341,11 @@ module cva6_synth_wrap
         
   Each EVENTID just needs 5 bits but we write to a 32-bit register. Hence 4 bytes allocated for each EventID Register.
   For PC, as per the current configuration, its 64 bits so we take 8 bytes for each PC Value Stored.
+  The EventID registers are in reverse slot order: event_bundle_t lists event_id0 first, so the register at +0x0
+  is event_id3, which drives ev_id0, the top field of perfc_req; perf_counters_evu.sv takes slot i from
+  perfc_req[5i+:5], and slot i drives bit i of the APMU event (e_id; event value/mask 1 << i on port core+1).
+  The PC_TRACK registers are not reversed: PC_TRACKm (struct field pc(3-m)) is milestone m, e_info bit m.
+  Software: EVU_EID_REG(core, slot) in software/quad_boot/pmu_defines.h.
   */
   typedef logic [7:0] byte_t;
   //Number of Bytes for holding a PERFCOUNTER EventID

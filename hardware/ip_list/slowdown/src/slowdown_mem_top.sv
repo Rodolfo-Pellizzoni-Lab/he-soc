@@ -174,8 +174,10 @@ module slowdown_mem_top #(
   // Slowdown IP AXI protocol + drop/duplication checker  (SIMULATION ONLY)
   //   request  path (slave -> master): AR / AW / W   (throughput regulator)
   //   response path (master -> slave): R  / B        (latency injectors)
-  // Detects: dropped / duplicated transactions, AXI valid-stability
-  // violations, and the suspected simultaneous-AR+AW request-path hazard.
+  // Detects: dropped / duplicated transactions, AXI valid/payload-stability
+  // violations, and addresses released closer than the throttle allows.
+  // Procedural checks reporting with $error, not concurrent assertions: the
+  // xsim flow elaborates with --ignore_assertions, which would remove them.
   // "in"  = handshake where a beat ARRIVES at the IP boundary
   // "out" = handshake where a beat LEAVES the IP boundary
   // ==========================================================================
@@ -206,66 +208,101 @@ module slowdown_mem_top #(
   end
 
   // Bounds on legal in-flight (internal buffering). Exceeding => beats are lost.
-  localparam int unsigned CK_ADDR_MAX = Throughput_FIFO_depth + 8; // shared AR/AW FIFO + out regs
+  localparam int unsigned CK_ADDR_MAX = 2 * Throughput_FIFO_depth;  // AR FIFO + AW FIFO
   localparam int unsigned CK_W_MAX    = Throughput_FIFO_depth + 8; // write-data FIFO
   localparam int unsigned CK_RESP_MAX = Latency_param        + 8;  // latency shift depth
+  // Closest legal downstream address handshakes: the counter reloads to
+  // Throughput_timer_param-1 on an accept, and the address granted when it
+  // reaches 0 is offered one cycle later.
+  localparam int unsigned CK_ADDR_GAP = Throughput_timer_param + 1;
+  localparam int unsigned CK_ERR_SHOW = 20;   // violations printed; later ones are only counted
 
-  // --- no duplication / spurious output: leaves must never exceed arrivals ---
-  ck_ar_nodup: assert property (@(posedge clk_i) disable iff(!rst_ni) ck_ar_o <= ck_ar_i)
-    else $error("[slowdown] AR duplicated/spurious: out=%0d > in=%0d", ck_ar_o, ck_ar_i);
-  ck_aw_nodup: assert property (@(posedge clk_i) disable iff(!rst_ni) ck_aw_o <= ck_aw_i)
-    else $error("[slowdown] AW duplicated/spurious: out=%0d > in=%0d", ck_aw_o, ck_aw_i);
-  ck_w_nodup:  assert property (@(posedge clk_i) disable iff(!rst_ni) ck_w_o  <= ck_w_i)
-    else $error("[slowdown] W duplicated/spurious: out=%0d > in=%0d",  ck_w_o,  ck_w_i);
-  ck_r_nodup:  assert property (@(posedge clk_i) disable iff(!rst_ni) ck_r_o  <= ck_r_i)
-    else $error("[slowdown] R duplicated/spurious: out=%0d > in=%0d",  ck_r_o,  ck_r_i);
-  ck_b_nodup:  assert property (@(posedge clk_i) disable iff(!rst_ni) ck_b_o  <= ck_b_i)
-    else $error("[slowdown] B duplicated/spurious: out=%0d > in=%0d",  ck_b_o,  ck_b_i);
+  int unsigned     ck_err_n  = 0;   // violations, for the end-of-sim summary
+  longint unsigned ck_araw_n = 0;   // same-cycle AR+AW intakes: legal (separate AR/AW FIFOs), counted for the summary
 
-  // --- no drop: in-flight cannot exceed internal buffering ---
-  ck_addr_inflight: assert property (@(posedge clk_i) disable iff(!rst_ni)
-      ((ck_ar_i-ck_ar_o)+(ck_aw_i-ck_aw_o)) <= CK_ADDR_MAX)
-    else $error("[slowdown] address in-flight=%0d > %0d => DROPPED request(s). AR in/out=%0d/%0d AW in/out=%0d/%0d",
-      (ck_ar_i-ck_ar_o)+(ck_aw_i-ck_aw_o), CK_ADDR_MAX, ck_ar_i, ck_ar_o, ck_aw_i, ck_aw_o);
-  ck_w_inflight: assert property (@(posedge clk_i) disable iff(!rst_ni) (ck_w_i-ck_w_o) <= CK_W_MAX)
-    else $error("[slowdown] W in-flight=%0d > %0d => DROPPED write beat(s). in/out=%0d/%0d", (ck_w_i-ck_w_o), CK_W_MAX, ck_w_i, ck_w_o);
-  ck_r_inflight: assert property (@(posedge clk_i) disable iff(!rst_ni) (ck_r_i-ck_r_o) <= CK_RESP_MAX)
-    else $error("[slowdown] R in-flight=%0d > %0d => DROPPED read-data beat(s). in/out=%0d/%0d", (ck_r_i-ck_r_o), CK_RESP_MAX, ck_r_i, ck_r_o);
-  ck_b_inflight: assert property (@(posedge clk_i) disable iff(!rst_ni) (ck_b_i-ck_b_o) <= CK_RESP_MAX)
-    else $error("[slowdown] B in-flight=%0d > %0d => DROPPED write response(s). in/out=%0d/%0d", (ck_b_i-ck_b_o), CK_RESP_MAX, ck_b_i, ck_b_o);
+  task automatic ck_fail(input string msg);
+    ck_err_n++;
+    if (ck_err_n <= CK_ERR_SHOW) $error("[slowdown] %s", msg);
+  endtask
 
-  // --- targeted: simultaneous AR+AW accepted at slave (AR-priority mux enqueues only one) ---
-  always_ff @(posedge clk_i) if (rst_ni && ck_ar_in && ck_aw_in)
-    $display("[slowdown][%0t] HAZARD: AR & AW both handshaked at slave in one cycle -> AR-priority mux enqueues only one -> the other is likely DROPPED", $time);
+  // VALID without READY in the previous cycle, and the payload then (stability checks)
+  logic ck_hold_slv_ar, ck_hold_slv_aw, ck_hold_slv_w, ck_hold_mst_ar, ck_hold_mst_aw, ck_hold_mst_w;
+  logic ck_hold_mst_r, ck_hold_slv_r, ck_hold_mst_b, ck_hold_slv_b;
+  ariane_axi_soc::ar_chan_slv_mem_t ck_ar_pl_q;
+  ariane_axi_soc::aw_chan_slv_mem_t ck_aw_pl_q;
+  ariane_axi_soc::w_chan_t          ck_w_pl_q;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      ck_hold_slv_ar <= 1'b0; ck_hold_slv_aw <= 1'b0; ck_hold_slv_w <= 1'b0;
+      ck_hold_mst_ar <= 1'b0; ck_hold_mst_aw <= 1'b0; ck_hold_mst_w <= 1'b0;
+      ck_hold_mst_r  <= 1'b0; ck_hold_slv_r  <= 1'b0; ck_hold_mst_b <= 1'b0; ck_hold_slv_b <= 1'b0;
+    end else begin
+      ck_hold_slv_ar <= slowdown_mem_slv.ar_valid & ~slowdown_mem_slv.ar_ready;
+      ck_hold_slv_aw <= slowdown_mem_slv.aw_valid & ~slowdown_mem_slv.aw_ready;
+      ck_hold_slv_w  <= slowdown_mem_slv.w_valid  & ~slowdown_mem_slv.w_ready;
+      ck_hold_mst_ar <= slowdown_mem_mst.ar_valid & ~slowdown_mem_mst.ar_ready;
+      ck_hold_mst_aw <= slowdown_mem_mst.aw_valid & ~slowdown_mem_mst.aw_ready;
+      ck_hold_mst_w  <= slowdown_mem_mst.w_valid  & ~slowdown_mem_mst.w_ready;
+      ck_hold_mst_r  <= slowdown_mem_mst.r_valid  & ~slowdown_mem_mst.r_ready;
+      ck_hold_slv_r  <= slowdown_mem_slv.r_valid  & ~slowdown_mem_slv.r_ready;
+      ck_hold_mst_b  <= slowdown_mem_mst.b_valid  & ~slowdown_mem_mst.b_ready;
+      ck_hold_slv_b  <= slowdown_mem_slv.b_valid  & ~slowdown_mem_slv.b_ready;
+    end
+  end
+  always_ff @(posedge clk_i) begin
+    ck_ar_pl_q <= ar_signals_out;
+    ck_aw_pl_q <= aw_signals_out;
+    ck_w_pl_q  <= dw_signals_out;
+  end
 
-  // --- AXI valid-stability: once VALID & !READY, VALID must hold next cycle ---
-  property ck_vstable(v, r); @(posedge clk_i) disable iff(!rst_ni) (v && !r) |=> v; endproperty
-  ck_slv_ar_vs: assert property (ck_vstable(slowdown_mem_slv.ar_valid, slowdown_mem_slv.ar_ready)) else $error("[slowdown] slave AR valid dropped before ready");
-  ck_slv_aw_vs: assert property (ck_vstable(slowdown_mem_slv.aw_valid, slowdown_mem_slv.aw_ready)) else $error("[slowdown] slave AW valid dropped before ready");
-  ck_slv_w_vs:  assert property (ck_vstable(slowdown_mem_slv.w_valid,  slowdown_mem_slv.w_ready))  else $error("[slowdown] slave W valid dropped before ready");
-  ck_mst_ar_vs: assert property (ck_vstable(slowdown_mem_mst.ar_valid, slowdown_mem_mst.ar_ready)) else $error("[slowdown] master AR valid dropped before ready");
-  ck_mst_aw_vs: assert property (ck_vstable(slowdown_mem_mst.aw_valid, slowdown_mem_mst.aw_ready)) else $error("[slowdown] master AW valid dropped before ready");
-  ck_mst_w_vs:  assert property (ck_vstable(slowdown_mem_mst.w_valid,  slowdown_mem_mst.w_ready))  else $error("[slowdown] master W valid dropped before ready");
-  ck_mst_r_vs:  assert property (ck_vstable(slowdown_mem_mst.r_valid,  slowdown_mem_mst.r_ready))  else $error("[slowdown] master R valid dropped before ready");
-  ck_slv_r_vs:  assert property (ck_vstable(slowdown_mem_slv.r_valid,  slowdown_mem_slv.r_ready))  else $error("[slowdown] slave R valid dropped before ready (latency path)");
-  ck_mst_b_vs:  assert property (ck_vstable(slowdown_mem_mst.b_valid,  slowdown_mem_mst.b_ready))  else $error("[slowdown] master B valid dropped before ready");
-  ck_slv_b_vs:  assert property (ck_vstable(slowdown_mem_slv.b_valid,  slowdown_mem_slv.b_ready))  else $error("[slowdown] slave B valid dropped before ready (latency path)");
+  always @(posedge clk_i) if (rst_ni) begin
+    // --- no duplication / spurious output: leaves must never exceed arrivals ---
+    if (ck_ar_o > ck_ar_i) ck_fail($sformatf("AR duplicated/spurious: out=%0d > in=%0d", ck_ar_o, ck_ar_i));
+    if (ck_aw_o > ck_aw_i) ck_fail($sformatf("AW duplicated/spurious: out=%0d > in=%0d", ck_aw_o, ck_aw_i));
+    if (ck_w_o  > ck_w_i)  ck_fail($sformatf("W duplicated/spurious: out=%0d > in=%0d",  ck_w_o,  ck_w_i));
+    if (ck_r_o  > ck_r_i)  ck_fail($sformatf("R duplicated/spurious: out=%0d > in=%0d",  ck_r_o,  ck_r_i));
+    if (ck_b_o  > ck_b_i)  ck_fail($sformatf("B duplicated/spurious: out=%0d > in=%0d",  ck_b_o,  ck_b_i));
 
-  // --- payload stability: while VALID held (not yet READY), payload must not change ---
-  property ck_pstable(v, r, p); @(posedge clk_i) disable iff(!rst_ni) (v && !r) |=> $stable(p); endproperty
-  ck_mst_ar_ad: assert property (ck_pstable(slowdown_mem_mst.ar_valid, slowdown_mem_mst.ar_ready, slowdown_mem_mst.ar_addr))
-    else $error("[slowdown] mst AR addr changed while VALID held (payload instability)");
-  ck_mst_aw_ad: assert property (ck_pstable(slowdown_mem_mst.aw_valid, slowdown_mem_mst.aw_ready, slowdown_mem_mst.aw_addr))
-    else $error("[slowdown] mst AW addr changed while VALID held (payload instability)");
-  ck_mst_w_dt: assert property (ck_pstable(slowdown_mem_mst.w_valid,  slowdown_mem_mst.w_ready,  slowdown_mem_mst.w_data))
-    else $error("[slowdown] mst W data changed while VALID held (payload instability)");
+    // --- no drop: in-flight cannot exceed internal buffering ---
+    if ((ck_ar_i-ck_ar_o)+(ck_aw_i-ck_aw_o) > CK_ADDR_MAX)
+      ck_fail($sformatf("address in-flight=%0d > %0d => DROPPED request(s). AR in/out=%0d/%0d AW in/out=%0d/%0d",
+        (ck_ar_i-ck_ar_o)+(ck_aw_i-ck_aw_o), CK_ADDR_MAX, ck_ar_i, ck_ar_o, ck_aw_i, ck_aw_o));
+    if (ck_w_i-ck_w_o > CK_W_MAX)
+      ck_fail($sformatf("W in-flight=%0d > %0d => DROPPED write beat(s). in/out=%0d/%0d", (ck_w_i-ck_w_o), CK_W_MAX, ck_w_i, ck_w_o));
+    if (ck_r_i-ck_r_o > CK_RESP_MAX)
+      ck_fail($sformatf("R in-flight=%0d > %0d => DROPPED read-data beat(s). in/out=%0d/%0d", (ck_r_i-ck_r_o), CK_RESP_MAX, ck_r_i, ck_r_o));
+    if (ck_b_i-ck_b_o > CK_RESP_MAX)
+      ck_fail($sformatf("B in-flight=%0d > %0d => DROPPED write response(s). in/out=%0d/%0d", (ck_b_i-ck_b_o), CK_RESP_MAX, ck_b_i, ck_b_o));
+
+    // --- AXI valid-stability: once VALID & !READY, VALID must hold next cycle ---
+    if (ck_hold_slv_ar && !slowdown_mem_slv.ar_valid) ck_fail("slave AR valid dropped before ready");
+    if (ck_hold_slv_aw && !slowdown_mem_slv.aw_valid) ck_fail("slave AW valid dropped before ready");
+    if (ck_hold_slv_w  && !slowdown_mem_slv.w_valid)  ck_fail("slave W valid dropped before ready");
+    if (ck_hold_mst_ar && !slowdown_mem_mst.ar_valid) ck_fail("master AR valid dropped before ready");
+    if (ck_hold_mst_aw && !slowdown_mem_mst.aw_valid) ck_fail("master AW valid dropped before ready");
+    if (ck_hold_mst_w  && !slowdown_mem_mst.w_valid)  ck_fail("master W valid dropped before ready");
+    if (ck_hold_mst_r  && !slowdown_mem_mst.r_valid)  ck_fail("master R valid dropped before ready");
+    if (ck_hold_slv_r  && !slowdown_mem_slv.r_valid)  ck_fail("slave R valid dropped before ready (latency path)");
+    if (ck_hold_mst_b  && !slowdown_mem_mst.b_valid)  ck_fail("master B valid dropped before ready");
+    if (ck_hold_slv_b  && !slowdown_mem_slv.b_valid)  ck_fail("slave B valid dropped before ready (latency path)");
+
+    // --- payload stability: while VALID held (not yet READY), payload must not change ---
+    if (ck_hold_mst_ar && ar_signals_out != ck_ar_pl_q) ck_fail("mst AR payload changed while VALID held (payload instability)");
+    if (ck_hold_mst_aw && aw_signals_out != ck_aw_pl_q) ck_fail("mst AW payload changed while VALID held (payload instability)");
+    if (ck_hold_mst_w  && dw_signals_out != ck_w_pl_q)  ck_fail("mst W payload changed while VALID held (payload instability)");
+
+    // --- a same-cycle AR+AW intake is legal: each lands in its own FIFO; counted for the summary ---
+    if (ck_ar_in && ck_aw_in) ck_araw_n++;
+  end
 
   // ==========================================================================
   // LIVE TRACER + HEARTBEAT + STALL WATCHDOG   (SIMULATION ONLY)
   //   Makes the regulator observable in the full-platform sim like a core trace.
-  //   * trace_slowdown.log : every downstream release + a periodic FULL-state
+  //   * +SLOWDOWN_TRACE=<file> : every downstream release + a periodic FULL-state
   //                          heartbeat (so progress/rate is visible while the
-  //                          UART is silent during the traffic phase).
+  //                          UART is silent during the traffic phase). Off by
+  //                          default: runs share the xsim work directory, so a
+  //                          fixed name was truncated and spliced by parallel runs.
   //   * transcript         : a rare liveness beat + a LOUD, self-diagnosing
   //                          STALL report naming exactly which side is stuck ->
   //                          tells SW-vs-HW at a glance.
@@ -274,7 +311,8 @@ module slowdown_mem_top #(
   localparam int unsigned SD_HB_LOUD   = 200000;  // transcript liveness cadence
   localparam int unsigned SD_STALL_LIM = 20000;   // busy + no-handshake => shout
 
-  integer          sd_fd;
+  integer          sd_fd = 0;         // trace file, 0 = no trace
+  string           sd_trace_fn;
   longint unsigned sd_cycle;
   longint unsigned sd_last_hs;        // cycle of last ANY boundary handshake
   longint unsigned sd_last_addr_hs;   // cycle of last downstream AR/AW handshake
@@ -288,10 +326,15 @@ module slowdown_mem_top #(
                | slowdown_mem_mst.r_valid  | slowdown_mem_mst.b_valid;
 
   initial begin
-    sd_fd = $fopen("trace_slowdown.log","w");
-    $fwrite(sd_fd,"# slowdown tracer  Latency=%0d Throughput=%0d FIFO=%0d\n",
-            Latency_param, Throughput_timer_param, Throughput_FIFO_depth);
-    $fwrite(sd_fd,"# <time> <event> <detail>   (HB = periodic full-state heartbeat)\n");
+    if ($value$plusargs("SLOWDOWN_TRACE=%s", sd_trace_fn)) begin
+      sd_fd = $fopen(sd_trace_fn,"w");
+      if (sd_fd == 0) $warning("[slowdown] cannot open the trace file %s", sd_trace_fn);
+    end
+    if (sd_fd != 0) begin
+      $fwrite(sd_fd,"# slowdown tracer  Latency=%0d Throughput=%0d FIFO=%0d\n",
+              Latency_param, Throughput_timer_param, Throughput_FIFO_depth);
+      $fwrite(sd_fd,"# <time> <event> <detail>   (HB = periodic full-state heartbeat)\n");
+    end
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -304,7 +347,7 @@ module slowdown_mem_top #(
   end
 
   // per-transaction trace: downstream releases + upstream completions
-  always_ff @(posedge clk_i) if (rst_ni) begin
+  always_ff @(posedge clk_i) if (rst_ni && sd_fd != 0) begin
     if (ck_ar_out) $fwrite(sd_fd,"%0t AR->mem id=%0d addr=%h len=%0d\n",$time,slowdown_mem_mst.ar_id,slowdown_mem_mst.ar_addr,slowdown_mem_mst.ar_len);
     if (ck_aw_out) $fwrite(sd_fd,"%0t AW->mem id=%0d addr=%h len=%0d\n",$time,slowdown_mem_mst.aw_id,slowdown_mem_mst.aw_addr,slowdown_mem_mst.aw_len);
     if (ck_w_out && slowdown_mem_mst.w_last) $fwrite(sd_fd,"%0t W ->mem (burst last)\n",$time);
@@ -313,7 +356,7 @@ module slowdown_mem_top #(
   end
 
   // periodic FULL-state heartbeat to the file (progress + internal state visible)
-  always_ff @(posedge clk_i) if (rst_ni && (sd_cycle % SD_HB_FILE == 0)) begin
+  always_ff @(posedge clk_i) if (rst_ni && sd_fd != 0 && (sd_cycle % SD_HB_FILE == 0)) begin
     $fwrite(sd_fd,
       "%0t HB cyc=%0d ARio=%0d/%0d AWio=%0d/%0d Wio=%0d/%0d Rio=%0d/%0d Bio=%0d/%0d inflA=%0d | rd=%0d wr=%0d awsent=%0b wdone=%0b wbeats=%0d thr=%0d arFull=%0b awFull=%0b dwEmpty=%0b | slvV(ar%0b aw%0b w%0b) mstRdy(ar%0b aw%0b w%0b) rspV(r%0b b%0b)\n",
       $time, sd_cycle,
@@ -354,17 +397,22 @@ module slowdown_mem_top #(
       slowdown_mem_mst.ar_valid,slowdown_mem_mst.ar_ready, slowdown_mem_mst.aw_valid,slowdown_mem_mst.aw_ready,
       slowdown_mem_mst.w_valid,slowdown_mem_mst.w_ready,slowdown_mem_mst.w_last,
       slowdown_mem_mst.r_valid,slowdown_mem_mst.r_ready, slowdown_mem_mst.b_valid,slowdown_mem_mst.b_ready);
-    $fwrite(sd_fd,"%0t STALL: no hs for %0d cyc while busy (rd=%0d wr=%0d thr=%0d infA=%0d)\n",
-      $time, sd_cycle - sd_last_hs, i_throughput_regulator.rd_q, i_throughput_regulator.wr_q,
-      i_throughput_regulator.period_cnt, sd_infl_addr);
-    $fflush(sd_fd);
+    if (sd_fd != 0) begin
+      $fwrite(sd_fd,"%0t STALL: no hs for %0d cyc while busy (rd=%0d wr=%0d thr=%0d infA=%0d)\n",
+        $time, sd_cycle - sd_last_hs, i_throughput_regulator.rd_q, i_throughput_regulator.wr_q,
+        i_throughput_regulator.period_cnt, sd_infl_addr);
+      $fflush(sd_fd);
+    end
   end
 
-  // throttle-spacing sanity: downstream address handshakes must stay apart
-  always_ff @(posedge clk_i) if (rst_ni && (ck_ar_out|ck_aw_out) && sd_last_addr_hs!=0
-        && (sd_cycle - sd_last_addr_hs) < (Throughput_timer_param-1))
-    $display("[slowdown][%0t] THROTTLE VIOLATION: address handshakes only %0d cyc apart (< %0d)",
-      $time, sd_cycle - sd_last_addr_hs, Throughput_timer_param);
+  // throttle spacing: one downstream address handshake at a time, CK_ADDR_GAP cycles apart at the least
+  always @(posedge clk_i) if (rst_ni) begin
+    if (ck_ar_out && ck_aw_out)
+      ck_fail("THROTTLE VIOLATION: AR and AW released downstream in the same cycle");
+    else if ((ck_ar_out|ck_aw_out) && sd_last_addr_hs!=0 && (sd_cycle - sd_last_addr_hs) < CK_ADDR_GAP)
+      ck_fail($sformatf("THROTTLE VIOLATION: address handshakes only %0d cyc apart (< %0d)",
+        sd_cycle - sd_last_addr_hs, CK_ADDR_GAP));
+  end
 
   // --- end-of-sim transaction summary ---
   final begin
@@ -374,12 +422,22 @@ module slowdown_mem_top #(
     $display("  W   in/out = %0d / %0d   (in-flight %0d)", ck_w_i,  ck_w_o,  ck_w_i-ck_w_o);
     $display("  R   in/out = %0d / %0d   (in-flight %0d)", ck_r_i,  ck_r_o,  ck_r_i-ck_r_o);
     $display("  B   in/out = %0d / %0d   (in-flight %0d)", ck_b_i,  ck_b_o,  ck_b_i-ck_b_o);
-    if (ck_ar_i!=ck_ar_o) $display("  *** AR imbalance: %0d read request(s) never left the IP (DROPPED)",  ck_ar_i-ck_ar_o);
-    if (ck_aw_i!=ck_aw_o) $display("  *** AW imbalance: %0d write request(s) never left the IP (DROPPED)", ck_aw_i-ck_aw_o);
-    if (ck_w_i !=ck_w_o ) $display("  *** W  imbalance: %0d write beat(s) never left the IP",  ck_w_i-ck_w_o);
-    if (ck_r_i !=ck_r_o ) $display("  *** R  imbalance: %0d read-data beat(s) never delivered", ck_r_i-ck_r_o);
-    if (ck_b_i !=ck_b_o ) $display("  *** B  imbalance: %0d write response(s) never delivered", ck_b_i-ck_b_o);
-    $display("  (per-transaction + heartbeat trace in trace_slowdown.log)");
+    $display("  AR+AW accepted in the same cycle: %0d (separate AR/AW FIFOs, not a conflict)", ck_araw_n);
+    if (ck_ar_i!=ck_ar_o || ck_aw_i!=ck_aw_o || ck_w_i!=ck_w_o || ck_r_i!=ck_r_o || ck_b_i!=ck_b_o) begin
+      // still inside after SD_STALL_LIM cycles without any handshake: lost or stuck, not in flight
+      if (sd_cycle - sd_last_hs >= SD_STALL_LIM) begin
+        ck_err_n++;
+        $error("[slowdown] *** imbalance with no handshake for %0d cyc before the end: AR %0d, AW %0d, W %0d, R %0d, B %0d never left the IP",
+          sd_cycle - sd_last_hs, ck_ar_i-ck_ar_o, ck_aw_i-ck_aw_o, ck_w_i-ck_w_o, ck_r_i-ck_r_o, ck_b_i-ck_b_o);
+      end else
+        $display("  in flight at the end (last handshake %0d cyc before): AR %0d, AW %0d, W %0d, R %0d, B %0d",
+          sd_cycle - sd_last_hs, ck_ar_i-ck_ar_o, ck_aw_i-ck_aw_o, ck_w_i-ck_w_o, ck_r_i-ck_r_o, ck_b_i-ck_b_o);
+    end
+    if (ck_err_n == 0) $display("  checker: no violations");
+    else $display("  *** checker: %0d violation(s), see the [slowdown] errors above (at most %0d printed during the run)",
+                  ck_err_n, CK_ERR_SHOW);
+    if (sd_fd != 0) $display("  (per-transaction + heartbeat trace in %s)", sd_trace_fn);
+    else            $display("  (no per-transaction trace: +SLOWDOWN_TRACE=<file> writes one)");
     $display("=================================================================");
     if (sd_fd) $fclose(sd_fd);
   end

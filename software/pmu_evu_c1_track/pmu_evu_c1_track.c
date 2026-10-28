@@ -2,7 +2,7 @@
  * pmu_evu_c1_track.c — CVA6-EVU PC Milestone Tracking Test (Core 1)
  *
  * Core 0 role:
- *   1. Writes Core 1's CVA6-EVU registers: EVENTID1=0x17 (PC milestone), PC addresses
+ *   1. Writes Core 1's CVA6-EVU registers: slot 1's event ID = 0x17 (PC milestone), PC addresses
  *   2. Configures 4 APMU counter bundles to detect each individual milestone hit
  *   3. Signals Core 1 to start
  *   4. Polls counters 0-3 in order; prints a message on each hit
@@ -11,8 +11,8 @@
  *   1. Waits for Core 0's go signal
  *   2. Calls func_A() then func_B(), each instrumented with entry/exit probes
  *
- * EVU register layout for Core 1 (cva6_synth_wrap.sv flip bug accounted for):
- *   EVENTID2 reg (0x10606038, addr+8) → ev_id2 field (bits[9:5]) → perf slot i=1
+ * EVU register layout for Core 1 (the event-ID registers are in reverse slot order, EVU_EID_REG):
+ *   EVU_EID_REG(1, 1) (0x10606038, addr+8) → ev_id2 field (bits[9:5]) → perf slot i=1
  *     → perfc_resp[1]=1 → e_id[1]=1 → e_id=0x2  (matches EVU_C1_EV1_SEL event_id_val=2)
  *   PC milestones 0-3 (0x10606040..0x1060605F): compared against commit_pc
  *   When milestone N matches: e_info[N] = 1 in the outgoing event packet
@@ -25,6 +25,7 @@
 #include "encoding.h"
 #include <stdio.h>
 #include <stdint.h>
+#include "../quad_boot/pmu_defines.h"
 
 /* ---------------------------------------------------------------------------
  * Memory-mapped I/O primitives
@@ -33,13 +34,9 @@
 #define write_32b(addr, val)  (*(volatile uint32_t *)(uintptr_t)(addr) = (val))
 
 /* ---------------------------------------------------------------------------
- * PMU address map (from pmu_top.sv)
+ * PMU address map: COUNTER_B_BASE_ADDR, COUNTER_BUNDLE_SIZE, DSPM_BASE_ADDR and
+ * EVU_EID_REG from quad_boot/pmu_defines.h
  * ---------------------------------------------------------------------------*/
-#define PMU_B_BASE_ADDR      0x10405000UL
-#define PMU_BUNDLE_SIZE      0x2000UL
-#define COUNTER_B_BASE_ADDR  (PMU_B_BASE_ADDR + PMU_BUNDLE_SIZE)  /* 0x10407000 */
-#define COUNTER_BUNDLE_SIZE  0x1000UL
-
 /* Offsets within a counter bundle */
 #define CNTR_OFF   0x0   /* counter value */
 #define SEL_OFF    0x4   /* Event Selection Cfg */
@@ -48,13 +45,11 @@
 /* ---------------------------------------------------------------------------
  * CVA6-EVU registers for Core 1 (cva6_synth_wrap.sv)
  * ---------------------------------------------------------------------------*/
-#define EVENTID_C1_BASE      0x10606030UL   /* EID0..EID3 at +0,+4,+8,+C */
 #define PC_MILESTONE_C1_BASE 0x10606040UL   /* 4 × (lo32, hi32) at +0..+1C */
 
 /* ---------------------------------------------------------------------------
  * DSPM — inter-core synchronisation
  * ---------------------------------------------------------------------------*/
-#define DSPM_BASE_ADDR   0x10428000UL
 #define CORE1_START_FLAG (DSPM_BASE_ADDR + 0x10UL)
 
 /* ---------------------------------------------------------------------------
@@ -162,14 +157,14 @@ int main(void)
 
         printf("[CORE0] Programming Core 1 CVA6-EVU...\n");
 
-        /* EVU event IDs: EVENTID2 reg (addr+8) = 0x17 (PC milestone)
+        /* EVU event IDs: slot 1 (EVU_EID_REG(1, 1), addr+8) = 0x17 (PC milestone)
          * addr+8 → ev_id2 field (bits[9:5] of perfc_req) → perf slot i=1
          * → perfc_resp[1]=1 → e_id[1]=1 → e_id=2
          * Matches EVU_C1_EV1_SEL event_id_val=2: (mask=2 & e_id=2)==2 ✓ */
-        write_32b(EVENTID_C1_BASE + 0,  0x00);   /* EVENTID0: disabled */
-        write_32b(EVENTID_C1_BASE + 4,  0x00);   /* EVENTID1: disabled */
-        write_32b(EVENTID_C1_BASE + 8,  0x17);   /* EVENTID2: PC milestone → e_id=2 */
-        write_32b(EVENTID_C1_BASE + 12, 0x00);   /* EVENTID3: disabled */
+        write_32b(EVU_EID_REG(1, 3), 0x00);   /* slot 3 (addr+0): disabled */
+        write_32b(EVU_EID_REG(1, 2), 0x00);   /* slot 2 (addr+4): disabled */
+        write_32b(EVU_EID_REG(1, 1), 0x17);   /* slot 1 (addr+8): PC milestone → e_id=2 */
+        write_32b(EVU_EID_REG(1, 0), 0x00);   /* slot 0 (addr+C): disabled */
 
         /*
          * PC milestone addresses — lower 32 bits of each 64-bit register pair.

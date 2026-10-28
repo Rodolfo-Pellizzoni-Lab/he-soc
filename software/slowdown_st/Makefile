@@ -4,7 +4,8 @@ XLEN := 64
 RISCV_PREFIX ?= /opt/riscv64/bin/riscv64-unknown-elf-
 
 export SW_HOME := $(shell cd .. && pwd)
-include $(shell pwd)/../common.mk
+# soc_tests/common.mk: common.mk plus the include paths of soc_test.h (CHECK, TEST PASS/FAIL)
+include $(shell pwd)/../soc_tests/common.mk
 
 # ==============================================================================
 # Single-core DRAM-traffic test for the slowdown IP (drives the in-RTL checker)

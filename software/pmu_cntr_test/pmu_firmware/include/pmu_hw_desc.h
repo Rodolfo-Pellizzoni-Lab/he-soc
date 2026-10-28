@@ -14,41 +14,9 @@
     asm volatile (".insn r 0x07, 0x1, 0, x0, %1, %0" : : "r" (counter_idx), "r" (value))
 
 // =============================================================================
-// PMU hardware parameters
+// PMU register map and scratchpads: software/quad_boot/pmu_defines.h (the events below match it)
 // =============================================================================
-#define NUM_COUNTER         12
-
-#define TIMER_WIDTH         0x8
-#define STATUS_WIDTH        0x4
-#define BOOT_ADDR_WIDTH     0x4
-#define COUNTER_WIDTH       0x4
-
-// PMU Bundle Addresses
-#define PMU_B_BASE_ADDR     0x10405000
-#define TIMER_ADDR          PMU_B_BASE_ADDR
-#define PERIOD_ADDR         (PMU_B_BASE_ADDR + 0x8)
-#define PMC_STATUS_ADDR     (PMU_B_BASE_ADDR + 0x1000)
-#define PMC_BOOT_ADDR       (PMU_B_BASE_ADDR + 0x1004)
-#define PMU_BUNDLE_SIZE     0x2000
-
-// Counter Bundle Base Addresses
-// Each counter bundle occupies COUNTER_BUNDLE_SIZE (0x1000) bytes:
-//   BASE + 0x0 : Counter register
-//   BASE + 0x4 : Event Selection register
-//   BASE + 0x8 : Event Info register
-//   BASE + 0xC : Initial Budget register
-#define COUNTER_B_BASE_ADDR     (PMU_B_BASE_ADDR + PMU_BUNDLE_SIZE)
-#define COUNTER_BASE_ADDR       (COUNTER_B_BASE_ADDR + 0*COUNTER_WIDTH)
-#define EVENT_SEL_BASE_ADDR     (COUNTER_B_BASE_ADDR + 1*COUNTER_WIDTH)
-#define EVENT_INFO_BASE_ADDR    (COUNTER_B_BASE_ADDR + 2*COUNTER_WIDTH)
-#define INIT_BUDGET_BASE_ADDR   (COUNTER_B_BASE_ADDR + 3*COUNTER_WIDTH)
-#define COUNTER_BUNDLE_SIZE     0x1000
-
-// PMU SPM Addresses
-#define ISPM_BASE_ADDR      0x10427000
-#define DSPM_BASE_ADDR      0x10428000
-#define DSPM_LENGTH         0x8000
-#define DSPM_END_ADDR       (DSPM_BASE_ADDR + DSPM_LENGTH)
+#include "../../../quad_boot/pmu_defines.h"
 
 // =============================================================================
 // PMU Event Selection Register encoding
@@ -105,7 +73,7 @@
 
 // -----------------------------------------------------------------------------
 // LLC <-> Main Memory events (SPU port 9)
-// Source IDs 4-7 identify which core's traffic reached main memory.
+// Source IDs 0-3 identify which core's traffic reached main memory.
 // -----------------------------------------------------------------------------
 
 // All-core aggregate requests/responses
@@ -115,8 +83,7 @@
 #define MEM_WR_RES              0x9F004F    // port 9, any source, write response
 
 // Per-core requests reaching Main Memory
-// CVA6 is at crossbar slave[0] → upper 4 bits of 8-bit AXI ID are 0000.
-// SPU extracts id[7:2] as source_id = {0000, core_id[1:0]} → core 0=0, 1=1, 2=2, 3=3.
+// The source is ariane_axi_soc::mem_src: the core's coherence-unit port, core 0=0, 1=1, 2=2, 3=3.
 #define MEM_RD_REQ_CORE_0       0x9F0F1F   // port 9, src 0 (core 0), read  req
 #define MEM_RD_REQ_CORE_1       0x9F1F1F   // port 9, src 1 (core 1), read  req
 #define MEM_RD_REQ_CORE_2       0x9F2F1F   // port 9, src 2 (core 2), read  req

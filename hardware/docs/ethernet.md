@@ -111,9 +111,11 @@ Two properties of that DTS had never been booted and cost a day: `timebase-frequ
 the CLINT's mtime rate; OpenSBI's banner says "aclint-mtimer @ 1000000Hz" but that is its own notion), or the
 kernel's timer waits are 25x off and it hangs silently at `clocksource_done_booting` with the harts in WFI, where
 the debugger cannot halt them; and the console is `console=ttyS0,115200` with `clock-frequency` 50 MHz (what the
-JTAG flow and OpenSBI use, and what the host reads at 38400), not 38400. cpu@1-3 are `status = "okay"`; OpenSBI
-disables the ones that did not enter it. Over Ethernet (alsaqr-mcp `linux_boot netboot=true`): link, transfer
-~29 s (22 MB), OpenSBI, kernel, shell in about 95 s from the release of the loader; `smp: Brought up 1 node, 4 CPUs`.
+JTAG flow and OpenSBI use, and what the host reads at 38400), not 38400. cpu@1-3 are `status = "okay"` and stay so:
+OpenSBI's alsaqr platform runs only `fdt_fixups`, which has no CPU fixup, so a hart that did not enter OpenSBI is
+still listed: Linux starts it with the SBI HSM call, waits a second for it and logs `CPUn: failed to come online`.
+Over Ethernet (alsaqr-mcp `linux_boot netboot=true`): link, transfer ~29 s (22 MB), OpenSBI, kernel, shell in about
+95 s from the release of the loader; `smp: Brought up 1 node, 4 CPUs`.
 
 Since 2026-10-19 the bundle's kernel is 6.1.183 (Abdur Rahman's series). Its axienet driver manages the SGMII
 PCS/PMA itself through phylink and takes it from `pcs-handle`, falling back to `phy-handle` (the copper PHY, which it

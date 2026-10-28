@@ -67,8 +67,10 @@ python3 post_sim_script.py <TbMasters> <TbNumReads> <TbNumWrites>
 ```
 
 Testbench sources are in [`test/`](./test) (`tb_spu.sv`, `spu_test.sv`). In the full SoC,
-SPUs are instantiated in `hardware/host/host_domain.sv` — on the coherent interconnect and
-at the LLC↔memory port.
+one `ace_spu_top` per core (`i_spu_core_llc`, APMU ports 5-8) sits in
+`hardware/host/cva6_synth_wrap.sv` between the core and the coherence unit; its source is bit 0
+of the core's AXI ID, so it does not tell masters apart (the port is the core). The
+`axi_spu_top` at the LLC↔memory port (APMU port 9) is in `hardware/host/host_domain.sv`.
 
 ## License
 

@@ -14,9 +14,9 @@
  *   5. Signal CVA6 core 0: STATUS_DONE.
  *
  * DSPM layout (must match pmu_cntr_bench.c):
- *   0x10428000 : ibex_status  — Ibex writes: 0=idle, 1=started, 2=done
- *   0x10428004 : cva6_cmd     — CVA6 writes: 0=wait, 1=read_now
- *   0x10428010 : results[10]  — Ibex writes counter values for ctrs 2-11
+ *   DSPM+0x00 : ibex_status  — Ibex writes: 0=idle, 1=started, 2=done
+ *   DSPM+0x04 : cva6_cmd     — CVA6 writes: 0=wait, 1=read_now
+ *   DSPM+0x10 : results[10]  — Ibex writes counter values for ctrs 2-11
  */
 
 #include <stdint.h>
@@ -25,7 +25,7 @@
 /* ------------------------------------------------------------------ */
 /* DSPM communication addresses                                        */
 /* ------------------------------------------------------------------ */
-#define DSPM_BASE           0x10428000U
+#define DSPM_BASE           DSPM_BASE_ADDR
 #define IBEX_STATUS_ADDR    (DSPM_BASE + 0x00)
 #define CVA6_CMD_ADDR       (DSPM_BASE + 0x04)
 #define RESULTS_BASE_ADDR   (DSPM_BASE + 0x10)

@@ -1,42 +1,5 @@
-/// This assumes the following: 
-///   1. The PMU counters (including the initial budget registers) are 32-bit with 
-///      the 31st bit reserved for Pending.
-///   2. Both the configuration registers are 32-bits.
-///
-/// NUM_COUNTER is parameterizable and should be set to the number of counters in the PMU.
-/// The memory map of the PMU is as follows:
-///     /************************************\
-///     | Initial Budget Register            |
-///     | Event Info Configuration Register  |          Not yet 4kB aligned
-///     | Event Selection Register           |              Counter Bundle
-///     | Counter                            |
-///     \************************************/
-///                     .
-///                     .                         ... x (NUM_COUNTER)
-///                     .
-///     /************************************\
-///     | Initial Budget Register            |
-///     | Event Info Configuration Register  |          Not yet 4kB aligned          
-///     | Event Selection Register           |              Counter Bundle
-///     | Counter                            |
-///     \************************************/
-///     /************************************\
-///     | Initial Budget Register            |
-///     | Event Info Configuration Register  |          Not yet 4kB aligned
-///     | Event Selection Register           |              Counter Bundle
-///     | Counter                            |
-///     \************************************/
-///     /************************************\
-///     | MemGuard Period Register           |          Not yet 4kB aligned
-///     | PMU Timer                          |              PMU Bundle
-///     \************************************/
-/// Each block is a separate 4kB-aligned page.
-/// The PMU Bundle includes the PMU Timer and the MemGuard Period Register.
-/// A counter bundle includes:
-///     1. Counter                                BASE_ADDR + 0x0
-///     2. Event Selection Register               BASE_ADDR + 0x4
-///     3. Event Info Configuration Register      BASE_ADDR + 0x8
-///     4. Initial Budget Register                BASE_ADDR + 0xc
+// The APMU map, the event selects and the EVU registers (EVU_EID_REG) come from the shared copy.
+#include "../quad_boot/pmu_defines.h"
 
 //Results structure layout in memory
 // 0x85000000: Test status (0=running, 1=complete, 0xDEAD=error), Dddd0001=finished 
@@ -61,116 +24,6 @@
 // 0x8500003C: End Marker: always 0xDDDDCCCC
 //-----
 
-#define NUM_COUNTER 32
-
-#define TIMER_WIDTH     0x8
-#define STATUS_WIDTH    0x4
-#define BOOT_ADDR_WIDTH 0x4
-#define COUNTER_WIDTH   0x4
-
-// PMU Bundle Addresses
-#define PMU_B_BASE_ADDR     0x10405000
-#define TIMER_ADDR          PMU_B_BASE_ADDR
-#define PERIOD_ADDR         (PMU_B_BASE_ADDR + TIMER_WIDTH)
-#define PMC_STATUS_ADDR     (PMU_B_BASE_ADDR + 0x1000)
-#define PMC_BOOT_ADDR       (PMU_B_BASE_ADDR + 0x1004)
-// Two 64-bit (8B) timer and one 32-bit status registers in the PMU bundle.
-#define PMU_BUNDLE_SIZE     0x2000
-
-// Counter Bundle Base Addresses
-#define COUNTER_B_BASE_ADDR     (PMU_B_BASE_ADDR + PMU_BUNDLE_SIZE)
-#define COUNTER_BASE_ADDR       (COUNTER_B_BASE_ADDR + 0*COUNTER_WIDTH)
-#define EVENT_SEL_BASE_ADDR     (COUNTER_B_BASE_ADDR + 1*COUNTER_WIDTH)
-#define EVENT_INFO_BASE_ADDR    (COUNTER_B_BASE_ADDR + 2*COUNTER_WIDTH)
-#define INIT_BUDGET_BASE_ADDR   (COUNTER_B_BASE_ADDR + 3*COUNTER_WIDTH)
-// Four 32-bit (4B) registers in one counter bundle.
-#define COUNTER_BUNDLE_SIZE     0x1000
-
-// PMU Core Addresses
-#define ISPM_BASE_ADDR  0x10427000
-#define DSPM_BASE_ADDR  0x10428000
-
-/// **********************************************************************
-/// PMU Event Defines for Event Selection Register
-/// **********************************************************************
-/// Defines for Core to/from LLC
-/// ****************************
-/// Event select = {port value, port mask, source value, source mask, event value, event mask}, a nibble each
-/// (hardware/ip_list/apmu/src/pmu_pkg.sv). Ports with NumCVA6 = 4: 1-4 the cores' EVUs, 5-8 the SPUs on the cores'
-/// ports to the LLC (one per core), 9 the SPU on the LLC's memory port. SPU events: 1 read request, 2 write request,
-/// 3 read response, 4 write response.
-// Read requests from Core X to LLC (LLC_RD_REQ etc. match any port: the memory port 9 and the EVUs' events with
-// the same event ID count too)
-#define LLC_RD_REQ          0x00001F
-#define LLC_RD_REQ_CORE_0   0x5F001F
-#define LLC_RD_REQ_CORE_1   0x6F001F
-#define LLC_RD_REQ_CORE_2   0x7F001F
-#define LLC_RD_REQ_CORE_3   0x8F001F
-// Read responses to Core X from LLC
-#define LLC_RD_RES          0x00003F
-#define LLC_RD_RES_CORE_0   0x5F003F
-#define LLC_RD_RES_CORE_1   0x6F003F
-#define LLC_RD_RES_CORE_2   0x7F003F
-#define LLC_RD_RES_CORE_3   0x8F003F
-// Write requests from Core X to LLC
-#define LLC_WR_REQ          0x00002F
-#define LLC_WR_REQ_CORE_0   0x5F002F
-#define LLC_WR_REQ_CORE_1   0x6F002F
-#define LLC_WR_REQ_CORE_2   0x7F002F
-#define LLC_WR_REQ_CORE_3   0x8F002F
-// Write responses to Core X from LLC
-#define LLC_WR_RES          0x00004F
-#define LLC_WR_RES_CORE_0   0x5F004F
-#define LLC_WR_RES_CORE_1   0x6F004F
-#define LLC_WR_RES_CORE_2   0x7F004F
-#define LLC_WR_RES_CORE_3   0x8F004F
-
-/// ***********************************
-/// Defines for LLC to/from Main Memory
-/// ***********************************
-/// Port 9 (2*NumCVA6+1). Its source field is the source of the request (hardware/include/ariane_soc_pkg.sv,
-/// ariane_axi_soc::mem_src): 0-3 the cores, 4 the DMA port (the accelerator socket and the Ethernet DMA), then one
-/// per other crossbar master p, NumCcuPorts + p - 1: 5 debug module, 8 uDMA TX, 9 uDMA RX, 10 iDMA through the IOMMU,
-/// 11 IOMMU data structures. A response counts for the source of its request.
-// Read and write requests / responses of every source
-#define MEM_RD_REQ   0x9F001F
-#define MEM_WR_REQ   0x9F002F
-#define MEM_RD_RES   0x9F003F
-#define MEM_WR_RES   0x9F004F
-// Read and write requests of Core X to Main Memory from LLC
-#define MEM_RD_REQ_CORE_0  0x9F0F1F
-#define MEM_RD_REQ_CORE_1  0x9F1F1F
-#define MEM_RD_REQ_CORE_2  0x9F2F1F
-#define MEM_RD_REQ_CORE_3  0x9F3F1F
-#define MEM_WR_REQ_CORE_0  0x9F0F2F
-#define MEM_WR_REQ_CORE_1  0x9F1F2F
-#define MEM_WR_REQ_CORE_2  0x9F2F2F
-#define MEM_WR_REQ_CORE_3  0x9F3F2F
-// Read and write responses of Core X to LLC from Main Memory
-#define MEM_RD_RES_CORE_0  0x9F0F3F
-#define MEM_RD_RES_CORE_1  0x9F1F3F
-#define MEM_RD_RES_CORE_2  0x9F2F3F
-#define MEM_RD_RES_CORE_3  0x9F3F3F
-#define MEM_WR_RES_CORE_0  0x9F0F4F
-#define MEM_WR_RES_CORE_1  0x9F1F4F
-#define MEM_WR_RES_CORE_2  0x9F2F4F
-#define MEM_WR_RES_CORE_3  0x9F3F4F
-// The same for the DMA port
-#define MEM_RD_REQ_DMA     0x9F4F1F
-#define MEM_WR_REQ_DMA     0x9F4F2F
-#define MEM_RD_RES_DMA     0x9F4F3F
-#define MEM_WR_RES_DMA     0x9F4F4F
-
-
-/// **********************************************************************
-/// Defines for Event Info Register
-/// **********************************************************************
-/// Note: The following define only works if the response (X_RES_X) events are selected
-//        using the corresponding Event Select Register.
-#define ADD_RESP_LAT   0x8001E0
-#define ADD_MEM_ONLY   0x808E10
-#define OVERFLOW_EN    0x1000000
-
 // Per-run config passed via counter registers (CVA6 writes, Ibex reads via cnt_rd).
 // Using counter slots avoids DSPM address range constraints entirely.
 #define CNT_CONFIG_B     27   /* int32_t  B value   (CVA6 -> firmware) */
@@ -182,7 +35,8 @@
 /// Event Selection: [PortID Value, PortID Mask, SourceID Value, SourceID Mask, EventID Value, EventID Mask]
 /// PortID-1 = Core 0, PortID-2 = Core 1
 
-// Performance Counter EVU event selection (per-core, per-event)
+// Performance Counter EVU event selection (per-core, per-event): EVs counts slot s, whose event ID is the register
+// EVU_EID_REG(core, s)
 #define PERF_COUNTER_EVU_C0_EV0     0x1F0011
 #define PERF_COUNTER_EVU_C0_EV1     0x1F0022
 #define PERF_COUNTER_EVU_C0_EV2     0x1F0044
@@ -192,12 +46,12 @@
 #define PERF_COUNTER_EVU_C1_EV2     0x2F0044
 #define PERF_COUNTER_EVU_C1_EV3     0x2F0088
 
-// Performance Counter EVU Event IDs (what the EVU monitors)
-// These are written to the AXI_LITE_SLAVE EVENTID registers
-#define PERF_COUNTER_EVU_C0_EID0    0x00000017  // L1 I-cache access (EV0 — broken, not used)
-#define PERF_COUNTER_EVU_C0_EID1    0x00000017  // L1 I-cache miss   (EV1 — works)
-#define PERF_COUNTER_EVU_C0_EID2    0x00000017  // Pipeline stalls   (EV2 — works)
-#define PERF_COUNTER_EVU_C0_EID3    0x00000017  // UNUSED — keeps EV3 clean for PC milestones only
+// Performance Counter EVU Event IDs per slot, for EVU_EID_REG(core, slot). Not used here: pmu_simple_bench.c
+// writes core 0's.
+#define PERF_COUNTER_EVU_C0_EID0    0x00000017
+#define PERF_COUNTER_EVU_C0_EID1    0x00000017
+#define PERF_COUNTER_EVU_C0_EID2    0x00000017
+#define PERF_COUNTER_EVU_C0_EID3    0x00000017
 #define PERF_COUNTER_EVU_C1_EID0    0x00000010
 #define PERF_COUNTER_EVU_C1_EID1    0x00000001
 #define PERF_COUNTER_EVU_C1_EID2    0x00000002
@@ -206,11 +60,10 @@
 /// **********************************************************************
 /// PC Milestone Defines
 /// **********************************************************************
-/// PC Milestones use the same PortID as perf counter EVU EV3 (EventID=0x88)
-/// The hardware compares the core's PC against 4 milestone addresses.
-/// When a match occurs, an event is generated on the AXI interconnect.
+/// The hardware compares the core's committed PCs against 4 milestone addresses. A slot whose event ID is 0x17
+/// reports a match, and the event's e_info bit m tells which milestone.
 
-// PC Milestone event selection (same encoding as EVU EV3)
+// PC Milestone event selection: slot 3 (EV3), so EVU_EID_REG(core, 3) must hold 0x17
 #define PC_MILESTONE_C0             0x1F0088
 #define PC_MILESTONE_C1             0x2F0088
 
@@ -264,7 +117,8 @@
 #define FINDDISPARITY_ENTRY         0x80004888
 #define FINDDISPARITY_EXIT          0x8000490C
 
-// AXI_LITE_SLAVE base addresses inside CVA6_SYNTH_WRAP for EventID and PC Milestone config
+// AXI_LITE_SLAVE base addresses inside CVA6_SYNTH_WRAP for EventID and PC Milestone config (the EventID registers
+// are in reverse slot order: slot s is EVENTID_Cx_BASE_ADDR + 4*(3-s), EVU_EID_REG)
 #define EVENTID_C0_BASE_ADDR        0x10606000
 #define PC_MILESTONE_C0_BASE_ADDR   0x10606010
 #define EVENTID_C1_BASE_ADDR        0x10606030

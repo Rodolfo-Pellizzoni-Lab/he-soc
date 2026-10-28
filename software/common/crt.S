@@ -118,20 +118,59 @@ _start:
   la gp, __global_pointer$
 .option pop
 
-  la  tp, _tls_data
-
   // get core id
   csrr a0, mhartid
   li a1, NB_CORES
 
-  //each core has 8KB of stack + TLS
-#define STKSHIFT 12
-  sll a2, a0, STKSHIFT
-  add tp, tp, a2
+#ifdef FPGA_EMULATION
+  // hart 0 clears .sbss/.bss before any C code runs: a debugger or loader writes only the sections with
+  // contents, and DRAM holds garbage after programming. The other harts get here only once hart 0 has woken them.
+  // Board builds only: the simulation's DRAM model reads zero where nothing was loaded, and clearing a big
+  // .bss through the caches costs as much simulated time as a pass over it.
+  bnez a0, 2f
+  la t0, _bss_start
+  la t1, _bss_end
+1:
+  bgeu t0, t1, 2f
+  SREG x0, 0(t0)
+  addi t0, t0, REGBYTES
+  j 1b
+2:
+#endif
+
+  // each hart has its own __stack_size bytes of .stack, hart 0's slice at the top: the stack grows down from
+  // the top of the slice, the hart's TLS sits at its bottom. The linker script reserves __stack_harts slices
+  // (where it does not set them: 4 slices, 8 KB each); a hart beyond them would get a stack below .stack, on
+  // the program's data, so it parks here instead.
+  .weak __stack_size, __stack_harts
+  lui t0, %hi(__stack_harts)
+  addi t0, t0, %lo(__stack_harts)
+  bnez t0, 1f
+  li t0, 4
+1:
+  bgeu a0, t0, 3f
+  lui t0, %hi(__stack_size)
+  addi t0, t0, %lo(__stack_size)
+  bnez t0, 1f
+  li t0, 0x2000
+1:
+  mul a2, a0, t0
   la  sp, _stack
-  add sp, sp, a2
+  sub sp, sp, a2
+  sub tp, sp, t0
 
   j _init
+
+3:
+  wfi
+  j 3b
+
+#ifdef FPGA_EMULATION
+  // a linker script without _bss_start/_bss_end gets an empty range here: nothing is cleared
+  .weak _bss_start, _bss_end
+_bss_start:
+_bss_end:
+#endif
 
   .align 2
 

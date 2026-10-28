@@ -49,6 +49,18 @@ Choosing values: for a 1 GHz target with a 16-bit LPDDR4-3200 channel (6.4 GB/s,
 The device tree's `timebase-frequency` and `clock-frequency` become the target values, so Linux counts time in
 target cycles; the UART keeps its divider (it is a host-time device).
 
+The model can only hold data back, so a setting emulates its target only where the real memory answers sooner than
+`LAT_RD`. With the MIG's own DDR4 controller, and with OpenDRAM at 1x timing, the first beat comes 14-15 cycles after
+the model accepts a read and the 1 GHz values work as intended. With `OPENDRAM=1` as main builds it (OpenDRAM with 16x
+DRAM timing, `alsaqr_opendram_ethernet_16x.bit`) how soon the memory answers depends on the DRAM row (measured below).
+An LLC line refill that has to open a new row gets its first beat 72-81 cycles after the accept, the 1 GHz target's
+own latency: the 1 GHz values add next to nothing to it, and a model effect on such reads needs a slower target, 2 GHz
+or more (`LAT_RD = 160`, `OCC16 = 40`). A read of a row that is still open answers about 40 cycles sooner, and the
+1 GHz values still add tens of cycles to it. Random chases such as those of `t_part` and `t_sweep` open a new row on
+nearly every miss, so for them the model-off latencies already stand for about the 1 GHz target; both tests measure
+what the model adds at the 1 GHz values (its hold time per read) and print `1 GHz target not emulated` when that is
+under half of `LAT_RD`.
+
 When the real memory is slower than the model (the data arrives after its modelled time) the beat is released at
 arrival and counted in `RD_LATE` / `LATE_CYCLES`: a measured error, not a hang. The second step, gating the SoC
 clock while a response is overdue, removes that error. Responses are assumed in request order, which the simulated
@@ -77,7 +89,7 @@ to the model's registers and everything else to the generated block.
 
 Model off (the real memory path, `t_dram` step 1):
 
-| Access from core 0 | VCU118 at 50 MHz | xsim (simulated DRAM behind the CDC and delayer) |
+| Access from core 0 | VCU118 at 50 MHz, the MIG's DDR4 controller | xsim (simulated DRAM behind the CDC and delayer) |
 |---|---|---|
 | dependent 64-byte line read, L1 miss and LLC miss | 85 cycles | 82 cycles |
 | dependent 16-byte L1 fill of DRAM outside the LLC window (passed through the LLC) | 62-63 cycles | 48-49 cycles |
@@ -96,8 +108,8 @@ per setting):
 The hold and late counters locate the memory's own share of the 85 cycles: the DDR4 path returns the first beat
 about 14 cycles after the model accepts the read (256 - 242, and 1 + 13), and the other ~70 cycles are the L1
 miss, the CCU, the crossbar and the LLC refill. Any `LAT_RD` of 20 target cycles or more is therefore met without
-stalling the SoC clock, and for a 1 GHz target with any realistic DRAM latency (80-120 ns) the clock gate of the
-second step would almost never close.
+stalling the SoC clock on this bitstream, and for a 1 GHz target with any realistic DRAM latency (80-120 ns) the
+clock gate of the second step would almost never close. OpenDRAM with 16x timing changes that (next section).
 
 Under Linux (Buildroot, 433 MB of RAM) the model is configured with devmem from the shell. With the 1 GHz target
 values (`LAT_RD = LAT_WR = 80`, `OCC16 = 20`) writing 32 MB into tmpfs took 26.7 s of host time against 12.4 s
@@ -105,12 +117,47 @@ with the model off, and reading it back 1.2 s against 0.7 s. The model saw 5.7 M
 (the kernel's memory lies outside the LLC window, so its traffic is 16-byte L1 fills) and 4.4 M write bursts;
 1 read was late, by 12 cycles. (That run predates the counter fix of 2026-10-25: a read in flight when the model was
 enabled was then judged against its own accept time, and the one late read matches that, by the DDR4's own 12 cycles.)
+It was a JTAG boot on the MIG bitstream, with the LLC caching only its reset window of 8 MB. Since 9834bf51
+(2026-10-19) the netboot loader widens that window to all of RAM, so a netbooted kernel's traffic reaches the model as
+the LLC's 64-byte refills and write-backs instead. On the 16x OpenDRAM build the same values would add little to a
+read that opens a new DRAM row and still tens of cycles to one that finds its row open, whether the LLC caches it or
+not (next section); what that comes to for a kernel has not been measured.
+
+## Measured with OpenDRAM (2026-10-22 to -24)
+
+OpenDRAM in place of the MIG's controller (`OPENDRAM=1`, `hardware/ip_list/opendram`), `t_dram` on the VCU118 with
+64 dependent reads per setting. A line read's first beat comes `LAT_RD` minus the hold per read after the model
+accepts it, or 1 plus the lateness per read. `t_dram` prints no hold for its 16-byte fills; the time to a whole fill
+is estimated as `LAT_RD` minus what `LAT_RD = 256` adds to a hop:
+
+| | 1x timing (e42d2051, 2026-10-22) | 16x timing (`alsaqr_opendram_ethernet_16x.bit`, c2c758d8) |
+|---|---|---|
+| dependent line read, model off | 87 cycles | 163-164 |
+| `LAT_RD = 256` | 328 cycles per hop, 241 hold cycles per read | 324-328, 175 |
+| `LAT_RD = 1` | 89 cycles per hop, every read late, by 14 on average | 164-165, every read late, by 71-72 |
+| a line read's first beat after the model accepts it | 15 cycles | 72-73 with a hop every 164 cycles, 81 with one every 324-328 |
+| dependent 16-byte fill outside the LLC window, model off | 67 | 99-100 |
+| the same with `LAT_RD = 256` | 311 | 311 |
+| the fill complete after the model accepts it | about 12 cycles | about 45, on average |
+
+At 16x the memory's answer depends on the DRAM row. OpenDRAM keeps a row open after a read, and a read of another row
+in the same bank must first close that one and open its own: `tRP` and `tRCD`, 256 DRAM clocks each at 16x, 41 SoC
+cycles together (3 at 1x). With the MIG's address map (`ROW_COLUMN_BANK`: byte address bits [6:4] select one of 8
+banks, [28:14] the row) `t_dram`'s lines, 64 KB apart, need a new row in the same four banks on every hop. Their first
+beat comes about when the 1 GHz target's `LAT_RD = 80` would release it, so the 1 GHz values hold such a read back by
+a few cycles at most. `t_dram`'s 16-byte fills, 4 KB + 64 B apart, alternate between two banks and half of them find
+their row still open; the 1 GHz values would still add about 35 cycles to each on average. `t_part`'s model-on pass
+there repeats its model-off one to within 0.7 % in every phase (at most 3.3 cycles per hop or word; Q, the app with
+too few ways: 306.92 off, 307.73 on; B1, the accelerator in one way: 103.53 and 103.65), where on the 1x build Q goes
+from 155.88 to 288.24 and B1 from 83.01 to 100.86. The late counter alone does not show this, since a read held back a
+few cycles is not late; `t_part` and `t_sweep` judge by the hold time.
 
 ## Latency sweep
 
 `software/soc_tests/t_sweep` chases a random cyclic chain of 16-byte elements (one L1 line each) through arrays
 of 1 KB to 7 MB in LLC-cached DRAM and prints the cycles per dependent read for every size, with the model off
-and with the 1 GHz settings; `software/soc_tests/plot_sweep.py` draws its console log. On the VCU118:
+and with the 1 GHz settings; `software/soc_tests/plot_sweep.py` draws its console log. On the VCU118 (2026-10-15,
+the MIG's DDR4 controller):
 
 ![cycles per dependent read against the array size](latency_sweep.png)
 
@@ -120,6 +167,11 @@ and with the 1 GHz settings; `software/soc_tests/plot_sweep.py` draws its consol
 | 128 KB to 1 MB | 45.0 | 45.0 | LLC hit: the model sees no traffic |
 | 2 MB | 58.8 | 99.3 | |
 | 7 MB | 65.7 | 127.0 | mostly DRAM; a 64-byte LLC line holds 4 elements, so a share of the hops still hit the LLC and the curve keeps climbing towards the pure miss (85 cycles in `t_dram`, whose chain thrashes one set) |
+
+With `OPENDRAM=1` (16x timing) nearly every refill of the random chase opens a new DRAM row, so the 1 GHz settings
+should add next to nothing (previous section) and the 1ghz curve be about the memory's own latency: `t_sweep` then
+prints `1 GHz target not emulated`, from the model's counters after the largest array, and skips its check that those
+settings slow that array down; `plot_sweep.py` labels the curve accordingly.
 
 ## Test
 

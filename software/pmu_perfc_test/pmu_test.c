@@ -73,10 +73,11 @@ unlock(mhartid);
 
 asm volatile("fence");
 
-write_32b(eventIDBaseAddr,        eventIDValues[0]);
-write_32b(eventIDBaseAddr+4,      eventIDValues[1]);
-write_32b(eventIDBaseAddr+8,      eventIDValues[2]);
-write_32b(eventIDBaseAddr+12,     eventIDValues[3]);
+// eventIDValues[s] is slot s's event ID; the registers are in reverse slot order (EVU_EID_REG)
+write_32b(eventIDBaseAddr+12,     eventIDValues[0]);
+write_32b(eventIDBaseAddr+8,      eventIDValues[1]);
+write_32b(eventIDBaseAddr+4,      eventIDValues[2]);
+write_32b(eventIDBaseAddr,        eventIDValues[3]);
 write_32b(pcMilesBaseAddr,        pcmilestones[0]);
 write_32b(pcMilesBaseAddr+8,      pcmilestones[1]);
 write_32b(pcMilesBaseAddr+16,     pcmilestones[2]);

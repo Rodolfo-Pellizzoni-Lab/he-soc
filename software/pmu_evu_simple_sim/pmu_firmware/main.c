@@ -132,7 +132,7 @@ int main() {
     asm volatile ("nop");
     asm volatile ("nop");
 
-    WRITE_MEM(0x10429000, 0xC4A0E440);
+    WRITE_MEM(DSPM_BASE_ADDR + 0x1000, 0xC4A0E440);
 
     // Enable mcycle counter
     asm volatile ("csrw 0x320, zero");
@@ -164,8 +164,9 @@ int main() {
 
     cnt_wr(CNT_BREADCRUMB, 1);
 
-    // Write EVU event ID config FIRST (writing 0x10606000 can reset milestone state)
-    WRITE_MEM(0x10606000, 0x00000002);
+    // Write EVU event ID config FIRST (writing 0x10606000 can reset milestone state). That register is slot 3's
+    // (unused, the CVA6 wrote the same value); the counters use slots 0-2.
+    WRITE_MEM(EVU_EID_REG(0, 3), 0x00000002);
 
     // Program slot 0 with entry address
     WRITE_MEM(PC_MILESTONE_SLOT0, FUNC_ENTRY);

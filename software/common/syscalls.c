@@ -39,6 +39,9 @@ static uintptr_t syscall(uintptr_t which, uint64_t arg0, uint64_t arg1, uint64_t
 static uintptr_t counters[NUM_COUNTERS];
 static char* counter_names[NUM_COUNTERS];
 
+// one bit per hart that has come through the start-up code (soc_wake_all() waits on the harts it wakes)
+volatile uint32_t harts_up;
+
 void setStats(int enable)
 {
   int i = 0;
@@ -109,6 +112,7 @@ static void init_tls()
 void _init(int cid, int nc)
 {
   init_tls();
+  __atomic_fetch_or(&harts_up, 1u << cid, __ATOMIC_SEQ_CST);
   if(cid==0) {
      int * tmp;
      /* Set UART MUX with hardcoded write */

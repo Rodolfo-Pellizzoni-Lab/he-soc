@@ -12,7 +12,8 @@
  *   Core 3 : WRITER  (woken by PMU counter-1 overflow -> PLIC IRQ 157)
  *
  * Only the CVA6 cores run. The overflow->PLIC IRQ is pure hardware waking the
- * two parked CVA6 harts; the PMU's own Ibex core is NOT used.
+ * two parked CVA6 harts; the PMU's own Ibex core is NOT used. Once all four
+ * cores have checked in, core 0 undoes the wake-up and starts the traffic.
  *
  * Why this stresses main memory (and thus the slowdown):
  *   - Core 0 first WIDENS the LLC cached region (APB SoC-ctrl reg): by default
@@ -20,22 +21,33 @@
  *     passes it uncached (still through the SPU and the slowdown, but as the L1's
  *     16-byte fills). After widening, our whole footprint is cached and its
  *     misses reach memory as 64-byte line refills.
- *   - Each core owns a DISJOINT 512 KB region  base + hartid*PER_CORE_SPAN  ->
+ *   - Each core owns a DISJOINT region  base + hartid*PER_CORE_SPAN  ->
  *     nothing is shared, so cache coherency never supplies a line (no snoops).
- *   - Each region is streamed at a 64-byte (cache-line) stride; 4 x 512 KB =
- *     2 MB total > 1 MB LLC, so L1 and LLC both miss -> every access becomes an
- *     AR (read miss) or AW+W (write-allocate / dirty writeback) to main memory,
- *     straight through the slowdown IP. Sustained eviction/refill.
+ *   - Each region is streamed at a 64-byte (cache-line) stride. On the board
+ *     4 x 512 KB = 2 MB > 1 MB LLC, so L1 and LLC both miss -> every access
+ *     becomes an AR (read miss) or AW+W (write-allocate / dirty writeback) to
+ *     main memory, straight through the slowdown IP. Sustained eviction/refill.
+ *     In RTL sim 4 x 32 KB fit in the LLC: the cold misses reach memory, the
+ *     writers' dirty lines stay in the LLC.
  *
- * PMU confirms it: per-core MEM_RD / MEM_WR request counts (SPU port 9) must be
- * non-zero for every core, proving traffic actually reached main memory through
- * the regulator. Cycle counts show the regulation cost.
+ * PMU confirms it: per-core MEM_RD / MEM_WR request counts (SPU port 9) show
+ * traffic actually reached main memory through the regulator. Cycle counts
+ * show the regulation cost.
  *
- * Tuning: raise KB_PER_CORE / PASSES for the board (fast); keep them modest for
- * RTL sim (the regulator throttles to 1 request / Throughput_timer_param cycles,
- * so large working sets take many millions of cycles to drain).
+ * Checks (TEST PASS/FAIL, exit code = failed checks, software/soc_tests/include/
+ * soc_test.h): every core comes up and finishes its traffic within a bound;
+ * every core's MEM_RD count covers the lines it touched (each one misses at
+ * first: the readers' loads and the writers' write-allocate refills, counted
+ * for the core that made them); and on a footprint above the LLC the dirty
+ * lines are evicted to memory (MEM_WR > 0; an eviction is counted for the core
+ * whose miss caused it, so only the total is checked).
+ *
+ * Tuning: KB_PER_CORE / PASSES follow the build as in t_sweep: fpga=1 streams
+ * 512 KB per core twice, RTL sim 32 KB once (~200k cycles, ~20 min of a
+ * quad-core xsim run).
  */
 
+#include "soc_test.h"
 #include "encoding.h"
 #include <stdio.h>
 #include <string.h>
@@ -61,48 +73,21 @@ static inline void unlock_uart(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* PMU / PLIC (identical layout to pmu_cntr_bench)                     */
+/* PMU / PLIC (PMU counter map and event selects: quad_boot/pmu_defines.h) */
 /* ------------------------------------------------------------------ */
-#define PMU_B_BASE_ADDR      0x10405000UL
-#define PMU_BUNDLE_SIZE      0x2000
-#define COUNTER_B_BASE_ADDR  (PMU_B_BASE_ADDR + PMU_BUNDLE_SIZE)
-#define COUNTER_BASE_ADDR    (COUNTER_B_BASE_ADDR + 0x0)
-#define EVENT_SEL_BASE_ADDR  (COUNTER_B_BASE_ADDR + 0x4)
-#define EVENT_INFO_BASE_ADDR (COUNTER_B_BASE_ADDR + 0x8)
-#define COUNTER_BUNDLE_SIZE  0x1000
-#define OVERFLOW_EN          0x01000000UL
-
 #define PLIC_BASE       0x0C000000UL
 #define PMU_PLIC_ID1    156
 #define PMU_PLIC_ID2    157
-#define PLIC_EN_BITS1   (PLIC_BASE + 0x2280UL)
-#define PLIC_EN_BITS2   (PLIC_BASE + 0x2380UL)
+#define PLIC_EN_BITS1   (PLIC_BASE + 0x2280UL)     /* enables of context 5 (hart 2, S-mode) */
+#define PLIC_EN_BITS2   (PLIC_BASE + 0x2380UL)     /* context 7 (hart 3, S-mode) */
+#define PLIC_CLAIM1     (PLIC_BASE + 0x205004UL)   /* claim/complete of context 5 */
+#define PLIC_CLAIM2     (PLIC_BASE + 0x207004UL)   /* context 7 */
 
-/* Event selects — LLC + MEM request counts, per core (SPU ports 5-8 = cores
- * 0-3 at the LLC; port 9 sources 0-3 = cores 0-3 at main memory, 4 = the DMA
- * port, more in software/quad_boot/pmu_defines.h). */
-#define LLC_RD_REQ_CORE_0  0x5F001FUL
-#define LLC_RD_REQ_CORE_1  0x6F001FUL
-#define LLC_RD_REQ_CORE_2  0x7F001FUL
-#define LLC_RD_REQ_CORE_3  0x8F001FUL
-#define LLC_WR_REQ_CORE_0  0x5F002FUL
-#define LLC_WR_REQ_CORE_1  0x6F002FUL
-#define LLC_WR_REQ_CORE_2  0x7F002FUL
-#define LLC_WR_REQ_CORE_3  0x8F002FUL
-#define MEM_RD_REQ_CORE_0  0x9F0F1FUL
-#define MEM_RD_REQ_CORE_1  0x9F1F1FUL
-#define MEM_RD_REQ_CORE_2  0x9F2F1FUL
-#define MEM_RD_REQ_CORE_3  0x9F3F1FUL
-#define MEM_WR_REQ_CORE_0  0x9F0F2FUL
-#define MEM_WR_REQ_CORE_1  0x9F1F2FUL
-#define MEM_WR_REQ_CORE_2  0x9F2F2FUL
-#define MEM_WR_REQ_CORE_3  0x9F3F2FUL
-#define MEM_RD_REQ_ALL     0x9F001FUL
-#define MEM_WR_REQ_ALL     0x9F002FUL
-
-/* We count exactly the traffic that crosses the slowdown: per-core requests at
- * MAIN MEMORY (SPU port 9), i.e. what the LLC could not satisfy and had to send
- * to DRAM through the regulator. 8 plain counters — no overflow, no interrupt. */
+/* Event selects — MEM request counts, per core (SPU port 9 sources 0-3 = cores
+ * 0-3 at main memory, 4 = the DMA port, more in software/quad_boot/pmu_defines.h).
+ * We count exactly the traffic that crosses the slowdown: per-core requests at
+ * MAIN MEMORY, i.e. what the LLC could not satisfy and had to send to DRAM
+ * through the regulator. 8 plain counters — no overflow, no interrupt. */
 #define NUM_PMU_CTRS   8
 #define PMU_CTR_FIRST  2      /* PMU has 32 counters; we use 8 (indices 2..9) */
 
@@ -118,8 +103,7 @@ static const char *ctr_name[NUM_PMU_CTRS] = {
 
 /* ------------------------------------------------------------------ */
 /* Working set — disjoint region per core                             */
-/*   base_i = 0x82000000 + i*16MB   (regions never overlap)           */
-/* 4 x KB_PER_CORE total > 1 MB LLC  => cannot cache everything.       */
+/*   base_i = 0x82000000 + i*512KB  (regions never overlap)           */
 /* ------------------------------------------------------------------ */
 /* By default the LLC only caches 0x8000_0000..0x8080_0000 (8 MB) and passes
  * everything else through uncached, as the L1's 16-byte fills (these still go
@@ -131,15 +115,23 @@ static const char *ctr_name[NUM_PMU_CTRS] = {
 
 /* Compact, DISJOINT regions, all inside the (now widened) cached window and
  * inside backed HyperRAM (>=64 MB from 0x8000_0000). Each core streams its own
- * 512 KB span at a 64-byte line stride; 4*512 KB = 2 MB > 1 MB LLC, so the LLC
- * cannot hold it -> sustained eviction/refill = real DRAM traffic through the
- * regulator. Disjoint regions => coherency never supplies a line. */
+ * span at a 64-byte line stride; on the board 4*512 KB = 2 MB > 1 MB LLC, so the
+ * LLC cannot hold it -> sustained eviction/refill = real DRAM traffic through
+ * the regulator. Disjoint regions => coherency never supplies a line. */
 #define BASE_ADDR      0x82000000UL
 #define PER_CORE_SPAN  0x00080000UL   /* 512 KB per core, adjacent & non-overlapping */
 #define LINE_BYTES     64
+#define LLC_KB         1024           /* 16 ways x 1024 sets x 64 B (ariane_soc_pkg.sv) */
+#ifdef FPGA_EMULATION
 #define KB_PER_CORE    512            /* stream the whole span */
-#define LINES_PER_CORE ((KB_PER_CORE * 1024) / LINE_BYTES)
 #define PASSES         2              /* repeat for sustained eviction traffic */
+#define WAIT_MAX       100000000ULL   /* cycles a wait may take before the test fails (2 s at 50 MHz) */
+#else
+#define KB_PER_CORE    32             /* RTL sim: fits in the LLC, only the cold misses reach memory */
+#define PASSES         1
+#define WAIT_MAX       300000ULL      /* ~10x the time cores 2/3 take to come up in xsim */
+#endif
+#define LINES_PER_CORE ((KB_PER_CORE * 1024) / LINE_BYTES)
 
 /* Cores 0,1 = readers ; cores 2,3 = writers */
 static inline int is_writer(uint32_t hartid) { return (hartid >= 2); }
@@ -177,10 +169,34 @@ static uint64_t run_core(uint32_t hartid) {
     return c1 - c0;
 }
 
+/* Undo the wake-up once cores 2 and 3 run (as soc_wake_all() in soc_test.h).
+ * The boot ROM completes 156/157 without claiming them, so they stay pending
+ * with counters 0/1 overflowed (a level): whoever enables them later takes a
+ * stale interrupt. Clear the overflow while its interrupt enable is still set
+ * (cleared first, the APMU would freeze the line high), enable the sources
+ * again (the ROM's write to enable word 0 clears the whole context on this
+ * PLIC) so that a claim + complete clears the pending bit, then disable them. */
+static void wake_release(void) {
+    write_32b(COUNTER_BASE_ADDR,                          0);
+    write_32b(COUNTER_BASE_ADDR   + COUNTER_BUNDLE_SIZE,  0);
+    write_32b(EVENT_INFO_BASE_ADDR,                       0);
+    write_32b(EVENT_INFO_BASE_ADDR + COUNTER_BUNDLE_SIZE, 0);
+    write_32b(PLIC_EN_BITS1 + ((PMU_PLIC_ID1 / 32) * 4), 1U << (PMU_PLIC_ID1 % 32));
+    write_32b(PLIC_EN_BITS2 + ((PMU_PLIC_ID2 / 32) * 4), 1U << (PMU_PLIC_ID2 % 32));
+    asm volatile ("fence" ::: "memory");   /* line low and sources enabled before the claims */
+    uint32_t id = read_32b(PLIC_CLAIM1);
+    if (id) write_32b(PLIC_CLAIM1, id);
+    id = read_32b(PLIC_CLAIM2);
+    if (id) write_32b(PLIC_CLAIM2, id);
+    write_32b(PLIC_EN_BITS1 + ((PMU_PLIC_ID1 / 32) * 4), 0);
+    write_32b(PLIC_EN_BITS2 + ((PMU_PLIC_ID2 / 32) * 4), 0);
+}
+
 /* ------------------------------------------------------------------ */
 /* Inter-core sync (L3, volatile)                                     */
 /* ------------------------------------------------------------------ */
 volatile int      pmu_go        = 0;
+volatile int      core_up[4]    = {0, 0, 0, 0};
 volatile int      cores_done[4] = {0, 0, 0, 0};
 volatile uint64_t core_cycles[4] = {0, 0, 0, 0};
 
@@ -198,15 +214,16 @@ int main(int argc, char const *argv[])
     /* ============================ CORE 0 ============================ */
     if (mhartid == 0) {
 
-#ifdef FPGA_EMULATION
-        uint32_t baud_rate = 9600;
-        uint32_t test_freq = 100000000;
-#else
+        /* On the board the startup code has set the UART: its DLL is hard-wired,
+         * so the divisor for 9600 Bd at 100 MHz (651) would set DLM and garble
+         * the console. Only the simulation sets it here. */
+#ifndef FPGA_EMULATION
         set_flls();
         uint32_t baud_rate = 115200;
         uint32_t test_freq = 50000000;
-#endif
         uart_set_cfg(0, (test_freq / baud_rate) >> 4);
+#endif
+        core_up[0] = 1;
 
         /* Widen the LLC cached region FIRST so every core's traffic goes
          * LLC -> SPU -> slowdown -> memory (default caches only 0x8000_0000..
@@ -216,9 +233,10 @@ int main(int argc, char const *argv[])
         asm volatile ("fence iorw, iorw" ::: "memory");
 
         lock_uart();
+        soc_test_begin("slowdown_qc");
         printf("\r\n[slowdown_qc] quad-core DRAM traffic: C0,C1=READ  C2,C3=WRITE\r\n");
-        printf("[slowdown_qc] %d KB/core x4 = %d KB > 1MB LLC; LLC now cached to 0x%x\r\n",
-               KB_PER_CORE, 4 * KB_PER_CORE, (uint32_t)CACHE_END_VAL);
+        printf("[slowdown_qc] %d KB/core x4 = %d KB %s 1MB LLC; LLC now cached to 0x%x\r\n",
+               KB_PER_CORE, 4 * KB_PER_CORE, 4 * KB_PER_CORE > LLC_KB ? ">" : "<=", (uint32_t)CACHE_END_VAL);
         uart_wait_tx_done();
         unlock_uart();
 
@@ -238,7 +256,14 @@ int main(int argc, char const *argv[])
         uart_wait_tx_done();
         unlock_uart();
 
-        /* --- Configure measurement counters 2-19 (event select, no overflow) --- */
+        /* Every core checks in before the traffic starts, so all four overlap and
+         * a core that never wakes fails the test instead of hanging it. */
+        uint64_t t0 = soc_cycles();
+        for (int c = 1; c <= 3; c++)
+            while (!core_up[c] && soc_cycles() - t0 < WAIT_MAX) asm volatile ("nop");
+        wake_release();
+
+        /* --- Configure measurement counters 2-9 (event select, no overflow) --- */
         for (int i = 0; i < NUM_PMU_CTRS; i++) {
             int n = PMU_CTR_FIRST + i;
             write_32b(EVENT_SEL_BASE_ADDR  + n * COUNTER_BUNDLE_SIZE, event_sel[i]);
@@ -257,8 +282,10 @@ int main(int argc, char const *argv[])
         asm volatile ("fence iorw, iorw" ::: "memory");
         cores_done[0] = 1;
 
+        /* The others started with core 0 and stream as much: allow 4x its time. */
+        uint64_t t1 = soc_cycles(), lim = 4 * core_cycles[0] + WAIT_MAX;
         for (int c = 1; c <= 3; c++)
-            while (!cores_done[c]) asm volatile ("nop");
+            while (core_up[c] && !cores_done[c] && soc_cycles() - t1 < lim) asm volatile ("nop");
         asm volatile ("fence iorw, iorw" ::: "memory");
 
         /* --- Snapshot + report --- */
@@ -266,6 +293,8 @@ int main(int argc, char const *argv[])
         for (int i = 0; i < NUM_PMU_CTRS; i++)
             ctr_val[i] = read_32b(COUNTER_BASE_ADDR + (PMU_CTR_FIRST + i) * COUNTER_BUNDLE_SIZE)
                          & 0x3FFFFFFFU;
+        uint32_t mem_rd_all = ctr_val[0] + ctr_val[1] + ctr_val[2] + ctr_val[3];
+        uint32_t mem_wr_all = ctr_val[4] + ctr_val[5] + ctr_val[6] + ctr_val[7];
 
         lock_uart();
         printf("\r\n=== slowdown_qc results (%d KB/core, %d lines, %d pass) ===\r\n",
@@ -277,18 +306,33 @@ int main(int argc, char const *argv[])
                (uint32_t)core_cycles[0], (uint32_t)core_cycles[1],
                (uint32_t)core_cycles[2], (uint32_t)core_cycles[3]);
         printf("  MEM_RD_ALL=%u  MEM_WR_ALL=%u  (all traffic crossed the slowdown)\r\n",
-               ctr_val[0] + ctr_val[1] + ctr_val[2] + ctr_val[3],
-               ctr_val[4] + ctr_val[5] + ctr_val[6] + ctr_val[7]);
+               mem_rd_all, mem_wr_all);
         printf("===========================================================\r\n");
+        uart_wait_tx_done();
+
+        for (int c = 1; c <= 3; c++)
+            CHECK(core_up[c], "core %d did not come up", c);
+        for (int c = 0; c <= 3; c++) {
+            if (!core_up[c]) continue;
+            CHECK(cores_done[c], "core %d did not finish its traffic", c);
+            /* every line of the region misses at first and is fetched from memory */
+            if (cores_done[c])
+                CHECK(ctr_val[c] >= LINES_PER_CORE, "%s = %u, below the %d lines core %d touched",
+                      ctr_name[c], ctr_val[c], LINES_PER_CORE, c);
+        }
+        if (4 * KB_PER_CORE > LLC_KB)
+            CHECK(mem_wr_all > 0, "no write reached memory although %d KB > the LLC", 4 * KB_PER_CORE);
         printf("[slowdown_qc] DONE\r\n");
         uart_wait_tx_done();
         unlock_uart();
 
-        exit(0);   /* end-of-computation -> tohost -> $finish (clean sim exit) */
+        exit(soc_test_end());   /* end-of-computation -> tohost -> $finish (clean sim exit) */
         while (1) asm volatile ("wfi");
 
     /* ============================ CORE 1 (reader) ============================ */
     } else if (mhartid == 1) {
+        soc_install_trap_guard();
+        core_up[1] = 1;
         lock_uart();
         printf("[slowdown_qc] Core 1 up (READER)\r\n");
         uart_wait_tx_done();
@@ -302,6 +346,8 @@ int main(int argc, char const *argv[])
 
     /* ============================ CORE 2 (writer, PMU IRQ 156) ============================ */
     } else if (mhartid == 2) {
+        soc_install_trap_guard();
+        core_up[2] = 1;
         lock_uart();
         printf("[slowdown_qc] Core 2 up (WRITER, PMU IRQ 156)\r\n");
         uart_wait_tx_done();
@@ -315,6 +361,8 @@ int main(int argc, char const *argv[])
 
     /* ============================ CORE 3 (writer, PMU IRQ 157) ============================ */
     } else if (mhartid == 3) {
+        soc_install_trap_guard();
+        core_up[3] = 1;
         lock_uart();
         printf("[slowdown_qc] Core 3 up (WRITER, PMU IRQ 157)\r\n");
         uart_wait_tx_done();

@@ -346,7 +346,7 @@ uint32_t pmu_core_send_interrupt (
   write_32b(pmc_status_base_addr, 0);
 
   while (1) {
-    uint read_target = read_32b(target_addr);
+    uint32_t read_target = read_32b(target_addr);
     if (read_target == 101)
       break;
   }
@@ -434,7 +434,7 @@ uint32_t test_pmu_core_counter_b_writes (
   write_32b(pmc_status_base_addr, 0);
 
   while (1) {
-    uint read_target = read_32b(target_addr);
+    uint32_t read_target = read_32b(target_addr);
     if (read_target == 101)
       break;
   }
@@ -871,7 +871,7 @@ uint32_t test_case_study_without_debug (
     write_32b(pmc_status_base_addr, 0);
 
     while (1) {
-      uint read_target = read_32b(dspm_base_addr + 0x24);
+      uint32_t read_target = read_32b(dspm_base_addr + 0x24);
       if (read_target == 1)
         break;
     }
@@ -1119,7 +1119,7 @@ uint32_t test_case_study_with_debug (
     write_32b(pmc_status_base_addr, 0);
 
     while (1) {
-      uint read_target = read_32b(dspm_base_addr + 0x24);
+      uint32_t read_target = read_32b(dspm_base_addr + 0x24);
       if (read_target == 1)
         break;
     }

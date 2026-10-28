@@ -113,9 +113,11 @@ int main(int argc, char const *argv[]) {
     for (uint32_t i = 0; i < 0x200; i += 4)
         write_32b(DSPM_BASE_ADDR + i, 0);
 
-    if (text_size > 0 && text_size < 4096) {
-        memcpy((void*)ISPM_BASE_ADDR, _binary_text_section_bin_start, text_size);
-        memcpy((void*)(DSPM_BASE_ADDR + 0x200), _binary_data_rodata_bss_bin_start, data_size);
+    if (text_size > 0 && text_size <= ISPM_SIZE) {
+        // Word stores, not memcpy: the SPMs lose byte stores (see ISPM_BASE_ADDR in quad_boot/pmu_defines.h). The
+        // wrappers align each image to 8 bytes, so rounding the size up reads only their padding.
+        write_32b_regs(ISPM_BASE_ADDR, (text_size + 3) / 4, (uint32_t *)_binary_text_section_bin_start, 4);
+        write_32b_regs(DSPM_BASE_ADDR + 0x200, (data_size + 3) / 4, (uint32_t *)_binary_data_rodata_bss_bin_start, 4);
         asm volatile ("fence iorw, iorw" ::: "memory");
         printf("    Firmware loaded (text=%u, data=%u bytes)\r\n", text_size, data_size);
     } else {
@@ -184,11 +186,12 @@ int main(int argc, char const *argv[]) {
     write_32b(EVENT_INFO_BASE_ADDR + 28 * COUNTER_BUNDLE_SIZE, ADD_RESP_LAT);
     write_32b(COUNTER_BASE_ADDR    + 28 * COUNTER_BUNDLE_SIZE, 0);
 
-    // EVU event ID configuration for core 0 (must match firmware)
-    write_32b(EVENTID_C0_BASE_ADDR,      0x2);   // EID0: D-cache miss (L1 miss)
-    write_32b(EVENTID_C0_BASE_ADDR + 4,  0x16);  // EID1: PC milestone hit
-    write_32b(EVENTID_C0_BASE_ADDR + 8,  0x17);  // EID2: pipeline stall
-    write_32b(EVENTID_C0_BASE_ADDR + 12, 0x2);   // EID3: unused
+    // EVU event ID configuration for core 0 (must match firmware), one per slot: EVU_EID_REG(0, 3) is
+    // EVENTID_C0_BASE_ADDR, slot 0 is at +12
+    write_32b(EVU_EID_REG(0, 3), 0x2);   // slot 3: unused
+    write_32b(EVU_EID_REG(0, 2), 0x16);  // slot 2 (EV2, counter 23): pipeline stall
+    write_32b(EVU_EID_REG(0, 1), 0x17);  // slot 1 (EV1, counter 20): PC milestone hit
+    write_32b(EVU_EID_REG(0, 0), 0x2);   // slot 0 (EV0, counter 22): D-cache miss (L1 miss)
     asm volatile ("fence iorw, iorw" ::: "memory");
 
     printf("[3] LLC + counters configured\r\n");

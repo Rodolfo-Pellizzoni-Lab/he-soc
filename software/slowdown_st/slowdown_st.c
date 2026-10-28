@@ -3,20 +3,30 @@
  *
  * Debug driver for the in-RTL checker in slowdown_mem_top: pushes varied read
  * AND write traffic through LLC -> SPU -> slowdown -> main-memory so the checker
- * (drop / duplication / AXI valid-stability, and the AR+AW simultaneity hazard)
- * is exercised, then reports the SPU->PMU MEM_RD/WR counts + cycle cost and
- * signals end-of-computation so the sim reaches $finish (which triggers the
- * checker's final in-vs-out balance summary).
+ * (drop / duplication / AXI valid and payload stability / throttle spacing; it
+ * also counts same-cycle AR+AW intakes) is exercised, then reports the SPU->PMU
+ * MEM_RD/WR counts + cycle cost, checks them and signals end-of-computation so
+ * the sim reaches $finish (which triggers the checker's final in-vs-out balance
+ * summary).
  *
- * LLC = 16-way, 1024 sets, 64 B line (1 MB) — see ariane_soc_pkg.sv. Addresses
- * spaced by LLC_SETS*LINE = 64 KiB map to the SAME set, so touching > 16 of
+ * The regions lie outside the LLC's default cached window (0x8000_0000..
+ * 0x8080_0000), so every L1 miss is a memory read and every dirty L1 eviction a
+ * memory write (16 bytes each). Addresses spaced by 64 KiB map to the SAME L1
+ * set (8 ways of 16 B, 16 KB) — and to the same LLC set (16 ways, 1024 sets of
+ * 64 B, ariane_soc_pkg.sv) when the window is widened — so touching > 16 of
  * them forces evictions => guaranteed MEM reads (misses) AND MEM writes (dirty
  * write-backs). Three traffic phases keep both AR and AW channels busy to
  * maximise the chance of a same-cycle AR+AW at the slowdown slave port.
  *
+ * Checks (TEST PASS/FAIL, exit code = failed checks, as the soc_tests): every
+ * distinct line touched is read from memory at least once (2 x CONFLICT_LINES +
+ * STREAM_LINES - 1), and at least CONFLICT_LINES dirty lines are written back
+ * (phases 1 and 3 dirty 2 x CONFLICT_LINES lines of one set), cached or not.
+ *
  * Only hart 0 drives traffic; harts 1-3 park in WFI.
  */
 
+#include "soc_test.h"
 #include "encoding.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -27,18 +37,10 @@ extern void exit(int code);   /* from common/syscalls.c -> writes tohost -> EOC 
 #define write_32b(a, v) (*(volatile uint32_t *)(long)(a) = (v))
 #define read_32b(a)     (*(volatile uint32_t *)(long)(a))
 
-/* ---- PMU / SPU counter block (same layout as pmu_cntr_test) ---- */
-#define PMU_B_BASE_ADDR      0x10405000UL
-#define PMU_BUNDLE_SIZE      0x2000
-#define COUNTER_B_BASE_ADDR  (PMU_B_BASE_ADDR + PMU_BUNDLE_SIZE)
-#define COUNTER_BASE_ADDR    (COUNTER_B_BASE_ADDR + 0x0)
-#define EVENT_SEL_BASE_ADDR  (COUNTER_B_BASE_ADDR + 0x4)
-#define EVENT_INFO_BASE_ADDR (COUNTER_B_BASE_ADDR + 0x8)
-#define COUNTER_BUNDLE_SIZE  0x1000
+/* ---- PMU / SPU counter block: software/quad_boot/pmu_defines.h ---- */
 
-/* SPU event selects: MEM read/write request, all cores aggregate (SPU port 9) */
-#define MEM_RD_REQ_ALL 0x9F001FUL
-#define MEM_WR_REQ_ALL 0x9F002FUL
+/* Counters for the SPU event selects MEM_RD_REQ / MEM_WR_REQ (pmu_defines.h):
+ * MEM read/write request, all cores aggregate (SPU port 9) */
 #define CTR_RD 2
 #define CTR_WR 3
 
@@ -96,20 +98,22 @@ int main(void) {
     asm volatile ("csrr %0, mhartid" : "=r"(hart));
     if (hart != 0) { while (1) asm volatile ("wfi"); }   /* single-core test */
 
-#ifdef FPGA_EMULATION
-    uint32_t baud = 9600, freq = 100000000;
-#else
+    /* On the board the startup code has set the UART: its DLL is hard-wired, so
+     * the divisor for 9600 Bd at 100 MHz (651) would set DLM and garble the
+     * console. Only the simulation sets it here. */
+#ifndef FPGA_EMULATION
     set_flls();
     uint32_t baud = 115200, freq = 50000000;
-#endif
     uart_set_cfg(0, (freq / baud) >> 4);
+#endif
+    soc_test_begin("slowdown_st");
 
     printf("\r\n[slowdown_st] single-core DRAM traffic (3 phases: conflict / stream / A-rd B-wr)\r\n");
 
     /* SPU->PMU: count MEM read/write requests (all cores aggregate) */
-    write_32b(EVENT_SEL_BASE_ADDR  + CTR_RD * COUNTER_BUNDLE_SIZE, MEM_RD_REQ_ALL);
+    write_32b(EVENT_SEL_BASE_ADDR  + CTR_RD * COUNTER_BUNDLE_SIZE, MEM_RD_REQ);
     write_32b(EVENT_INFO_BASE_ADDR + CTR_RD * COUNTER_BUNDLE_SIZE, 0);
-    write_32b(EVENT_SEL_BASE_ADDR  + CTR_WR * COUNTER_BUNDLE_SIZE, MEM_WR_REQ_ALL);
+    write_32b(EVENT_SEL_BASE_ADDR  + CTR_WR * COUNTER_BUNDLE_SIZE, MEM_WR_REQ);
     write_32b(EVENT_INFO_BASE_ADDR + CTR_WR * COUNTER_BUNDLE_SIZE, 0);
     write_32b(COUNTER_BASE_ADDR + CTR_RD * COUNTER_BUNDLE_SIZE, 0);
     write_32b(COUNTER_BASE_ADDR + CTR_WR * COUNTER_BUNDLE_SIZE, 0);
@@ -124,9 +128,13 @@ int main(void) {
 
     printf("[slowdown_st] SPU MEM_RD = %u   MEM_WR = %u\r\n", mem_rd, mem_wr);
     printf("[slowdown_st] cycles    = %u\r\n", c1 - c0);
+    CHECK(mem_rd >= 2 * CONFLICT_LINES + STREAM_LINES - 1, "MEM_RD = %u, below the %d distinct lines touched",
+          mem_rd, 2 * CONFLICT_LINES + STREAM_LINES - 1);
+    CHECK(mem_wr >= CONFLICT_LINES, "MEM_WR = %u, below the %d write-backs the conflict phases force",
+          mem_wr, CONFLICT_LINES);
     printf("[slowdown_st] DONE - signalling EOC; see [slowdown] checker summary below\r\n");
     uart_wait_tx_done();
 
-    exit(0);   /* write tohost -> tb detects EOC -> $finish -> checker 'final' summary prints */
+    exit(soc_test_end());   /* write tohost -> tb detects EOC -> $finish -> checker 'final' summary prints */
     return 0;
 }

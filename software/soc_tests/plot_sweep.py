@@ -5,6 +5,8 @@
 
 Reads the "SWEEP <mode> <KB> <cycles x100>" lines; one curve per mode (off = the real memory path, 1ghz = the DRAM
 timing model with LAT_RD 80 / OCC16 20). The cache sizes of the SoC are marked: 16 KB L1 data cache (8 ways of 16-byte lines), 1 MB LLC (16 ways of 64-byte lines).
+When t_sweep reports the 1 GHz target as not emulated (a memory about as slow as that target for this chase,
+OPENDRAM=1 with 16x DRAM timing), the 1ghz curve is labelled as the memory's own.
 """
 import re
 import sys
@@ -15,15 +17,20 @@ import matplotlib.pyplot as plt
 
 L1_KB, LLC_KB = 16, 1024
 LABEL = {"off": "model off (VCU118 at 50 MHz)", "1ghz": "DRAM model: 1 GHz target, 80 ns, 6.4 GB/s"}
+# t_sweep's line when the model adds next to nothing at the 1 GHz settings
+NOT_EMULATED = "1 GHz target not emulated"
+LABEL_NOT_EMULATED = "1 GHz settings, not emulated: this memory is about as slow"
 
 
 def read(path):
-    data = {}
+    data, emulated = {}, True
     for line in open(path, errors="replace"):
+        if NOT_EMULATED in line:
+            emulated = False
         m = re.match(r"\s*SWEEP\s+(\S+)\s+(\d+)\s+(\d+)", line.replace("\r", ""))
         if m:
             data.setdefault(m.group(1), []).append((int(m.group(2)), int(m.group(3)) / 100.0))
-    return data
+    return data, emulated
 
 
 def main():
@@ -31,13 +38,16 @@ def main():
     linear = "--linear" in sys.argv
     src = args[0]
     out = args[1] if len(args) > 1 else "sweep.png"
-    data = read(src)
+    data, emulated = read(src)
     if not data:
         sys.exit(f"no SWEEP lines in {src}")
+    labels = dict(LABEL)
+    if not emulated:
+        labels["1ghz"] = LABEL_NOT_EMULATED
     fig, ax = plt.subplots(figsize=(9, 4.5))
     for mode, pts in data.items():
         pts.sort()
-        ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o", markersize=3, linewidth=1.8, label=LABEL.get(mode, mode))
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], marker="o", markersize=3, linewidth=1.8, label=labels.get(mode, mode))
     for kb, name in ((L1_KB, "L1 16 KB"), (LLC_KB, "LLC 1 MB")):
         ax.axvline(kb, color="grey", linestyle="--", linewidth=0.8)
         ax.text(kb, ax.get_ylim()[1] * 0.97, " " + name, color="grey", va="top", fontsize=9)

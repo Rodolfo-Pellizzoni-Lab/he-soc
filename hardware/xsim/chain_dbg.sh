@@ -8,7 +8,7 @@ tag=$1; elf=$(realpath "$2"); start=$3; steps=$4; step=$5; snap=tb_${tag}dbg
 cd "$WORK" || exit 1
 PA="-testplusarg CORE_ID=0 -testplusarg CVA6_STRING=$elf -testplusarg CL_STRING=none -testplusarg OT_SRAM=none"
 PA="$PA -testplusarg OT_FLASH=none -testplusarg OT_CLUSTER=none -testplusarg BOOTMODE=0 -testplusarg UVM_NO_RELNOTES"
-xelab -relax -L uvm -timescale 1ps/1ps --ignore_assertions --debug typical --snapshot $snap work.ariane_tb \
+xelab -relax -L uvm $(xilinx_ip_libs) -timescale 1ps/1ps --ignore_assertions --debug typical --snapshot $snap work.ariane_tb \
       -sv_root "$WORK" -sv_lib libdpi $GENERICS > xelab_$snap.log 2>&1 || { echo "xelab failed"; exit 1; }
 echo "xelab ok $(date +%T)"
 cat > st_$tag.tcl <<EOT
