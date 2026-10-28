@@ -32,19 +32,20 @@
 /// **********************************************************************
 /// CVA6 Performance Counter EVU Defines
 /// **********************************************************************
-/// Event Selection: [PortID Value, PortID Mask, SourceID Value, SourceID Mask, EventID Value, EventID Mask]
+/// Event Selection: [PortID Value, PortID Mask, SourceID Value, SourceID Mask, EventID Value, EventID Mask], laid out
+/// for the core count (EVU_SLOT_SEL, ../quad_boot/pmu_defines.h)
 /// PortID-1 = Core 0, PortID-2 = Core 1
 
 // Performance Counter EVU event selection (per-core, per-event): EVs counts slot s, whose event ID is the register
 // EVU_EID_REG(core, s)
-#define PERF_COUNTER_EVU_C0_EV0     0x1F0011
-#define PERF_COUNTER_EVU_C0_EV1     0x1F0022
-#define PERF_COUNTER_EVU_C0_EV2     0x1F0044
-#define PERF_COUNTER_EVU_C0_EV3     0x1F0088
-#define PERF_COUNTER_EVU_C1_EV0     0x2F0011
-#define PERF_COUNTER_EVU_C1_EV1     0x2F0022
-#define PERF_COUNTER_EVU_C1_EV2     0x2F0044
-#define PERF_COUNTER_EVU_C1_EV3     0x2F0088
+#define PERF_COUNTER_EVU_C0_EV0     EVU_SLOT_SEL(0, 0)
+#define PERF_COUNTER_EVU_C0_EV1     EVU_SLOT_SEL(0, 1)
+#define PERF_COUNTER_EVU_C0_EV2     EVU_SLOT_SEL(0, 2)
+#define PERF_COUNTER_EVU_C0_EV3     EVU_SLOT_SEL(0, 3)
+#define PERF_COUNTER_EVU_C1_EV0     EVU_SLOT_SEL(1, 0)
+#define PERF_COUNTER_EVU_C1_EV1     EVU_SLOT_SEL(1, 1)
+#define PERF_COUNTER_EVU_C1_EV2     EVU_SLOT_SEL(1, 2)
+#define PERF_COUNTER_EVU_C1_EV3     EVU_SLOT_SEL(1, 3)
 
 // Performance Counter EVU Event IDs per slot, for EVU_EID_REG(core, slot). Not used here: the firmware programs
 // core 0's slots.
@@ -64,8 +65,8 @@
 /// reports a match, and the event's e_info bit m tells which milestone.
 
 // PC Milestone event selection: slot 3 (EV3), so EVU_EID_REG(core, 3) must hold 0x17
-#define PC_MILESTONE_C0             0x1F0088
-#define PC_MILESTONE_C1             0x2F0088
+#define PC_MILESTONE_C0             EVU_SLOT_SEL(0, 3)
+#define PC_MILESTONE_C1             EVU_SLOT_SEL(1, 3)
 
 // PC Milestone addresses — UPDATE THESE to match your binary's symbol addresses
 // Use: riscv64-unknown-elf-nm pmu_bench.riscv | grep <function_name>

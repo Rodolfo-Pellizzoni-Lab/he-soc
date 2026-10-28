@@ -313,7 +313,8 @@ module cva6_synth_wrap
   // The following AXI_LITE_SLAVE Regs module shall handshake with the axi_lite_subsystem and configure the registers
   // with appropriate Performance Counter Event IDs and PC Values that need to be tracked as Milestones.
   // Here is how it will be configured
-  // {start_addr: 32'h1060_6000, end_addr: 32'h1060_6100}  // PerfCountersEVU
+  // {start_addr: 32'h1060_6000, end_addr: 32'h1060_6100}  // PerfCountersEVU with four cores, end_addr 32'h1060_6200
+  // with eight: ariane_soc::PerfcEvuBase / PerfcEvuLength, the window of axi_lite_subsystem and of the APMU (host_domain)
   /* 1. For Core-0:
         a. EventID slot 3 = 0x10606000
         b. EventID slot 2 = 0x10606004
@@ -350,6 +351,42 @@ module cva6_synth_wrap
         f. PC_TRACK1 = 0x106060A8
         g. PC_TRACK2 = 0x106060B0
         h. PC_TRACK3 = 0x106060B8
+    5. For Core-4 (cores 4-7 with NUM_CVA6 = 8; core c's registers start at 0x10606000 + 0x30*c):
+        a. EventID slot 3 = 0x106060C0
+        b. EventID slot 2 = 0x106060C4
+        c. EventID slot 1 = 0x106060C8
+        d. EventID slot 0 = 0x106060CC
+        e. PC_TRACK0 = 0x106060D0
+        f. PC_TRACK1 = 0x106060D8
+        g. PC_TRACK2 = 0x106060E0
+        h. PC_TRACK3 = 0x106060E8
+    6. For Core-5:
+        a. EventID slot 3 = 0x106060F0
+        b. EventID slot 2 = 0x106060F4
+        c. EventID slot 1 = 0x106060F8
+        d. EventID slot 0 = 0x106060FC
+        e. PC_TRACK0 = 0x10606100
+        f. PC_TRACK1 = 0x10606108
+        g. PC_TRACK2 = 0x10606110
+        h. PC_TRACK3 = 0x10606118
+    7. For Core-6:
+        a. EventID slot 3 = 0x10606120
+        b. EventID slot 2 = 0x10606124
+        c. EventID slot 1 = 0x10606128
+        d. EventID slot 0 = 0x1060612C
+        e. PC_TRACK0 = 0x10606130
+        f. PC_TRACK1 = 0x10606138
+        g. PC_TRACK2 = 0x10606140
+        h. PC_TRACK3 = 0x10606148
+    8. For Core-7:
+        a. EventID slot 3 = 0x10606150
+        b. EventID slot 2 = 0x10606154
+        c. EventID slot 1 = 0x10606158
+        d. EventID slot 0 = 0x1060615C
+        e. PC_TRACK0 = 0x10606160
+        f. PC_TRACK1 = 0x10606168
+        g. PC_TRACK2 = 0x10606170
+        h. PC_TRACK3 = 0x10606178
         
   Each EVENTID just needs 5 bits but we write to a 32-bit register. Hence 4 bytes allocated for each EventID Register.
   For PC, as per the current configuration, its 64 bits so we take 8 bytes for each PC Value Stored.
@@ -416,6 +453,24 @@ module cva6_synth_wrap
     logic           [TotalNumBytesCfgRegs-1:0]   LogicMap;
     strb_map_t      [ariane_soc::NumCVA6-1:0]    StrbMap;
   } union_strb_data_t;
+
+  // pragma translate_off
+  initial begin : p_perfc_evu_assert
+    // the CPUs and the APMU reach these registers through one window of ariane_soc::PerfcEvuLength bytes at
+    // PerfcEvuBase (axi_lite_subsystem, host_domain): it must cover every core's registers, at the package's stride
+    assert ($bits(reg_map_t) == 8 * ariane_soc::PerfcEvuBytesPerCore && TotalNumBytesCfgRegs <= ariane_soc::PerfcEvuLength)
+      else $fatal(1, "EVU registers: %0d cores x %0d bytes (ariane_soc stride %0d) behind a window of %0d bytes",
+                  ariane_soc::NumCVA6, $bits(reg_map_t) / 8, ariane_soc::PerfcEvuBytesPerCore, ariane_soc::PerfcEvuLength);
+    // CVA6 sends its EVU events as its own copy of the APMU event (ariane_pkg::pmu_event_t) into perfc_evu_events_resp,
+    // a pmu_pkg::pmu_event_t: the two must have the same fields (both follow NUM_CVA6), or the connection shifts them
+    assert ($bits(ariane_pkg::pmu_event_t) == $bits(pmu_pkg::pmu_event_t)
+            && $bits(ariane_pkg::event_id_t) == $bits(pmu_pkg::event_id_t)
+            && $bits(ariane_pkg::source_id_t) == $bits(pmu_pkg::source_id_t))
+      else $fatal(1, "EVU events: CVA6's pmu_event_t has %0d bits (%0d event, %0d source), the APMU's %0d (%0d, %0d)",
+                  $bits(ariane_pkg::pmu_event_t), $bits(ariane_pkg::event_id_t), $bits(ariane_pkg::source_id_t),
+                  $bits(pmu_pkg::pmu_event_t), $bits(pmu_pkg::event_id_t), $bits(pmu_pkg::source_id_t));
+  end
+  // pragma translate_on
 
   union_reg_data_t    perfc_d, perfc_q;
   union_strb_data_t   perfc_wr_o;

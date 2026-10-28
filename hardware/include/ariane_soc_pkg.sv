@@ -108,22 +108,34 @@ package ariane_soc;
 
   // ---- Source of a request at the LLC memory port, as the APMU's SPU there reports it (host_domain,
   // ariane_axi_soc::mem_src): 0..NumCcuPorts-1 the CCU source (the cores, then CcuAccelPort and CcuEthPort),
-  // NumCcuPorts + p - 1 for crossbar master p >= 1. MemSrcWidth is the APMU's source field (pmu_pkg::SOURCE_ID_BITS,
-  // checked in host_domain), which must hold all NumMemSrcs.
+  // NumCcuPorts + p - 1 for crossbar master p >= 1. MemSrcWidth is the APMU's source field, pmu_pkg::SOURCE_ID_BITS:
+  // 4 bits with up to four cores, 5 with more (the NUM_CVA6 define). It must hold all NumMemSrcs (checked in
+  // host_domain): codes 0-14 with four cores, 0-18 with eight.
   localparam int unsigned NumMemSrcs  = NumCcuPorts + NrSlaves - 1;
-  localparam int unsigned MemSrcWidth = 4;
+  localparam int unsigned MemSrcWidth = pmu_pkg::SOURCE_ID_BITS;
 
   // ---- APMU event ports (host_domain: spu_o, the APMU's port_i). Element i is APMU port i + 1, the PORT_ID an event
   // select names (pmu_port_wrap): the cores' EVUs (ports 1..NumCVA6), the SPUs on the cores' CCU ports
   // (NumCVA6+1..2*NumCVA6, cva6_synth_wrap), the SPU on the LLC memory port (2*NumCVA6+1, host_domain) and the SPU on
   // the accelerator socket's DMA (2*NumCVA6+2, cva6_subsystem): ports 1-4, 5-8, 9 and 10 with four cores, 1-8, 9-16,
-  // 17 and 18 with eight. The highest port must fit pmu_pkg::PORT_ID_BITS (checked in host_domain): port 10 fits the
-  // 4 bits, 18 does not, so eight cores need the APMU's wider fields.
+  // 17 and 18 with eight. The highest port must fit pmu_pkg::PORT_ID_BITS (checked in host_domain and pmu_top): the
+  // 4 bits of up to four cores name ports 1-15, the 5 bits of more cores ports 1-31 (up to 14 cores).
   localparam int unsigned ApmuEvuIdx      = 0;
   localparam int unsigned ApmuCoreSpuIdx  = NumCVA6;
   localparam int unsigned ApmuMemSpuIdx   = 2 * NumCVA6;
   localparam int unsigned ApmuAccelSpuIdx = 2 * NumCVA6 + 1;
   localparam int unsigned ApmuNumPorts    = 2 * NumCVA6 + 2;
+
+  // ---- The cores' EVU configuration registers (cva6_synth_wrap, i_axi_lite_perfc): core c's at PerfcEvuBase +
+  // PerfcEvuBytesPerCore * c, four 4-byte EventID registers, then four 8-byte PC_TRACK registers. The CPUs reach them
+  // through the AXI-lite crossbar (axi_lite_subsystem) and the APMU's processing element as its system memory
+  // (host_domain, pmu_top MEMORY_BASE_ADDR / MEMORY_LENGTH), both through one window of PerfcEvuLength bytes: every
+  // core's registers rounded up to a power of two, at least 0x100. 0x100 with four cores (0xC0 of registers), 0x200
+  // with eight (0x180; cva6_synth_wrap checks that the window covers its registers).
+  localparam logic [31:0] PerfcEvuBase         = 32'h1060_6000;
+  localparam int unsigned PerfcEvuBytesPerCore = 4 * ariane_pkg::NumPerfEvents + 8 * ariane_pkg::NumPCMilesRegs;
+  localparam int unsigned PerfcEvuLength       = (NumCVA6 * PerfcEvuBytesPerCore <= 32'h100) ? 32'h100
+                                                 : 2**$clog2(NumCVA6 * PerfcEvuBytesPerCore);
 
   /// Number of synchronization registers to insert on the async pointers
   localparam CdcSyncStages   = 3;

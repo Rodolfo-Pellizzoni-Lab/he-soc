@@ -1141,7 +1141,13 @@ package ariane_pkg;
 
     //Config imported from the PMU_PKG inside APMU/src
     localparam EVENT_ID_BITS                = 4;
+    // pmu_pkg's rule: 5 source bits with more than four cores (the global NUM_CVA6 define), else 4. cva6_synth_wrap
+    // checks that this pmu_event_t is as wide as pmu_pkg's, which the cores' EVU events are connected to.
+`ifdef NUM_CVA6
+    localparam SOURCE_ID_BITS               = ((`NUM_CVA6) > 4) ? 5 : 4;
+`else
     localparam SOURCE_ID_BITS               = 4;
+`endif
     localparam int unsigned EVENT_INFO_BITS = 17;
 
     typedef logic [EVENT_ID_BITS-1:0]   event_id_t;

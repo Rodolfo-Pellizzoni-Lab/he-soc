@@ -15,9 +15,22 @@ package pmu_pkg;
     // Event Selection Config Register
     localparam EVENT_ID_BITS                = 4; // Previous Mohammed Set
     // localparam EVENT_ID_BITS                = 5; // Emon Set
+    // The source and port fields follow the SoC's core count, the global NUM_CVA6 define that also sets
+    // ariane_soc::NumCVA6 (hardware/include/ariane_soc_pkg.sv; four cores without it): 4 bits each with up to four
+    // cores, 5 bits with more. The SoC has NumCVA6 + 11 sources on the LLC memory port and 2*NumCVA6 + 2 ports
+    // (host_domain checks that they fit). The pad takes the rest of the 32-bit register, 8 bits or 4:
+    //                   pad      port val  port mask  src val  src mask  ev val  ev mask
+    //   4-bit fields    [31:24]  [23:20]   [19:16]    [15:12]  [11:8]    [7:4]   [3:0]
+    //   5-bit fields    [31:28]  [27:23]   [22:18]    [17:13]  [12:8]    [7:4]   [3:0]
+    // CVA6 keeps a copy of pmu_event_t with the same rule (ariane_pkg; cva6_synth_wrap checks that the two match).
+`ifdef NUM_CVA6
+    localparam SOURCE_ID_BITS               = ((`NUM_CVA6) > 4) ? 5 : 4;
+    localparam PORT_ID_BITS                 = ((`NUM_CVA6) > 4) ? 5 : 4;
+`else
     localparam SOURCE_ID_BITS               = 4;
-    localparam PORT_ID_BITS                 = 4; 
-    localparam EVENT_SEL_PAD_BITS           = 8;
+    localparam PORT_ID_BITS                 = 4;
+`endif
+    localparam EVENT_SEL_PAD_BITS           = 32 - 2*(EVENT_ID_BITS + SOURCE_ID_BITS + PORT_ID_BITS);
     localparam int unsigned EVENT_INFO_BITS = 17;
 
     typedef logic [EVENT_ID_BITS-1:0]   event_id_t;
@@ -37,6 +50,7 @@ package pmu_pkg;
 
     // Must be a multiple of 8!
     // For AXI-lite interface to work!
+    // 32 with either field width (EVENT_SEL_PAD_BITS above; pmu_top checks it).
     localparam EVENT_SEL_CFG_WIDTH = (
                                       EVENT_ID_BITS + 
                                       SOURCE_ID_BITS + 

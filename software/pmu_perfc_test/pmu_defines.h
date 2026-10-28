@@ -9,15 +9,16 @@
 //Defines for Configuring the EventSelCfg Register of the PMU Counters.
 // These counters monitor the Events out of the CVA6 Performance Counters.
 // We Follow PortID-1 for Core 0 and PortID-2 for Core 1.
-// The configuration is written as this template [PortID Value, PortID Mask, SourceID Value, SourceID Mask, EventID Value, EventID Mask]
-#define PERF_COUNTER_EVU_C0_EV0     0x1F0011
-#define PERF_COUNTER_EVU_C0_EV1     0x1F0022
-#define PERF_COUNTER_EVU_C0_EV2     0x1F0044
-#define PERF_COUNTER_EVU_C0_EV3     0x1F0088
-#define PERF_COUNTER_EVU_C1_EV0     0x2F0011
-#define PERF_COUNTER_EVU_C1_EV1     0x2F0022
-#define PERF_COUNTER_EVU_C1_EV2     0x2F0044
-#define PERF_COUNTER_EVU_C1_EV3     0x2F0088
+// The configuration is written as this template [PortID Value, PortID Mask, SourceID Value, SourceID Mask, EventID Value,
+// EventID Mask], laid out for the core count by EVU_SLOT_SEL (../quad_boot/pmu_defines.h)
+#define PERF_COUNTER_EVU_C0_EV0     EVU_SLOT_SEL(0, 0)
+#define PERF_COUNTER_EVU_C0_EV1     EVU_SLOT_SEL(0, 1)
+#define PERF_COUNTER_EVU_C0_EV2     EVU_SLOT_SEL(0, 2)
+#define PERF_COUNTER_EVU_C0_EV3     EVU_SLOT_SEL(0, 3)
+#define PERF_COUNTER_EVU_C1_EV0     EVU_SLOT_SEL(1, 0)
+#define PERF_COUNTER_EVU_C1_EV1     EVU_SLOT_SEL(1, 1)
+#define PERF_COUNTER_EVU_C1_EV2     EVU_SLOT_SEL(1, 2)
+#define PERF_COUNTER_EVU_C1_EV3     EVU_SLOT_SEL(1, 3)
 
  
 //Defines for Configuring Performance Counter Event IDs to Monitor using the Performance Counters Event Unit inside the
@@ -47,12 +48,13 @@
 //Defines for Configuring the EventSelCfg Register of the PMU Counters.
 // These counters monitor the PC Milestones of the CVA6 Performance Counters.
 // We Follow PortID-1 for Core 0 and PortID-2 for Core 1; event mask 0x8 is slot 3, whose event ID is EID3.
-// The configuration is written as this template [PortID Value, PortID Mask, SourceID Value, SourceID Mask, EventID Value, EventID Mask]
+// The configuration is written as this template [PortID Value, PortID Mask, SourceID Value, SourceID Mask, EventID Value,
+// EventID Mask], laid out for the core count by EVU_SLOT_SEL (../quad_boot/pmu_defines.h)
 // PLEASE NOTE TO CHECK THE VALUE OF THE EVENT ID AND CHECK THAT NO OTHER EVENT IS CONFIGURED FOR THIS ID.
 // In THIS CASE, We look to set the last event ID as the PC Milestones Event ID. 
 // Please make sure to follow it during Event Selection Configuration of PMU Counters as well.
-#define PC_MILESTONE_C0             0x1F0088
-#define PC_MILESTONE_C1             0x2F0088
+#define PC_MILESTONE_C0             EVU_SLOT_SEL(0, 3)
+#define PC_MILESTONE_C1             EVU_SLOT_SEL(1, 3)
 
 //Defines for Base Addresses in AXI_LITE_SLAVE Module presnet inside CVA6_SYNTH_WRAP.
 //These enable you to write the EventID or PCMilestone Configuration that is to be monitored. The EventID registers are

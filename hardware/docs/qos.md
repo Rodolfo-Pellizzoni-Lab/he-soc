@@ -51,7 +51,9 @@ port width from `SOC_NUM_CORES`; with `NUM_CVA6=8` the RCID starts at bit 4.
 
 (`QosUserLsb` is `ariane_soc::CcuSrcWidth`, `$clog2(NumCcuPorts)` with `NumCcuPorts` the cores plus the two DMA
 ports: the CCU writes its port index into the low bits, see `hardware/accel/README.md`. The same bits tell the APMU's
-SPU on the LLC memory port the source of a request, see `hardware/ip_list/apmu/README.md`.)
+SPU on the LLC memory port the source of a request; the APMU's source field, which numbers the other crossbar masters
+too, is wider: 4 bits with up to four cores, 5 with more (`pmu_pkg::SOURCE_ID_BITS`), see
+`hardware/ip_list/apmu/README.md`.)
 
 Use `ariane_axi_soc::qos_tag(user)` to decode a SoC user field into an `ariane_pkg::qos_tag_t {at, mcid, rcid}`,
 and `ariane_axi_soc::qos_user(tag)` to build one.
@@ -63,15 +65,16 @@ and `ariane_axi_soc::qos_user(tag)` to build one.
 | host xbar, CDC FIFOs, ID remapper, AMO/LR-SC adapters | pass `user` through |
 | LLC (`ip_list/axi_llc`) | allocates by the tag's RCID and AT (next section). Refills and evictions carry the tag of the request that caused them (new descriptor field `a_x_user`); config-port flushes carry 0 |
 | DRAM / HyperRAM / peripherals | ignore it |
-| Accelerator socket (`hardware/accel`, CCU port 4) | tags each slot's DMA either with the user field the accelerator presents (the template: the tag of the hart that wrote START, so I/O is charged to the hart it works for) or with a tag the OS forces per slot in `TAG_POLICY` (`0x103F_0100 + 8*slot`); `LAST_USER` reads it back. `t_iotag` |
-| Other masters (debug module, iDMA, uDMA, cluster, the Xilinx Ethernet DMA on CCU port 5) | tag 0 (RCID 0, MCID 0) |
+| Accelerator socket (`hardware/accel`, CCU port `CcuAccelPort`: 4, 8 with eight cores) | tags each slot's DMA either with the user field the accelerator presents (the template: the tag of the hart that wrote START, so I/O is charged to the hart it works for) or with a tag the OS forces per slot in `TAG_POLICY` (`0x103F_0100 + 8*slot`); `LAST_USER` reads it back. `t_iotag` |
+| Other masters (debug module, iDMA, uDMA, cluster, the Xilinx Ethernet DMA on CCU port `CcuEthPort`: 5, 9 with eight cores) | tag 0 (RCID 0, MCID 0) |
 
 **The source-port bits also key LR/SC reservations.** Both `axi_riscv_atomics` adapters (L2 and L3,
-`host/cva6_subsystem.sv`) track reservations per `user[2:0]` (`AXI_USER_AS_ID`, one entry per CCU port) instead of per
-AXI ID. The core-side ID remapper (`cva6_axi_id_remap`, separate read and write tables) does not keep the LR's AR ID
-and the SC's AW ID equal when other transactions are in flight, so an ID-keyed table only worked by timing luck: on the
-VCU118 every SC to the uncached L2 failed while simulation (instant UART / L2 responses) passed. The address-based clear
-on any write is unchanged. Masters other than the cores share entry 0.
+`host/cva6_subsystem.sv`) track reservations per `user[QosUserLsb-1:0]` (`user[2:0]` with four cores, `user[3:0]` with
+eight; `AXI_USER_AS_ID`, one entry per CCU port) instead of per AXI ID. The core-side ID remapper (`cva6_axi_id_remap`,
+separate read and write tables) does not keep the LR's AR ID and the SC's AW ID equal when other transactions are in
+flight, so an ID-keyed table only worked by timing luck: on the VCU118 every SC to the uncached L2 failed while
+simulation (instant UART / L2 responses) passed. The address-based clear on any write is unchanged. Masters other than
+the cores share entry 0.
 
 ## LLC capacity controller (CBQRI)
 

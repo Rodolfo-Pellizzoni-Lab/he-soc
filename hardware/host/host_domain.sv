@@ -1025,8 +1025,9 @@ axi_spu_top #(
     //  .MEMORY_BASE_ADDR ( ariane_soc::L2SPMBase          ),
     //  .MEMORY_LENGTH    ( ariane_soc::L2SPMBase + ariane_soc::L2SPMLength        ),
     // // APMU Addresses and SPM configuration
-     .MEMORY_BASE_ADDR ( 32'h1060_6000),
-     .MEMORY_LENGTH    ( 32'h0000_0100),
+     // the cores' EVU registers, the window the CPUs use too (ariane_soc: 0x100 bytes with four cores, 0x200 with eight)
+     .MEMORY_BASE_ADDR ( ariane_soc::PerfcEvuBase     ),
+     .MEMORY_LENGTH    ( ariane_soc::PerfcEvuLength   ),
      .req_lite_t       ( ariane_axi_soc::req_lite_t     ),
      .resp_lite_t      ( ariane_axi_soc::resp_lite_t    ),
      .aw_chan_lite_t   ( ariane_axi_soc::aw_chan_lite_t ),

@@ -59,14 +59,14 @@ reusable AXI `typedef`/`assign` macros are in [`include/axi/`](./include/axi).
 
 ## In AlSaqr
 
-With *N* cores (APMU ports in brackets for four cores; the port map is `ariane_soc::Apmu*Idx`, the APMU README has
-the event selects):
+With *N* cores (APMU ports in brackets for four cores, then for eight; the port map is `ariane_soc::Apmu*Idx`, the
+APMU README has the event selects):
 
 | Instance | Where | APMU port | Source | `CAM_DEPTH` |
 |---|---|---|---|---|
-| `i_spu_core_llc` (`ace_spu_top`), one per core | `hardware/host/cva6_synth_wrap.sv`, between core *c* and its port of the coherence unit | *N*+1+*c* (5-8) | bit 0 of the core's AXI ID: it does not tell masters apart, the port is the core | 17 |
-| `i_spu_llc_mem` (`axi_spu_top`) | `hardware/host/host_domain.sv`, between the LLC's memory port and the slowdown regulator | 2*N*+1 (9) | `ExtSource`: `ariane_axi_soc::mem_src`, the master the request came from | 17 |
-| `i_spu_accel` (`axi_spu_top`) | `hardware/host/cva6_subsystem.sv`, on the accelerator socket's DMA master in front of its port of the coherence unit | 2*N*+2 (10) | `ExtSource`: the constant `ariane_soc::CcuAccelPort` (4), the code `i_spu_llc_mem` gives the socket's requests | 8 |
+| `i_spu_core_llc` (`ace_spu_top`), one per core | `hardware/host/cva6_synth_wrap.sv`, between core *c* and its port of the coherence unit | *N*+1+*c* (5-8; 9-16) | bit 0 of the core's AXI ID: it does not tell masters apart, the port is the core | 17 |
+| `i_spu_llc_mem` (`axi_spu_top`) | `hardware/host/host_domain.sv`, between the LLC's memory port and the slowdown regulator | 2*N*+1 (9; 17) | `ExtSource`: `ariane_axi_soc::mem_src`, the master the request came from | 17 |
+| `i_spu_accel` (`axi_spu_top`) | `hardware/host/cva6_subsystem.sv`, on the accelerator socket's DMA master in front of its port of the coherence unit | 2*N*+2 (10; 18) | `ExtSource`: the constant `ariane_soc::CcuAccelPort` (*N*: 4; 8), the code `i_spu_llc_mem` gives the socket's requests | 8 |
 
 All of them count DRAM addresses only (rule 1 of the same 2-rule map, `[HYAXIBase, HYAXIBase + HYAXILength)`) and run
 on the SoC clock. The cores' SPUs reach the APMU through a 4-entry CDC FIFO each, the other two directly. The socket's
@@ -75,6 +75,12 @@ Ethernet DMA, which has a port of its own. Each CAM holds one entry per outstand
 whatever the address, so `CAM_DEPTH` must be at least the master's reads (writes) in flight: a request that finds the
 CAM full still counts, but a response of its ID then goes uncounted. The socket has at most 4 requests in flight, reads
 and writes together, all with ID 0.
+
+An SPU's source (`SourceIDEnd - SourceIDStart + 1` bits) is zero-extended into the APMU's source field,
+`pmu_pkg::SOURCE_ID_BITS` bits, which follows the core count like the APMU's port field: 4 bits with up to four cores,
+5 with more (the `NUM_CVA6` define; the APMU README has both Event Sel layouts). The cores' SPUs have a 1-bit source,
+the other two `ariane_soc::MemSrcWidth` bits, which is `SOURCE_ID_BITS`; `axi_spu_top` reports a wider source in
+simulation.
 
 ## Simulation
 

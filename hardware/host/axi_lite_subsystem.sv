@@ -202,7 +202,8 @@ module axi_lite_subsystem
 
   localparam tlb_cfg_xbar_rule_t [FromHostTlbCfgXbarCfg.NoAddrRules-1:0]
       FromHostTlbCfgXbarAddrMap = '{
-    '{idx: 32'd7, start_addr: 32'h1060_6000, end_addr: 32'h1060_6100},  // PerfCountersEVU
+    // PerfCountersEVU, the cores' EVU registers: 0x1060_6000 up to 0x1060_6100 with four cores, 0x1060_6200 with eight
+    '{idx: 32'd7, start_addr: ariane_soc::PerfcEvuBase, end_addr: ariane_soc::PerfcEvuBase + ariane_soc::PerfcEvuLength},
     '{idx: 32'd6, start_addr: 32'h1060_5000, end_addr: 32'h1060_6000},  // Snooper
     '{idx: 32'd5, start_addr: 32'h1040_5000, end_addr: 32'h1060_5000},  // APMU IP
     '{idx: 32'd4, start_addr: 32'h1040_4000, end_addr: 32'h1040_5000},
