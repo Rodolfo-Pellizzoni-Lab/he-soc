@@ -12,7 +12,8 @@
 # define REGBYTES 4
 #endif
 
-# define NB_CORES 2
+# define NB_CORES 2        // the nc of thread_entry(): the harts the runtime starts by itself, 0 and 1 (mailbox);
+                           // harts 2 and up run only once the program wakes them (soc_wake_all(), soc_test.h)
 
 default_exc_handler:
   jal x0, sleep_loop //exc handler

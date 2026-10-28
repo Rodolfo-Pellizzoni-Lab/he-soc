@@ -14,6 +14,9 @@
  * Only the CVA6 cores run. The overflow->PLIC IRQ is pure hardware waking the
  * two parked CVA6 harts; the PMU's own Ibex core is NOT used. Once all four
  * cores have checked in, core 0 undoes the wake-up and starts the traffic.
+ * A quad-core program: on a SoC with more cores, cores 4 and up stay parked in
+ * the boot ROM, and the MEM_* selects (quad_boot/pmu_defines.h) number the
+ * ports as the quad-core SoC does (memory SPU = port 9).
  *
  * Why this stresses main memory (and thus the slowdown):
  *   - Core 0 first WIDENS the LLC cached region (APB SoC-ctrl reg): by default

@@ -2,7 +2,8 @@
 // overflows (counters 0/1 -> PLIC sources 156/157 on the S-mode contexts 5 and 7, the ones that wake a core parked in
 // the boot ROM's wfi). Cores 1-3 then say hello in turn and check in, and park instead of returning (a return would
 // end the test at that core's exit). Core 0 undoes the wake-up and returns the number of cores that did not check in
-// (TEST PASS/FAIL, software/soc_tests/include/soc_test.h).
+// (TEST PASS/FAIL, software/soc_tests/include/soc_test.h). On a SoC with more cores it still checks cores 0-3 only:
+// cores 4 and up stay parked in the boot ROM (soc_tests/t_smp wakes and checks every core).
 #include "encoding.h"
 #include <stdio.h>
 #include <stdlib.h>

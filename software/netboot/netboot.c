@@ -245,13 +245,13 @@ static long tftp_get(const char *name, uint8_t *dst, unsigned long max) {
   return (long)got;
 }
 
-// ---------------------------------------------------------------- go, all four harts
-// Hart 0 loads; the others follow it into the payload so that OpenSBI (and Linux) get all four harts, like the JTAG
-// flow: they are still in the boot ROM, which jumps them to the address in the mailbox, set to enter_payload, once
-// jump() rings hart 1's mailbox doorbell and wakes harts 2 and 3 with the APMU interrupts (soc_wake_all, which waits
-// for them to check in here and then takes the wake-up back). Every hart arrives in OpenSBI with a0 = hart id and
-// a1 = the DTB; hart 0 goes first and is the cold-boot hart, the others wait for hart_go and a little longer
-// (OpenSBI parks warm harts until the cold boot).
+// ---------------------------------------------------------------- go, all harts
+// Hart 0 loads; the others follow it into the payload so that OpenSBI (and Linux) get all SOC_NUM_CORES harts (build
+// with -DSOC_NUM_CORES=<n> for an n-core SoC), like the JTAG flow: they are still in the boot ROM, which jumps them
+// to the address in the mailbox, set to enter_payload, once jump() rings hart 1's mailbox doorbell and wakes harts
+// 2 .. SOC_NUM_CORES-1 with the APMU interrupts (soc_wake_all, which waits for them to check in here and then takes
+// the wake-up back). Every hart arrives in OpenSBI with a0 = hart id and a1 = the DTB; hart 0 goes first and is the
+// cold-boot hart, the others wait for hart_go and a little longer (OpenSBI parks warm harts until the cold boot).
 static volatile uint32_t hart_go;
 static void __attribute__((noreturn, naked)) enter_payload(void) {
   __asm__ volatile(
@@ -278,7 +278,7 @@ static void __attribute__((noreturn, naked)) enter_payload(void) {
     "   jr   t0\n\t"
     :: "i"(DTB_ADDR), "i"(PAYLOAD_ADDR));
 }
-int thread_entry(int cid, int nc) {                                             // harts 1-3 (overrides the weak one)
+int thread_entry(int cid, int nc) {                                             // harts >= 1 (overrides the weak one)
   (void)nc;
   if (cid == 0) return 0;
   enter_payload();
@@ -288,7 +288,7 @@ static void __attribute__((noreturn)) jump(void) {
   xdma_reset(XDMA_RX); xdma_reset(XDMA_TX);
   REG32(0x10404000) = (uint32_t)(uintptr_t)enter_payload;                      // the boot ROM's harts jump here
   REG32(0x10404024) = 1;                                                       // hart 1: the mailbox doorbell
-  soc_wake_all();                                                              // harts 2 and 3: the APMU interrupts
+  soc_wake_all();                                                              // harts >= 2: the APMU interrupts
   uart_wait_tx_done();
   __asm__ volatile("fence");
   hart_go = 1;

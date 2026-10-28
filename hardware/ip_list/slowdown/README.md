@@ -297,13 +297,14 @@ See the reference tests (TEST PASS/FAIL and exit code as the soc_tests,
 - **`software/slowdown_qc/`** — 4 cores (2 read + 2 write), disjoint regions
   (> LLC on the board, 4 x 32 KB in RTL sim). Proves multi-core traffic *flows*
   correctly: every core comes up and finishes, and its main-memory read count
-  covers its cold misses (per-core attribution at SPU port 9).
+  covers its cold misses (per-core attribution at the memory SPU, APMU port 9 with
+  four cores).
 - **`software/slowdown_st/`** — single core, set-conflict and streaming traffic
   that keeps AR and AW busy for the in-RTL checker; checks the read and write-back
   counts its access pattern forces.
 - **`software/slowdown_bw/`** — single core. *Measures* what one main-memory access
   costs: a read stream, a write stream (and the write-back of its dirty lines) and
-  a pointer chase, each from flushed caches, with the port-9 requests and cycles
+  a pointer chase, each from flushed caches, with the memory SPU's requests and cycles
   per request of each phase. One core has one data-cache miss in flight, so all of
   them are bound by the miss latency (the chase's cycles per load include the
   injected latency), not by the throttle: they are not bandwidth figures.

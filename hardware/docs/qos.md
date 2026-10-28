@@ -108,16 +108,20 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
   It ORs with the SPM lock and the old AXI-ID partitioning (`SourceIDStart/End`, still there, default off).
 - **The DMA port shares core 0's old per-ID mask.** The old masks (16 bits each from `0x1040_1040`) are
   indexed by the AXI ID above the remapper's slot bits, `ID[7:2]`: the crossbar port, then the CCU source as far as it
-  fits. Index n is core n, but the ID holds only the source's low two bits (`ariane_soc::RemapSrcWidth`), so CCU
-  source 4, the DMA port that the accelerator socket and the Ethernet DMA share, uses index 0, **core 0's mask**. With
-  the old masks programmed, the DMA's LLC misses allocate in core 0's ways and evict core 0's lines, so a per-core
-  isolation result for core 0 includes the DMA's traffic. CBQRI is unaffected: it takes the RCID and AT from the user
-  field (`user[6:3]`, `user[11]`), which neither the remapper nor the CCU changes, so the socket's DMA allocates by the
-  RCID of its tag and the Ethernet DMA by RCID 0. The PMU benches that still program the old masks (`pmu_evu_bench`,
-  `pmu_evu_simple_sim`, and in alsaqr-software `pmu_mempol_synth`, `pmu_sdvb`, `pmu_sad_profile`) give each core four
-  ways this way. On bitstreams with the old remapper (2026-10-16 to -25) every core's refills used core 2's mask and
-  the DMA port's traffic core 3's, so the DMA port has never had a mask of its own. Giving it one would take the LLC
-  indexing the masks by the full source from the user field (`{ID[7:4], user[2:0]}`, 128 masks); that is not decided.
+  fits. The ID holds only the source's low two bits (`ariane_soc::RemapSrcWidth`), so index k serves every CCU source s
+  with s mod 4 = k: with four cores core k, and for k = 0 also CCU source 4, the DMA port that the accelerator socket
+  and the Ethernet DMA share; with eight cores cores k and k + 4, and for k = 0 also the DMA port (source 8). So the
+  DMA port always uses index 0, **core 0's mask**. With the old masks programmed, the DMA's LLC misses allocate in core
+  0's ways and evict core 0's lines, so a per-core isolation result for core 0 includes the DMA's traffic (and with
+  eight cores core k's includes core k + 4's). CBQRI is unaffected: it takes the RCID and AT from the user field
+  (`user[QosUserLsb +: 4]`, `user[QosUserLsb+8]`: `user[6:3]` and `user[11]` with four cores), which neither the
+  remapper nor the CCU changes, so the socket's DMA allocates by the RCID of its tag and the Ethernet DMA by RCID 0.
+  The PMU benches that still program the old masks (`pmu_evu_bench`, `pmu_evu_simple_sim`, and in alsaqr-software
+  `pmu_mempol_synth`, `pmu_sdvb`, `pmu_sad_profile`) give each of four cores four ways this way. On bitstreams with
+  the old remapper (2026-10-16 to -25) every core's refills used core 2's mask and the DMA port's traffic core 3's, so
+  the DMA port has never had a mask of its own. Giving it one would take the LLC indexing the masks by the full source
+  from the user field (`{ID[7:4], user[QosUserLsb-1:0]}`); the masks are kept as they are, and partitioning uses
+  CBQRI (decided 2026-10-27).
 - **Parameters.** `axi_llc_top` takes `QosRcidWidth` (0 turns the controller off), `QosRcidLsb`, `QosAtBit`
   and `QosCcOffset`.
 

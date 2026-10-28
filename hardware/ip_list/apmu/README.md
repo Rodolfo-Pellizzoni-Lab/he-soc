@@ -73,9 +73,10 @@ PE firmware; the firmware's linker scripts put its data at `DSPM + 0x200`, where
 
 A counter overflows when its bit 30 sets (counting past `0x3FFFFFFF`, or a write of `0x40000000`). With
 `overflow_intr_en` (Event Info bit 24, `OVERFLOW_EN`) set, counter *i* raises PLIC source 156 + *i* (`pmu_top.sv`,
-`hardware/host/ariane_peripherals.sv`). Harts 2 and 3 wait in a WFI of the boot ROM: software wakes them by enabling
-sources 156 and 157 on their S-mode PLIC contexts (5 and 7) and overflowing counters 0 and 1 (`soc_wake_all()` in
-`software/soc_tests/include/soc_test.h`).
+`hardware/host/ariane_peripherals.sv`). Harts 2 and up wait in a WFI of the boot ROM: software wakes hart *h* by
+enabling source 156 + *h* - 2 on its S-mode PLIC context 2*h* + 1 and overflowing counter *h* - 2, so sources 156 and
+157 on contexts 5 and 7 with four cores (`soc_wake_all()` in `software/soc_tests/include/soc_test.h`, which also
+takes the wake-up back).
 
 ### Event select and sources (AlSaqr)
 

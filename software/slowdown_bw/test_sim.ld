@@ -41,7 +41,7 @@ SECTIONS
     __cluster_code_end = . ;
     } > L3
 
-  /* cleared by crt.S on hart 0 (_bss_start.._bss_end) */
+  /* cleared by crt.S on hart 0 in board builds (_bss_start.._bss_end) */
   .sbss : {
     . = ALIGN(8);
     _bss_start = .;
@@ -69,10 +69,11 @@ SECTIONS
 
   /* one 8 KB slice (stack + TLS) per hart, hart 0's at the top (crt.S) */
   __stack_size = 0x2000;
+  __stack_harts = 8;            /* enough for the eight-core SoC too; crt.S parks a hart without a slice */
   .stack :
   {
     . = ALIGN(16);
-    . = . + 4 * __stack_size;
+    . = . + __stack_harts * __stack_size;
     _stack = .;
   } > L3
 

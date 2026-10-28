@@ -9,8 +9,8 @@
 // printf (software/inc/string_lib) knows only %s %d %u %x %X %c, all 32-bit: print a 64-bit value with
 // printf("%08x%08x", H64(v)).
 // Multi-core: soc_wake_all() wakes cores 2 .. SOC_NUM_CORES-1 (core 1 is woken by the startup code) and returns once
-// they have started; soc_barrier(n) is a sense-free counter barrier in the uncached on-chip SRAM. Override
-// thread_entry() to run code on cores 1 and up.
+// they have started, with the mask of those that did; soc_barrier(n) is a sense-free counter barrier in the uncached
+// on-chip SRAM. Override thread_entry() to run code on cores 1 and up.
 #ifndef SOC_TEST_H
 #define SOC_TEST_H
 #include <stdint.h>
@@ -76,8 +76,10 @@ static inline int soc_test_end(void) {
                       (SOC_NUM_CORES + 1) <= 16 ? 4 : 5)
 #define SOC_PLIC_BASE 0x0C000000UL
 #define SOC_WAKE_CYCLES 200000                                   // bound on the wait for the woken cores to start
+#define SOC_WAKE_MASK ((uint32_t)((1ull << SOC_NUM_CORES) - 1) & ~3u)   // the harts it wakes: 2 .. SOC_NUM_CORES-1
 extern volatile uint32_t harts_up;                               // start-up code: one bit per hart that has started
-static inline void soc_wake_all(void) {
+// returns the harts of SOC_WAKE_MASK that started within SOC_WAKE_CYCLES: CHECK(soc_wake_all() == SOC_WAKE_MASK)
+static inline uint32_t soc_wake_all(void) {
   for (int h = 2; h < SOC_NUM_CORES; h++) {
     int id = 156 + (h - 2), ctx = 2 * h + 1, k = h - 2;
     REG32(SOC_PLIC_BASE + id * 4) = 1;                                          // priority of the APMU IRQ
@@ -90,9 +92,9 @@ static inline void soc_wake_all(void) {
   // SEIP up (every WFI falls through). Counters first, while OVERFLOW_EN is still set (cleared first, it freezes the
   // line high); then a claim clears the pending bit, with the source enabled again for it (the ROM's write to enable
   // word 0 clears the whole context on this PLIC).
-  const uint32_t woken = (uint32_t)((1ull << SOC_NUM_CORES) - 1) & ~3u;         // harts 2 .. SOC_NUM_CORES-1
   uint64_t t0 = soc_cycles();
-  while ((harts_up & woken) != woken && soc_cycles() - t0 < SOC_WAKE_CYCLES) __asm__ volatile("nop");
+  while ((harts_up & SOC_WAKE_MASK) != SOC_WAKE_MASK && soc_cycles() - t0 < SOC_WAKE_CYCLES) __asm__ volatile("nop");
+  const uint32_t up = harts_up & SOC_WAKE_MASK;
   for (int k = 0; k < SOC_NUM_CORES - 2; k++) REG32(COUNTER_BASE_ADDR + k * COUNTER_BUNDLE_SIZE) = 0;
   for (int k = 0; k < SOC_NUM_CORES - 2; k++) REG32(EVENT_INFO_BASE_ADDR + k * COUNTER_BUNDLE_SIZE) = 0;
   for (int h = 2; h < SOC_NUM_CORES; h++) {
@@ -106,6 +108,7 @@ static inline void soc_wake_all(void) {
     if (got) REG32(SOC_PLIC_BASE + 0x200004 + 0x1000 * ctx) = got;              // complete
     REG32(SOC_PLIC_BASE + 0x2000 + 0x80 * ctx + (id / 32) * 4) = 0;
   }
+  return up;
 }
 
 SOC_SRAM static volatile uint64_t soc_barrier_count;

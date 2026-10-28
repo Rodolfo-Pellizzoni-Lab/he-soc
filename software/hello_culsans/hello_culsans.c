@@ -7,7 +7,8 @@
 
 // Cores 0 and 1 (core 1 is woken by the startup code) each say hello and read misa. Core 1 then parks, so only core 0
 // ends the test: it waits for core 1 and returns the number of failed checks (core 1 came up, both have the
-// hypervisor extension), as the soc_tests do (software/soc_tests/include/soc_test.h).
+// hypervisor extension), as the soc_tests do (software/soc_tests/include/soc_test.h). Any core count: cores 2 and up
+// stay parked in the boot ROM.
 #ifdef FPGA_EMULATION
 #define WAIT_MAX 100000000ULL   // cycles core 0 waits for core 1 (2 s at 50 MHz)
 #else
