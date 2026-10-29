@@ -5,12 +5,18 @@
 //     (ways 0-7 / 8-15) the victims stay in the LLC: reading them again causes no LLC read miss (SoC control LLC
 //     miss counter). With shared masks (RCIDs 10 / 11) the aggressors evict them: 8 more misses
 //  3. code vs data: RCID 3 with data mask ways 0-3 and code mask ways 4-7 runs code that was never fetched
-//  4. 4 cores, RCIDs 4-7 with disjoint 4-way data masks, write and read 16 lines each in one shared LLC set
+//  4. every core (NC), RCIDs 4 .. 3 + NC with disjoint 16 / NC-way data masks, write and read 64 / NC lines each in
+//     one shared LLC set (4 cores: RCIDs 4-7, 4 ways and 16 lines each)
 // The LLC checks every refill against the mask of its (RCID, AT) in simulation; sim_status(run_id, qos=true)
 // shows the "llc_alloc" lines (ways used per RCID/AT) and the check summaries.
 #include "soc_test.h"
 
-#define NC        4
+#define NC        SOC_NUM_CORES          // every core takes part in 4. (built with -DSOC_NUM_CORES=<n> for an n-core SoC)
+#define NC_WAYS   (16 / NC)              // 4.: ways per core
+#define NC_LINES  (64 / NC)              // 4.: lines per core (64 in all: the last one ends inside the LLC window)
+#if 16 % NC || 4 + NC > 16
+#error "t_cbqri: 4. needs a core count that divides the 16 ways, and RCIDs 4 .. 3 + NC below 16"
+#endif
 #define CC        0x10401800UL           // LLC CBQRI capacity controller
 #define CC_CAPS   0x00
 #define CC_MON    0x08
@@ -92,8 +98,8 @@ static void stress(int c) {
   SRMCFG_W(4 + c);
   uint64_t s = 0;
   for (int pass = 0; pass < 3; pass++) {
-    for (int j = 0; j < 16; j++) {
-      volatile uint64_t *p = (volatile uint64_t *)(REGION + 0x80 + (c * 16 + j) * SET_STEP);
+    for (int j = 0; j < NC_LINES; j++) {
+      volatile uint64_t *p = (volatile uint64_t *)(REGION + 0x80 + (c * NC_LINES + j) * SET_STEP);
       if (pass == 0) *p = ((uint64_t)c << 32) | j;
       else           s += *p;
     }
@@ -155,15 +161,15 @@ int main(void) {
   cold_code();
   SRMCFG_W(0);
 
-  // 4. four cores, disjoint data masks, one shared LLC set
-  for (int c = 0; c < NC; c++) set_limit(4 + c, 0, 0xFu << (4 * c));
+  // 4. every core, disjoint data masks, one shared LLC set
+  for (int c = 0; c < NC; c++) set_limit(4 + c, 0, ((1u << NC_WAYS) - 1) << (NC_WAYS * c));
   soc_wake_all();
   soc_barrier(NC, 1);
   stress(0);
   soc_barrier(NC, 2);
   SRMCFG_W(0);
   for (int c = 0; c < NC; c++) {
-    uint64_t want = 2 * (16 * ((uint64_t)c << 32) + 120);
+    uint64_t want = 2 * (NC_LINES * ((uint64_t)c << 32) + NC_LINES * (NC_LINES - 1) / 2);
     CHECK(stress_sum[c] == want, "core %d read back %08x%08x", c, H64(stress_sum[c]));
   }
   return soc_test_end();
