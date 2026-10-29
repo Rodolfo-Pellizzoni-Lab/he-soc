@@ -407,7 +407,12 @@ int sprintf(char* str, const char* fmt, ...)
   return str - str0;
 }
 
-void* memcpy(void* dest, const void* src, size_t len)
+// At -O3 GCC turns the byte loops below into calls of memcpy / memset, so the unaligned case called itself until
+// the stack had overwritten memory (a memset of 300 bytes at an odd address in the netboot loader's DHCP): keep
+// them loops.
+#define NO_LIBCALL __attribute__((optimize("no-tree-loop-distribute-patterns")))
+
+NO_LIBCALL void* memcpy(void* dest, const void* src, size_t len)
 {
   if ((((uintptr_t)dest | (uintptr_t)src | len) & (sizeof(uintptr_t)-1)) == 0) {
     const uintptr_t* s = src;
@@ -423,7 +428,7 @@ void* memcpy(void* dest, const void* src, size_t len)
   return dest;
 }
 
-void* memset(void* dest, int byte, size_t len)
+NO_LIBCALL void* memset(void* dest, int byte, size_t len)
 {
   if ((((uintptr_t)dest | len) & (sizeof(uintptr_t)-1)) == 0) {
     uintptr_t word = byte & 0xFF;
