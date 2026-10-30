@@ -157,7 +157,11 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
   - At the **LLC input**, a request must carry a tag its source core issued for that 64-byte line, or, for
     CCU write-backs, a tag another core issued for that line.
   - At the **LLC output**, a refill must carry the user field of a recent LLC request to that line. An
-    eviction must carry the user field of a recent request to that set.
+    eviction must carry the user field of a recent request to that set. A write-back of an LLC flush has no
+    requester: it carries user field 0 and AXI ID 0, so the memory SPU charges it to source 0, core 0's code
+    (`hardware/ip_list/apmu/README.md`). The LLC isolates its slave port while it flushes, so every eviction in that
+    window is a flush write-back: each must carry user field 0, uses up one of the LLC's `evict_flush` events (one
+    per line a flush writes back), and counts as `flush` if it matches no recent request.
 - **Allocation checker** (`axi_llc_hit_miss`): every refill must land in a way of its (RCID, AT) mask.
 
 `sim_status(run_id, qos=true)` shows the checkers' summaries. It also lists per-RCID allocation counts and the

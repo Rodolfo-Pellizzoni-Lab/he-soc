@@ -8,7 +8,11 @@
 //                  dirty data snooped from that core carries the requester's tag); a user field of 0 that matches
 //                  no core request counts as "other" (masters other than the cores tag 0). Anything else is an error.
 //   Role "llc_out" at the LLC memory port: a refill (AR) must carry the user field of a recent LLC request to the same
-//                  line, an eviction (AW) that of a recent request to the same set (the request that caused it).
+//                  line, an eviction (AW) that of a recent request to the same set (the request that caused it). A
+//                  write-back of an LLC flush has no requester and carries user field 0. The LLC announces each one
+//                  (llc_flush_evict_i, its evict_flush event: one pulse per line a flush writes back) and isolates its
+//                  slave port while it flushes, so while announcements are left every AW is a flush write-back: it uses
+//                  one up and must carry user field 0, and if it matches no recent request it counts as "flush".
 //
 // At the end every instance prints "[QOS] check <name>: <n> ok ... <k> errors" and, for llc_in / llc_out, one count
 // line per user value "[QOS] <name> src=.. at=.. rcid=.. mcid=.. ar=.. aw=..". The first 10 errors are printed as
@@ -52,7 +56,9 @@ module qos_monitor #(
   input resp_t resp_i,
   // role "core": the hart's srmcfg fields
   input logic [ariane_pkg::QOS_RCID_WIDTH-1:0] csr_rcid_i = '0,
-  input logic [ariane_pkg::QOS_MCID_WIDTH-1:0] csr_mcid_i = '0
+  input logic [ariane_pkg::QOS_MCID_WIDTH-1:0] csr_mcid_i = '0,
+  // role "llc_out": the LLC is writing a dirty line back for a flush (its evict_flush event)
+  input logic                                  llc_flush_evict_i = 1'b0
 );
   // pragma translate_off
 `ifndef SYNTHESIS
@@ -63,9 +69,11 @@ module qos_monitor #(
   int unsigned ar_n [int unsigned];
   int unsigned aw_n [int unsigned];
   int unsigned n_ok, n_ccu, n_other, n_evict, n_err;
+  int unsigned n_flush, flush_pend;       // llc_out: flush write-backs that matched no recent request; flush
+                                          // write-backs announced, not seen yet
   int unsigned sock_tags[int unsigned];   // llc_in: user fields seen from the CCU's DMA ports (src >= NumCVA6)
 
-  initial begin n_ok = 0; n_ccu = 0; n_other = 0; n_evict = 0; n_err = 0; end
+  initial begin n_ok = 0; n_ccu = 0; n_other = 0; n_evict = 0; n_err = 0; n_flush = 0; flush_pend = 0; end
 
   function automatic int unsigned user_of(logic [63:0] u);
     return int'(u[UserW-1:0]);
@@ -86,15 +94,17 @@ module qos_monitor #(
   task automatic error(int unsigned what, longint unsigned addr, int unsigned u);
     n_err++;
     if (n_err <= 10)
-      $display("[QOS] ERROR %s %s addr=0x%0h src=%0d at=%0d rcid=%0d mcid=%0d: %s", Name, (what % 2) ? "aw" : "ar",
-               addr, f_src(u), f_at(u), f_rcid(u), f_mcid(u),
-               (what < 2) ? "no core issued this tag for this line" : "no recent LLC request with this user field");
+      $display("[QOS] ERROR %s %s addr=0x%0h src=%0d at=%0d rcid=%0d mcid=%0d: %s", Name,
+               (what % 2 || what == 4) ? "aw" : "ar", addr, f_src(u), f_at(u), f_rcid(u), f_mcid(u),
+               (what < 2) ? "no core issued this tag for this line" :
+               (what == 4) ? "a write-back while the LLC flushes, not user field 0" :
+                             "no recent LLC request with this user field");
   endtask
 
   task automatic observe(bit is_w, longint unsigned addr, int unsigned u);
     longint unsigned line, set, key;
     int unsigned     src, tag;
-    bit              found;
+    bit              found, flush;
     hist_t           h;
     line  = addr >> LineBits;
     set   = line & ((64'd1 << SetBits) - 1);
@@ -130,8 +140,12 @@ module qos_monitor #(
       h = llc_set.exists(set) ? llc_set[set] : '0;
       llc_set[set] = push(h, u);
     end else begin
-      if (llc_line.exists(line) && has(llc_line[line], u)) n_ok++;
+      flush = is_w && flush_pend > 0;
+      if (flush) flush_pend--;
+      if (flush && u != 0) error(4, addr, u);
+      else if (llc_line.exists(line) && has(llc_line[line], u)) n_ok++;
       else if (is_w && llc_set.exists(set) && has(llc_set[set], u)) n_evict++;
+      else if (flush) n_flush++;
       else error(is_w ? 3 : 2, addr, u);
     end
   endtask
@@ -160,6 +174,7 @@ module qos_monitor #(
     end
     if (rst_ni) begin
       if (Role == "llc_out") begin
+        if (llc_flush_evict_i) flush_pend++;
         // the LLC's bypass path has no register: a bypassed request is at the output in the cycle it enters, and
         // this instance may sample it before the "llc_in" instance has recorded it. Check output requests one
         // cycle later.
@@ -174,7 +189,7 @@ module qos_monitor #(
         if (req_i.ar_valid && resp_i.ar_ready) observe(1'b0, longint'(req_i.ar.addr), user_of(64'(req_i.ar.user)));
         if (req_i.aw_valid && resp_i.aw_ready) observe(1'b1, longint'(req_i.aw.addr), user_of(64'(req_i.aw.user)));
       end
-    end
+    end else flush_pend = 0;   // a reset drops a flush write-back the LLC has announced
   end
 
   final begin
@@ -200,8 +215,11 @@ module qos_monitor #(
         k_at   = (kk >> (SrcBits + ariane_pkg::QOS_RCID_WIDTH + ariane_pkg::QOS_MCID_WIDTH)) % 2;
         $display("[QOS] %s socket user=0x%0h src=%0d rcid=%0d mcid=%0d at=%0d: %0d requests", Name, kk, k_src, k_rcid, k_mcid, k_at, sock_tags[k]);
       end
-    end else
+    end else if (n_flush == 0)
       $display("[QOS] check %s: %0d ok, %0d evict, %0d errors%s", Name, n_ok, n_evict, n_err, n_err ? " ERROR" : "");
+    else
+      $display("[QOS] check %s: %0d ok, %0d evict, %0d flush, %0d errors%s", Name, n_ok, n_evict, n_flush, n_err,
+               n_err ? " ERROR" : "");
   end
 `endif
   // pragma translate_on

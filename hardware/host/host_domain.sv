@@ -722,10 +722,11 @@ module host_domain
      .req_t  ( ariane_axi_soc::req_slv_mem_t  ),
      .resp_t ( ariane_axi_soc::resp_slv_mem_t )
    ) i_qos_mon_llc_out (
-     .clk_i  ( s_soc_clk       ),
-     .rst_ni ( s_synch_soc_rst ),
-     .req_i  ( axi_mem_req     ),
-     .resp_i ( axi_mem_res     )
+     .clk_i             ( s_soc_clk                      ),
+     .rst_ni            ( s_synch_soc_rst                ),
+     .req_i             ( axi_mem_req                    ),
+     .resp_i            ( axi_mem_res                    ),
+     .llc_flush_evict_i ( llc_events.evict_flush.active  )
    );
    `endif
 
