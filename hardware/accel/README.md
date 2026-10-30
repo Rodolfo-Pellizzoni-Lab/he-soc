@@ -73,6 +73,11 @@ Rules for the DMA master, from the CCU's snoop-data path: single-beat 64-bit req
 round-robin arbiter keeps a waiting request's slot until the grant, so the AXI request it becomes does not change
 before its handshake (until 2026-10-28 a slot earlier in the round-robin order could take a waiting request over,
 which changed or withdrew the AR/AW: an SPU counts such a request twice, and two writing slots could mix AW and W).
+The socket takes every R and B in the cycle the coherence unit offers it (buffered for the 4 requests it can have
+open) and hands them to the slots in request order: the coherence unit can answer a read issued after a write before
+that write's B, and the reverse, and until 2026-10-29 the socket was ready only for the response of its oldest open
+request, so a response it refused could hang every port of the coherence unit (unit test:
+`hardware/xsim/tests/run_accel_socket.sh`).
 
 **Monitoring.** The APMU's SPU `i_spu_accel` (`host/cva6_subsystem.sv`) sits on the socket's DMA master in front of its
 port of the coherence unit, as the cores' SPUs sit in front of theirs: APMU port `2*NumCVA6+2` (10 with four cores,
@@ -213,7 +218,7 @@ register: alsaqr-mcp `linux_boot` does).
 ## Files
 
 ```
-accel_socket.sv        AXI slave FSM, memory arbiter, axi_from_mem, irq OR
+accel_socket.sv        AXI slave FSM, memory arbiter, axi_from_mem and its R/B buffers, irq OR
 accel_slots.sv         GENERATED from slots.json (one instance per occupied slot)
 slots.json             registry: slot -> accelerator
 templates/             RTL / unit-test / C templates used by accel_add
@@ -221,6 +226,7 @@ tb/accel_tb.sv         generic unit testbench (register driver, stalling memory 
 <name>/<name>.sv       an accelerator (every .sv in the directory is compiled; *_pkg.sv first)
 <name>/accel_test.svh  its unit test (body of the testbench's initial block)
 ../../software/accel/<name>/<name>.c   its SoC test (prints TEST PASS / FAIL, exit code = failed checks)
+../xsim/tests/tb_accel_socket.sv     unit test of the socket's memory side (run_accel_socket.sh)
 ```
 
 The `Bender.yml` block between `# accel: begin` and `# accel: end` is generated too, so full builds

@@ -60,6 +60,8 @@ vsim2xsim.py    bender vsim Tcl -> one xvlog/xvhdl call per bender block (keeps 
 chain_dbg.sh    stall finder: debug snapshot, step to the stall, ptrace ranking of the spinning processes
 tools/comb_fix.py  mechanical rewrite of a combinational ring (section 2): comb_fix.py <file> <var> [<var> ...]
 sw/uint_compat.h   'typedef unsigned int uint' for the software build
+tests/          unit tests on a built work dir (XSIM_WORK): run_hpm.sh (perf_counters), run_accel_socket.sh
+                (accel_socket's memory side)
 ```
 
 ## 1. What hardware is simulated

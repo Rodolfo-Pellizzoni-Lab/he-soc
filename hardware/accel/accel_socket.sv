@@ -389,11 +389,54 @@ module accel_socket #(
     .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
     .data_i(sel_user), .push_i(push_r), .data_o(u_ar), .pop_i(afm_req.ar_valid && mst_resp_i.ar_ready));
 
+  // Responses. axi_from_mem takes them in request order only (it is ready for the R or the B of its oldest open request
+  // alone), but AXI orders them within a channel only, and the CCU does answer out of request order: its state machine
+  // can take a later AR before an earlier AW, a write to a line with a read in flight (a core's refill, say) waits for
+  // that read, and a read waits for an older read of its ID, a write does not. A refused R or B stays on the CCU's
+  // response path, which all its ports share and its state machine waits on: when the response the socket waits for
+  // needs that path (the write behind a core's refill), the whole SoC hangs. So the socket takes every R and B as it
+  // comes, into FIFOs that hold the responses of all MaxReq requests it can have open (never full), and axi_from_mem
+  // reads them from there in its own order. Fall-through: a response axi_from_mem is waiting for passes in the same
+  // cycle, as before.
+  typedef struct packed {
+    logic [63:0]    data;
+    axi_pkg::resp_t resp;
+  } r_buf_t;
+  r_buf_t         r_in, r_out;
+  axi_pkg::resp_t b_out;
+  logic           r_full, r_empty, b_full, b_empty;
+  axi_resp_t      afm_rsp;
+  axi_resp_t      afm_rsp_xc;   // xsim: shadow of afm_rsp
+  axi_req_t       mst_req_o_xc; // xsim: shadow of mst_req_o
+  assign r_in = '{data: mst_resp_i.r.data, resp: mst_resp_i.r.resp};
+  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq), .dtype(r_buf_t)) i_rsp_r (
+    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(r_full), .empty_o(r_empty), .usage_o(),
+    .data_i(r_in), .push_i(mst_resp_i.r_valid && !r_full), .data_o(r_out), .pop_i(afm_req.r_ready && !r_empty));
+  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq), .dtype(axi_pkg::resp_t)) i_rsp_b (
+    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(b_full), .empty_o(b_empty), .usage_o(),
+    .data_i(mst_resp_i.b.resp), .push_i(mst_resp_i.b_valid && !b_full), .data_o(b_out),
+    .pop_i(afm_req.b_ready && !b_empty));
+
   always_comb begin
-    mst_req_o         = afm_req;
-    mst_req_o.aw.user = $bits(mst_req_o.aw.user)'(u_aw);
-    mst_req_o.w.user  = $bits(mst_req_o.w.user)'(u_w);
-    mst_req_o.ar.user = $bits(mst_req_o.ar.user)'(u_ar);
+    afm_rsp_xc         = mst_resp_i;
+    afm_rsp_xc.r       = '0;
+    afm_rsp_xc.r.data  = r_out.data;
+    afm_rsp_xc.r.resp  = r_out.resp;
+    afm_rsp_xc.r_valid = !r_empty;
+    afm_rsp_xc.b       = '0;
+    afm_rsp_xc.b.resp  = b_out;
+    afm_rsp_xc.b_valid = !b_empty;
+    afm_rsp            = afm_rsp_xc; // xsim: assigned once
+  end
+
+  always_comb begin
+    mst_req_o_xc         = afm_req;
+    mst_req_o_xc.aw.user = $bits(mst_req_o.aw.user)'(u_aw);
+    mst_req_o_xc.w.user  = $bits(mst_req_o.w.user)'(u_w);
+    mst_req_o_xc.ar.user = $bits(mst_req_o.ar.user)'(u_ar);
+    mst_req_o_xc.r_ready = !r_full;
+    mst_req_o_xc.b_ready = !b_full;
+    mst_req_o            = mst_req_o_xc; // xsim: assigned once
   end
 
   axi_from_mem #(
@@ -418,7 +461,7 @@ module accel_socket #(
     .slv_aw_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
     .slv_ar_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
     .axi_req_o       ( afm_req      ),
-    .axi_rsp_i       ( mst_resp_i   )
+    .axi_rsp_i       ( afm_rsp      )
   );
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
