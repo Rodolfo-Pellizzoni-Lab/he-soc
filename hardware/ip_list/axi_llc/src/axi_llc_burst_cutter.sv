@@ -61,6 +61,9 @@ module axi_llc_burst_cutter #(
   addr_t         next_line_address; // address of the next line (tag included)
   addr_t         bytes_on_line;     // how many bytes are on this cache line
   axi_pkg::len_t beats_on_line;     // how many beats are on this cache line
+  // xsim: proc_cutter builds its outputs in these and assigns the ports once at its end (see the splitter)
+  chan_t         next_chan_o_xc;    // xsim: shadow of next_chan_o
+  desc_t         desc_o_xc;         // xsim: shadow of desc_o
   // addr decode signals
   logic                      rule_valid;
   logic [RuleIndexWidth-1:0] rule_index; // so that width matches decoder port
@@ -85,8 +88,8 @@ module axi_llc_burst_cutter #(
 
   always_comb begin : proc_cutter
     // Make sure the outputs are defined to a default.
-    next_chan_o         = curr_chan_i;
-    desc_o              = desc_t'{
+    next_chan_o_xc      = curr_chan_i;
+    desc_o_xc           = desc_t'{
       a_x_id:    curr_chan_i.id,
       a_x_addr:  curr_chan_i.addr,
       a_x_size:  curr_chan_i.size,
@@ -113,30 +116,32 @@ module axi_llc_burst_cutter #(
     // Are we making an SPM access?
     if (rule_valid) begin
       if (rule_index != '0) begin
-        desc_o.spm     = 1'b1;
-        desc_o.way_ind = indi_t'(1 << (rule_index - 1));
+        desc_o_xc.spm     = 1'b1;
+        desc_o_xc.way_ind = indi_t'(1 << (rule_index - 1));
       end
     end else begin
       // make it an spm access on decerror go always onto way 0
-      desc_o.spm     = 1'b1;
-      desc_o.way_ind = indi_t'(1 << 0);
-      desc_o.x_resp  = axi_pkg::RESP_SLVERR;
+      desc_o_xc.spm     = 1'b1;
+      desc_o_xc.way_ind = indi_t'(1 << 0);
+      desc_o_xc.x_resp  = axi_pkg::RESP_SLVERR;
     end
 
     // Do we have beats left on the next line?
     if(((beats_on_line - 1) < curr_chan_i.len) &&
         !(curr_chan_i.burst == axi_pkg::BURST_FIXED)) begin
       // in this case we have at least one beat on the next cache line.
-      next_chan_o.addr  = next_line_address;
-      next_chan_o.len   = curr_chan_i.len - beats_on_line;
-      desc_o.a_x_len    = beats_on_line - 1;
-      desc_o.x_last     = 1'b0;
+      next_chan_o_xc.addr = next_line_address;
+      next_chan_o_xc.len  = curr_chan_i.len - beats_on_line;
+      desc_o_xc.a_x_len   = beats_on_line - 1;
+      desc_o_xc.x_last    = 1'b0;
     end else begin // all remaining beats are on the current cacheline.
-      next_chan_o.addr  = addr_t'(0);
-      next_chan_o.len   = axi_pkg::len_t'(0);
-      desc_o.a_x_len    = curr_chan_i.len;
-      desc_o.x_last     = 1'b1;
+      next_chan_o_xc.addr = addr_t'(0);
+      next_chan_o_xc.len  = axi_pkg::len_t'(0);
+      desc_o_xc.a_x_len   = curr_chan_i.len;
+      desc_o_xc.x_last    = 1'b1;
     end
+    next_chan_o = next_chan_o_xc; // xsim: outputs assigned once
+    desc_o      = desc_o_xc;      // xsim: outputs assigned once
   end
 
   addr_decode #(

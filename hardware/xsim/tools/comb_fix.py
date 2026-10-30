@@ -28,10 +28,11 @@ out = []; i = 0; nblk = 0
 while i < len(L):
     l = L[i]
     if re.match(r'^\s*always_comb\s*(\(\*.*?\*\)\s*)?begin', l):
-        # find block end by begin/end nesting
+        # find block end by begin/end nesting (words in // comments do not count)
         depth = 0; j = i
         while True:
-            depth += len(re.findall(r'\bbegin\b', L[j])) - len(re.findall(r'\bend\b', L[j]))
+            code = L[j].split('//')[0]
+            depth += len(re.findall(r'\bbegin\b', code)) - len(re.findall(r'\bend\b', code))
             if depth == 0: break
             j += 1
         blk = L[i:j+1]
@@ -52,9 +53,10 @@ while i < len(L):
                     for mname in mem:
                         body = re.sub(r'\b' + p + r'(\[[^\]]*\])?\.' + mname + r'\b', lambda m: p + '_xc' + (m.group(1) or '') + '.' + mname, body)
                     tail = '\n'.join(f'      {p}.{mname} = {p}_xc.{mname};' for mname in sorted(mem))
-                # insert before the final 'end' of the block
-                body = body.rsplit('end', 1)
-                body = body[0] + tail + ' // xsim: outputs assigned once\n    end' + body[1]
+                # insert before the final 'end' of the block (the last one outside a // comment)
+                k = [m.start() for m in re.finditer(r'\bend\b', body)
+                     if '//' not in body[body.rfind('\n', 0, m.start()) + 1:m.start()]][-1]
+                body = body[:k] + tail + ' // xsim: outputs assigned once\n    end' + body[k + 3:]
         out.extend(body.split('\n')); i = j + 1
     else:
         out.append(l); i += 1
