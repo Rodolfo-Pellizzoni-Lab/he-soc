@@ -1,6 +1,8 @@
 // Unit test of host/axi_dram_timing.sv: an AXI master issues line reads and writes, a memory answers after a
 // fixed delay, and the test checks the cycle at which every beat and response comes out of the model.
-//   cd hardware/xsim/work && xvlog -sv -work work ../tb_axi_dram_timing.sv && xelab -s tb_dm tb_axi_dram_timing && xsim tb_dm -R
+//   cd hardware/xsim/work && xvlog -sv -work work ../tb_axi_dram_timing.sv &&
+//     xelab -s tb_dm tb_axi_dram_timing --timescale 1ns/1ps && xsim tb_dm -R
+//   (the SoC packages have no timescale of their own, so xelab needs one)
 `timescale 1ns/1ps
 module tb_axi_dram_timing;
   import ariane_axi_soc::*;
