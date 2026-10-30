@@ -147,6 +147,9 @@ they only worked through a latch data-vs-enable race that depended on placement 
   (memory in the SoC clock domain, answers within a cycle or two). The ideal path hid a zero-delay ring in the SPU
   (table above) that the jitter exposes.
 - Testbench: direct ELF preload (XSIM_L2_PRELOAD: L2 banks, plus the sim DRAM with XSIM_L3_FLOW) instead of JTAG SBA bit-banging; XSIM_L3_FLOW selects entry 0x8000_0000 / tohost 0x1C00_0000; XSIM_TICK prints a heartbeat every 10 µs for the watchdog.
+- `host/qos_monitor.sv` decodes user fields inline in its `final` block: in a statement with several function calls
+  that take a `foreach` index, xsim returns 0 from every call after the first (`$display(..., f_src(u), f_rcid(u), ...)`
+  printed rcid=0 mcid=0 for every tag). One call per statement, or the index copied to a variable first, is correct.
 - Left in the sources, off by default: bisection hooks used while hunting the rings (`XSIM_CUT_<inst>`, `XSIM_V_CLK/RST/IN` in host_domain, `XSIM_INIT_REGS`, `XSIM_FORCE_RESET/REGS`, `XSIM_LLC_DEBUG`, `XSIM_DMI_DEBUG`, ...).
 
 ### Real repo issues found on the way (not xsim artefacts)

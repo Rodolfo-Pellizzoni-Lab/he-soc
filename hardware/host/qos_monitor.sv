@@ -197,16 +197,24 @@ module qos_monitor #(
     if (Role != "core") begin
       foreach (ar_n[u]) keys[u] = 1;
       foreach (aw_n[u]) keys[u] = 1;
-      foreach (keys[u])
-        $display("[QOS] %s src=%0d at=%0d rcid=%0d mcid=%0d ar=%0d aw=%0d", Name, f_src(u), f_at(u), f_rcid(u),
-                 f_mcid(u), ar_n.exists(u) ? ar_n[u] : 0, aw_n.exists(u) ? aw_n[u] : 0);
+      foreach (keys[k]) begin   // fields decoded inline: with several function calls on a foreach index in one
+                                // statement, xsim returns 0 from all but the first (hardware/xsim/README.md)
+        int unsigned u, u_src, u_rcid, u_mcid, u_at;
+        u      = k;
+        u_src  = u % (1 << SrcBits);
+        u_rcid = (u >> SrcBits) % (1 << ariane_pkg::QOS_RCID_WIDTH);
+        u_mcid = (u >> (SrcBits + ariane_pkg::QOS_RCID_WIDTH)) % (1 << ariane_pkg::QOS_MCID_WIDTH);
+        u_at   = (u >> (SrcBits + ariane_pkg::QOS_RCID_WIDTH + ariane_pkg::QOS_MCID_WIDTH)) % 2;
+        $display("[QOS] %s src=%0d at=%0d rcid=%0d mcid=%0d ar=%0d aw=%0d", Name, u_src, u_at, u_rcid, u_mcid,
+                 ar_n.exists(u) ? ar_n[u] : 0, aw_n.exists(u) ? aw_n[u] : 0);
+      end
     end
     if (Role == "core")
       $display("[QOS] check %s%0d: %0d requests, %0d errors%s", Name, Core, n_ok, n_err, n_err ? " ERROR" : "");
     else if (Role == "llc_in") begin
       $display("[QOS] check %s: %0d ok, %0d ccu, %0d other, %0d errors%s", Name, n_ok, n_ccu, n_other, n_err,
                n_err ? " ERROR" : "");
-      foreach (sock_tags[k]) begin   // fields decoded inline: xsim mis-evaluates function calls in loop bodies
+      foreach (sock_tags[k]) begin   // fields decoded inline, as above
         int unsigned kk, k_src, k_rcid, k_mcid, k_at;
         kk     = k;
         k_src  = kk % (1 << SrcBits);
