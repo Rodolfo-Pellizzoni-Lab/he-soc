@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Unit test of accel/accel_socket.sv (tests/tb_accel_socket.sv) on a built work dir: XSIM_WORK=<dir>, whose core count
-# sets the user-field layout. Extra arguments go to xsim (e.g. -testplusarg TAGS, -sv_seed 7). SOCKET_SV=<file> tests
+# sets the user-field layout. Extra arguments go to xsim (e.g. -sv_seed 7). SOCKET_SV=<file> tests
 # another version of the socket (e.g. the one of an older commit, from git show).
 # The tb's accel_slots stands in for the real one, so the tb and the socket are compiled into a library of their own
 # (tb_sock) and the work library keeps the real ones for the SoC. The tb and the socket read the SoC's packages under

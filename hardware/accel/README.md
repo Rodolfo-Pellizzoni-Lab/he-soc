@@ -70,14 +70,21 @@ stores are posted) and reads the result after DONE / the interrupt.
 
 Rules for the DMA master, from the CCU's snoop-data path: single-beat 64-bit requests inside one 16-byte line
 (len 0, size 3), AXI ID 0. `axi_from_mem` in `accel_socket.sv` issues exactly that for the slots' memory ports. Its
-round-robin arbiter keeps a waiting request's slot until the grant, so the AXI request it becomes does not change
-before its handshake (until 2026-10-28 a slot earlier in the round-robin order could take a waiting request over,
-which changed or withdrew the AR/AW: an SPU counts such a request twice, and two writing slots could mix AW and W).
+round-robin arbiter keeps a waiting request's slot and tag until the grant, so the AXI request it becomes, user field
+included, does not change before its handshake (until 2026-10-28 a slot earlier in the round-robin order could take a
+waiting request over, which changed or withdrew the AR/AW: an SPU counts such a request twice, and two writing slots
+could mix AW and W).
 The socket takes every R and B in the cycle the coherence unit offers it (buffered for the 4 requests it can have
 open) and hands them to the slots in request order: the coherence unit can answer a read issued after a write before
 that write's B, and the reverse, and until 2026-10-29 the socket was ready only for the response of its oldest open
-request, so a response it refused could hang every port of the coherence unit (unit test:
-`hardware/xsim/tests/run_accel_socket.sh`).
+request, so a response it refused could hang every port of the coherence unit. Every AR, AW and W carries the tag of
+its own request: until 2026-10-30 the tags went through per-channel FIFOs, pushed at the grant and popped at each
+channel's handshake, and when a write's AW or W was taken before its grant (the spill registers in front of the
+coherence unit take each when they have room, which splits them once several writes are open) every later write
+carried the tag of the write before it on that channel, while `LAST_USER`, recorded at the grant, showed the right
+one. The unit test `hardware/xsim/tests/run_accel_socket.sh` covers these cases; run it on a 4-core and an 8-core
+work dir after any change to `accel_socket.sv`, since no SoC test reaches them: today's accelerators keep one request
+open.
 
 **Monitoring.** The APMU's SPU `i_spu_accel` (`host/cva6_subsystem.sv`) sits on the socket's DMA master in front of its
 port of the coherence unit, as the cores' SPUs sit in front of theirs: APMU port `2*NumCVA6+2` (10 with four cores,
@@ -119,7 +126,8 @@ accelerator's DMA is tagged too. The socket supports both ways of tagging I/O tr
   slot's DMA instead of whatever the accelerator presents: the device as its own QoS principal, the way an IOMMU's
   device context assigns IDs to a device. The accelerator still sees the requester on `reg_user_i`; it just cannot
   choose the tag. `LAST_USER` (`+4`) reads back what the last request carried, so software can verify either policy
-  from the CPU.
+  from the CPU. A `TAG_POLICY` write applies to the requests the socket offers after it: a request already waiting
+  for the coherence unit keeps the tag it started with.
 
 The socket is the trusted tagging point: an accelerator can only ask for a tag, and the policy register, which lives
 in the socket's own window, can override it. The CCU writes its port index into the low `QosUserLsb` bits of the
@@ -226,7 +234,7 @@ tb/accel_tb.sv         generic unit testbench (register driver, stalling memory 
 <name>/<name>.sv       an accelerator (every .sv in the directory is compiled; *_pkg.sv first)
 <name>/accel_test.svh  its unit test (body of the testbench's initial block)
 ../../software/accel/<name>/<name>.c   its SoC test (prints TEST PASS / FAIL, exit code = failed checks)
-../xsim/tests/tb_accel_socket.sv     unit test of the socket's memory side (run_accel_socket.sh)
+../xsim/tests/tb_accel_socket.sv     unit test of the socket's memory side and tag policy (run_accel_socket.sh)
 ```
 
 The `Bender.yml` block between `# accel: begin` and `# accel: end` is generated too, so full builds

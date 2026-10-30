@@ -287,7 +287,7 @@ module accel_socket #(
   // ------------------------------------------------------------------ memory side: round-robin over the slots
   localparam int unsigned MaxReq = 4;
   logic [SlotW-1:0] rr_q, sel, hold_sel_q;
-  logic             hold_q;
+  logic             hold_q, held;
   logic             dn_req, dn_gnt, dn_rvalid, dn_err;
   logic [63:0]      dn_rdata;
 
@@ -308,13 +308,14 @@ module accel_socket #(
   logic [$clog2(MaxReq)-1:0]    wp_q, rp_q;
 
   // The request on axi_from_mem becomes an AXI AR (or AW and W) whose payload and valid must not change before its
-  // handshake: while it waits for its grant, keep its slot (hold_q), also when a slot earlier in round-robin order
-  // asks meanwhile. Picked afresh every cycle, such a slot took over a waiting request: the AR/AW changed or was
-  // withdrawn (the APMU's SPU, which counts a request at its first valid cycle, would count it twice), and with two
-  // writing slots one slot's W could go out with the other's AW. A slot holds its request until it is granted (port
-  // contract), so the held slot still asks; should it not, the arbiter picks again rather than grant a slot that
-  // does not ask. The round-robin order moves on at each grant, as before.
-  assign sel    = (hold_q && m_req[hold_sel_q]) ? hold_sel_q : pick(m_req, rr_q);
+  // handshake: while it waits for its grant, keep its slot (hold_q) and its tag (hold_user_q, below), also when a
+  // slot earlier in round-robin order asks meanwhile. Picked afresh every cycle, such a slot took over a waiting
+  // request: the AR/AW changed or was withdrawn (the APMU's SPU, which counts a request at its first valid cycle,
+  // would count it twice), and with two writing slots one slot's W could go out with the other's AW. A slot holds its
+  // request until it is granted (port contract), so the held slot still asks; should it not, the arbiter picks again
+  // rather than grant a slot that does not ask. The round-robin order moves on at each grant, as before.
+  assign held   = hold_q && m_req[hold_sel_q];
+  assign sel    = held ? hold_sel_q : pick(m_req, rr_q);
   assign dn_req = (|m_req) && (cnt_q != MaxReq);
   for (genvar i = 0; i < NumSlots; i++) begin : gen_route
     assign m_gnt[i]    = dn_req && dn_gnt && (sel == i);
@@ -323,24 +324,30 @@ module accel_socket #(
   end
   assign m_rdata = dn_rdata;
 
-  // the user field of the request being granted: the slot's own tag, or the one the policy register forces;
-  // the port bits are the CCU's to write
-  logic [15:0] sel_user;
+  // the tag of the request being served (req_user): the slot's own, or the one the policy register forces; the port
+  // bits are the CCU's to write. Taken in the first cycle the request is offered to axi_from_mem and kept until its
+  // grant: a TAG_POLICY write applies to the requests offered after it, and changes neither the AR or AW nor the W of
+  // a request already waiting. LAST_USER records the tag the request carried.
+  logic [15:0] sel_user, req_user, hold_user_q;
   assign sel_user = (pol_q[sel][31] ? 16'(pol_q[sel][PolUserW-1:0]) : m_user[sel]) & ~PortBitsMask;
+  assign req_user = held ? hold_user_q : sel_user;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       rr_q <= '0; ord_q <= '0; cnt_q <= '0; wp_q <= '0; rp_q <= '0; last_user_q <= '0;
-      hold_q <= 1'b0; hold_sel_q <= '0;
+      hold_q <= 1'b0; hold_sel_q <= '0; hold_user_q <= '0;
     end else begin
       if (dn_req && dn_gnt) begin
         ord_q[wp_q] <= sel; wp_q <= wp_q + 1'b1;
         rr_q <= SlotW'((sel + 1) % NumSlots);
-        last_user_q[sel] <= sel_user;
+        last_user_q[sel] <= req_user;
       end
-      // a request waits for its grant: keep its slot until then
+      // a request waits for its grant: keep its slot and its tag until then
       hold_q <= dn_req && !dn_gnt;
-      if (dn_req && !dn_gnt) hold_sel_q <= sel;
+      if (dn_req && !dn_gnt) begin
+        hold_sel_q  <= sel;
+        hold_user_q <= req_user;
+      end
       if (dn_rvalid) rp_q <= rp_q + 1'b1;
       cnt_q <= cnt_q + (dn_req && dn_gnt) - dn_rvalid;
     end
@@ -371,23 +378,14 @@ module accel_socket #(
   end
 `endif
 
-  // axi_from_mem ties the AXI user fields to 0: carry the granted requests' user fields alongside it, in per-channel
-  // FIFOs (it issues one AW+W or one AR per granted request, in grant order on each channel), and put them on the
-  // channels at their handshakes. Fall-through, so a request issued in its grant cycle sees its own user field.
-  axi_req_t    afm_req;
-  logic [15:0] u_aw, u_w, u_ar;
-  logic        push_w, push_r;
-  assign push_w = dn_req && dn_gnt &&  m_we[sel];
-  assign push_r = dn_req && dn_gnt && !m_we[sel];
-  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_aw (
-    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
-    .data_i(sel_user), .push_i(push_w), .data_o(u_aw), .pop_i(afm_req.aw_valid && mst_resp_i.aw_ready));
-  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_w (
-    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
-    .data_i(sel_user), .push_i(push_w), .data_o(u_w), .pop_i(afm_req.w_valid && mst_resp_i.w_ready));
-  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_ar (
-    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
-    .data_i(sel_user), .push_i(push_r), .data_o(u_ar), .pop_i(afm_req.ar_valid && mst_resp_i.ar_ready));
+  // axi_from_mem ties the AXI user fields to 0, so the socket puts the tag on. axi_from_mem turns the request on its
+  // memory port into the AXI request as it comes (an AR, or an AW and a W, which can be taken in different cycles:
+  // the spill registers in front of the CCU take each when they have room) and grants it once all of it has been
+  // taken; the next request comes after the grant. So the AR, AW and W it offers are always those of the request
+  // being served, and they carry its tag, req_user. (Tags that wait in per-channel FIFOs, pushed at the grant and
+  // popped at each channel's handshake, go wrong: an AW or a W taken before its grant pops an empty FIFO, and from
+  // then on that channel carries the tag of the write before.)
+  axi_req_t afm_req;
 
   // Responses. axi_from_mem takes them in request order only (it is ready for the R or the B of its oldest open request
   // alone), but AXI orders them within a channel only, and the CCU does answer out of request order: its state machine
@@ -431,9 +429,9 @@ module accel_socket #(
 
   always_comb begin
     mst_req_o_xc         = afm_req;
-    mst_req_o_xc.aw.user = $bits(mst_req_o.aw.user)'(u_aw);
-    mst_req_o_xc.w.user  = $bits(mst_req_o.w.user)'(u_w);
-    mst_req_o_xc.ar.user = $bits(mst_req_o.ar.user)'(u_ar);
+    mst_req_o_xc.aw.user = $bits(mst_req_o.aw.user)'(req_user);
+    mst_req_o_xc.w.user  = $bits(mst_req_o.w.user)'(req_user);
+    mst_req_o_xc.ar.user = $bits(mst_req_o.ar.user)'(req_user);
     mst_req_o_xc.r_ready = !r_full;
     mst_req_o_xc.b_ready = !b_full;
     mst_req_o            = mst_req_o_xc; // xsim: assigned once
