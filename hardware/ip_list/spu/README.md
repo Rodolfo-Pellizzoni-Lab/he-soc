@@ -102,6 +102,13 @@ per write, with its own latency and source, also while a second write of the sam
 `SPU_TOP_SV=<file>` runs it on another `axi_spu_top.sv`; one with the old `new_b_resp_q <= new_b_resp_q;` put back
 must fail.
 
+`software/soc_tests/t_spulat` checks the latencies in the SoC: core 0's line reads and write-backs outside the LLC
+window on the memory port's SPU (APMU port 2*N*+1), each counted exactly, with their latency sums and the smallest and
+largest latency (Event Info `ADD_RESP_LAT` and its `KEEP_MIN` / `KEEP_MAX` opcodes), and one DMA copy of the
+accelerator socket on its SPU (port 2*N*+2) against port 2*N*+1's source *N*. In xsim, with 4 and with 8 cores: reads
+38 cycles on average (31-46), write-backs 42 (36-49); the socket's reads and writes take 32 cycles more at port
+2*N*+2 than at port 2*N*+1 (66 against 34, 69 against 37).
+
 ## License
 
 Released under the **Solderpad Hardware License v0.51** (treatable, at the licensee's
