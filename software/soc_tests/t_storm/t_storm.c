@@ -395,9 +395,21 @@ static void evict_setup(unsigned r) {
   __asm__ volatile("fence\n\tfence.i" ::: "memory");
   SRMCFG_W(0);
 }
+#ifndef DM_ON_LAT_RD                       // the model's settings in the model-on rounds (default: the 1 GHz targets)
+#define DM_ON_LAT_RD 80
+#endif
+#ifndef DM_ON_LAT_WR
+#define DM_ON_LAT_WR 80
+#endif
+#ifndef DM_ON_OCC16
+#define DM_ON_OCC16 20
+#endif
 static void dm_set(int on) {
   REG32(DM + DM_CTRL) = 0;
-  if (on) { REG32(DM + DM_LAT_RD) = 80; REG32(DM + DM_LAT_WR) = 80; REG32(DM + DM_OCC16) = 20; REG32(DM + DM_CTRL) = 3; }
+  if (on) {
+    REG32(DM + DM_LAT_RD) = DM_ON_LAT_RD; REG32(DM + DM_LAT_WR) = DM_ON_LAT_WR; REG32(DM + DM_OCC16) = DM_ON_OCC16;
+    REG32(DM + DM_CTRL) = 3;
+  }
 }
 // core 0, before the window: the round's counters and model, the PE (it arms the EVUs), the first snapshot
 static void open_round(unsigned r, unsigned ev, int model) {
