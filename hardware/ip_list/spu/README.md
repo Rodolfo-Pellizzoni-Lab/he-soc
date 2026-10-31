@@ -95,6 +95,13 @@ python3 post_sim_script.py <TbMasters> <TbNumReads> <TbNumWrites>
 Testbench sources are in [`test/`](./test) (`tb_spu.sv`, `spu_test.sv`). The instances in
 the full SoC are listed in "In AlSaqr" above.
 
+`tb_spu.sv` is stale: it instantiates `spu_top`, which `src/` does not have (the tops are `axi_spu_top` and
+`ace_spu_top`), so it does not elaborate. `hardware/xsim/tests/run_spu_b.sh` (testbench `tb_spu_b.sv` next to it,
+no SoC build needed) is a directed xsim test of the 2026-10-25 held-B fix in `axi_spu_top`: one write-response event
+per write, with its own latency and source, also while a second write of the same ID is outstanding.
+`SPU_TOP_SV=<file>` runs it on another `axi_spu_top.sv`; one with the old `new_b_resp_q <= new_b_resp_q;` put back
+must fail.
+
 ## License
 
 Released under the **Solderpad Hardware License v0.51** (treatable, at the licensee's

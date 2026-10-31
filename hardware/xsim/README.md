@@ -61,7 +61,8 @@ chain_dbg.sh    stall finder: debug snapshot, step to the stall, ptrace ranking 
 tools/comb_fix.py  mechanical rewrite of a combinational ring (section 2): comb_fix.py <file> <var> [<var> ...]
 sw/uint_compat.h   'typedef unsigned int uint' for the software build
 tests/          unit tests on a built work dir (XSIM_WORK): run_hpm.sh (perf_counters), run_accel_socket.sh
-                (accel_socket's memory side and tag policy)
+                (accel_socket's memory side and tag policy); run_spu_b.sh (the SPU's write-response events with a
+                held B; needs no built SoC)
 ```
 
 ## 1. What hardware is simulated
