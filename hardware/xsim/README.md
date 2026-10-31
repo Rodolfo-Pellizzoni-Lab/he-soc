@@ -123,16 +123,16 @@ a shadow variable (`<var>_xc`, lines marked `// xsim:`). Rewritten:
 | CVA6 miss handler pack block ↔ bypass arbiter | `cva6/core/cache_subsystem/miss_handler.sv` | t=0 |
 | AXI atop filter ↔ demux | `axi_atop_filter.sv`, `axi_demux_simple.sv` | 1.5 ms |
 | CDC reset controller ↔ 4-phase handshake (DMI) | `cdc_reset_ctrlr.sv`, `cdc_4phase.sv` | 1.9 ms |
+| Debug module memory: rw-logic ↔ hart control queue | `riscv-dbg/src/dm_mem.sv` (+ `dm_csrs.sv` outputs) | first "halted" write, 2.016 ms |
+| AXI data-width downsizer W/R blocks ↔ fall-through fifo | `axi_dw_downsizer.sv`, `fifo_v3.sv` (data_o) | first UART write, 2.53 ms |
+| SPU monitor CAM: each entry's block read `ptr_d[mmatch]`, written by the other entries' blocks (rewritten to `mmatch_next` from registered state, which also removed the `addr_idx_o` latch) | `spu/src/spu_r_chan.sv`, `spu_w_chan.sv` | only with the board-like DRAM path: a read response and a new request in the same cycle, 2.62 ms |
+| LLC channel splitter control ↔ its burst cutter and the descriptor arbiter (`i_rw_arb_tree`): the splitter's defaults for `curr_chan` and `desc_valid_o`, the cutter's for `desc_o` | `axi_llc_chan_splitter.sv`, `axi_llc_burst_cutter.sv` | t_qos with 8 cores, 4.26 ms (2026-10-30) |
 
 The rewrite's final assignment must sit at the top level of the block. An earlier revision of the
 `miss_handler.sv` rewrite left `bypass_ports_req = bpr;` inside the innermost `else`, which turned the port array into
 a latch: atomics/SC (and LR to shareable DRAM) never reached the bypass arbiter in xsim ("AMO hang"), and on the FPGA
 they only worked through a latch data-vs-enable race that depended on placement (fixed 2026-09-16). After running
 `comb_fix.py`, check the Vivado synthesis log for `inferring latch` in the rewritten file.
-| Debug module memory: rw-logic ↔ hart control queue | `riscv-dbg/src/dm_mem.sv` (+ `dm_csrs.sv` outputs) | first "halted" write, 2.016 ms |
-| AXI data-width downsizer W/R blocks ↔ fall-through fifo | `axi_dw_downsizer.sv`, `fifo_v3.sv` (data_o) | first UART write, 2.53 ms |
-| SPU monitor CAM: each entry's block read `ptr_d[mmatch]`, written by the other entries' blocks (rewritten to `mmatch_next` from registered state, which also removed the `addr_idx_o` latch) | `spu/src/spu_r_chan.sv`, `spu_w_chan.sv` | only with the board-like DRAM path: a read response and a new request in the same cycle, 2.62 ms |
-| LLC channel splitter control ↔ its burst cutter and the descriptor arbiter (`i_rw_arb_tree`): the splitter's defaults for `curr_chan` and `desc_valid_o`, the cutter's for `desc_o` | `axi_llc_chan_splitter.sv`, `axi_llc_burst_cutter.sv` | t_qos with 8 cores, 4.26 ms (2026-10-30) |
 
 ### Other xsim patches
 
