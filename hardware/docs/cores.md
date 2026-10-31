@@ -38,9 +38,11 @@ register stays 32 bits:
 | up to 4 | pad [31:24], port [23:20] / mask [19:16], source [15:12] / mask [11:8], event [7:4] / mask [3:0] | `0x9F4F1F` (port 9, source 4) |
 | 5 and more | pad [31:28], port [27:23] / mask [22:18], source [17:13] / mask [12:8], event [7:4] / mask [3:0] | `0x08FD1F1F` with eight cores (port 17, source 8) |
 
-A four-core bitstream keeps the register layout, the port numbers and the source codes it had, so software built for
-four cores runs on it unchanged. On a bitstream with more cores every select has to use the wide layout and that core
-count's numbers; a four-core select matches nothing or the wrong port there, without any error. With eight cores the
+A four-core bitstream keeps the register layout, the port numbers and the cores' source codes, so software built for
+four cores runs on it unchanged, except where it names a memory-port source from 4 up: since the Ethernet DMA has a
+coherence-unit port of its own, 4 is the accelerator socket's DMA alone, 5 the Ethernet DMA, and the other crossbar
+masters moved up by one. On a bitstream with more cores every select has to use the wide layout and that core count's
+numbers; a four-core select matches nothing or the wrong port there, without any error. With eight cores the
 ports are 1-8 (the EVUs), 9-16 (the SPUs on the cores' CCU ports), 17 (the LLC memory port) and 18 (the accelerator
 socket's DMA), and the memory-port sources 0-7 (the cores), 8 (the accelerator socket's DMA), 9 (the Ethernet DMA),
 then 10-18 the other crossbar masters, from the debug module to the APMU's own master port
