@@ -178,16 +178,14 @@ int main(int argc, char const *argv[]) {
     asm volatile ("csrr %0, 0xF14" : "=r"(mhartid));
     if (mhartid != 0) { while (1) asm volatile ("wfi"); }
 
-    // UART setup
-    #ifdef FPGA_EMULATION
-    uint32_t baud_rate = 9600;
-    uint32_t test_freq = 100000000;
-    #else
+    // UART setup. On the board the startup code has set the UART: its DLL is hard-wired, so the divisor for
+    // 9600 Bd at 100 MHz (651) would set DLM and garble the console. Only the simulation sets it here.
+    #ifndef FPGA_EMULATION
     set_flls();
     uint32_t baud_rate = 115200;
     uint32_t test_freq = 50000000;
-    #endif
     uart_set_cfg(0, (test_freq / baud_rate) >> 4);
+    #endif
 
     printf("\r\n========================================\r\n");
     printf("PMU EVU Bench — Exhaustive CVA6-EVU Test\r\n");
