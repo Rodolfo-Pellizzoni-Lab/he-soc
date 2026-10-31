@@ -14,8 +14,8 @@ LLC memory port --AXI--> SPU --> slowdown --AXI--> axi_dram_timing --AXI--> DDR4
 With the slowdown regulator in the path (`hardware/ip_list/slowdown`, `` `define USE_SLOWDOWN `` in host_domain.sv)
 the model sits after the SPU and the slowdown: it sees the request stream the slowdown releases, and the SPU's
 latencies include both the slowdown's and the model's delays. The measurements below were taken before the
-slowdown was added, with the model directly on the LLC's memory port, except those dated 2026-10-30, which have it
-in the path.
+slowdown was added, with the model directly on the LLC's memory port, except those dated 2026-10-30 and later, which
+have it in the path.
 
 The L1 data and instruction caches of CVA6 have 16-byte lines, the LLC 64-byte lines: a miss in the LLC-cached
 window reaches the model as an 8-beat refill, while DRAM outside that window (the LLC passes it through) comes
@@ -52,20 +52,35 @@ the memory port, more than `OCC16 = 20`'s 10: at the 1 GHz values the slowdown, 
 bandwidth. The device tree's `timebase-frequency` and `clock-frequency` become the target values, so Linux counts
 time in target cycles; the UART keeps its divider (it is a host-time device).
 
-The model can only hold data back, so a setting emulates its target only where the real memory answers sooner than
-`LAT_RD`. With the MIG's own DDR4 controller, and with OpenDRAM at 1x timing, the first beat comes 14-15 cycles after
-the model accepts a read and the 1 GHz values work as intended. With `OPENDRAM=1` as main builds it (OpenDRAM with
-16x DRAM timing, `alsaqr_opendram_ethernet_16x.bit`) how soon the memory answers depends on the DRAM row (measured
-below). An LLC line refill that has to open a new row gets its first beat 72-81 cycles after the accept (79-83 on the
-10-30 bitstreams, with the slowdown), the 1 GHz target's own latency: the 1 GHz values add next to nothing to it, and
-a model effect on such reads needs a slower target, 2 GHz or more (`LAT_RD = 160`, `OCC16 = 40`). A read of a row
-that is still open answers about 40 cycles sooner, and the 1 GHz values still add tens of cycles to it. Random chases
-such as those of `t_part` and `t_sweep` open a new row on nearly every miss, so for them the model-off latencies
-already stand for about the 1 GHz target; both tests measure what the model adds at the 1 GHz values (its hold time
-per read) and print `1 GHz target not emulated` when that is under half of `LAT_RD`.
+The model can only hold data back, so a setting emulates its target only where the real memory answers sooner than the
+model would. For an LLC line refill that means the whole line: the LLC answers the core only when all 8 beats are in
+(in `t_dram`'s `OCC16 = 512` rows a hop whose first beat is not held grows by 7 x 32 cycles less the time the real
+line takes after the accept: 289 - 85 = 224 - 20 on the MIG, 294 - 178 = 224 - 108 on the 10-30 bitstreams), so a
+refill ends when the later of the modelled last beat and the real one leaves the model. The modelled last beat comes
+`LAT_RD` + 7 x `OCC16`/16 cycles after the model accepts the read when its modelled bus is free (later behind a burst
+still on it, and no sooner than `LAT_RD` + 7, as one beat leaves per cycle): 89 at the 1 GHz values. With the MIG's
+own DDR4 controller, and with OpenDRAM at 1x timing, the first beat comes 14-15 cycles after the model accepts a read
+and the line is complete about 20 cycles after it, so the 1 GHz values work as intended. With `OPENDRAM=1` as main
+builds it (OpenDRAM with 16x DRAM timing, `alsaqr_opendram_ethernet_16x.bit`) how soon the memory answers depends on
+the DRAM row (measured below). In `t_dram` an LLC line refill that has to open a new row gets its first beat 72-81
+cycles after the accept (79-83 on the 10-30 bitstreams, with the slowdown), about the 1 GHz target's own latency, and
+its last beat about 100-110 cycles after it, later than the 89: the 1 GHz values add next to nothing to such a refill.
+A model effect needs a target whose modelled last beat comes later than the real one: for these refills from about
+`LAT_RD = 92-102` at `OCC16 = 20`, in `t_sweep`'s 2 MB chase from about 90 (below); the 2 GHz values (`LAT_RD = 160`,
+`OCC16 = 40`, last beat at 178) are well past both. A read of a row that is still open answers about 40 cycles sooner:
+the 1 GHz values still add about 35 cycles on average to `t_dram`'s 16-byte fills, half of which find their row open
+(more to those that do); for a whole line that depends on when its last beat comes, which has not been measured for an
+open row. In the random chases of `t_part` and `t_sweep` the model-off latencies also stand for about the 1 GHz
+target: `t_sweep`'s first beats mostly come sooner than `t_dram`'s, but in its 2 MB chase the lines are complete about
+99 cycles after the accept on average and almost none before the 89 (`t_sweep_probe`, in the latency sweep below).
+Both tests measure what the model adds at the 1 GHz values by its hold time per read and print
+`1 GHz target not emulated` when that is under half of `LAT_RD`; that hold is the first beat's, so it is only a proxy
+for what reaches the core.
 
-When the real memory is slower than the model (the data arrives after its modelled time) the beat is released at
-arrival and counted in `RD_LATE` / `LATE_CYCLES`: a measured error, not a hang. The second step, gating the SoC
+When the real memory is slower than the model (the data arrives after its modelled time) the beat leaves one cycle
+after it arrives: while the model is enabled every beat spends at least a cycle in its buffer, which a held beat
+spends inside its hold. A read whose first beat is late is counted in `RD_LATE` / `LATE_CYCLES` (the lateness
+without that cycle; later beats are not judged): a measured error, not a hang. The second step, gating the SoC
 clock while a response is overdue, removes that error. Responses are assumed in request order, which the simulated
 DRAM and the DDR4 controller provide; the simulation reports a different ID at the head of the queue.
 
@@ -84,6 +99,15 @@ DRAM and the DDR4 controller provide; the simulation reports a different ID at t
 | 0x120 | HOLD_CYCLES | sum of the cycles first read beats were held back |
 | 0x124 | ID | 0xD2A3_0001: the model is present in this bitstream |
 | 0x128 | RD_BEATS | read beats (8 bytes each) arriving from the memory while enabled, including beats of reads accepted while disabled, which RD_COUNT does not count |
+
+The counters are plain 32-bit counters and wrap without notice, so read them as differences over intervals short
+enough not to wrap. `HOLD_CYCLES` and `LATE_CYCLES` add up cycles per read and `RD_BEATS` 8 per read, so they can
+wrap within minutes (`RD_BEATS` in about 2 minutes at the slowdown's limit of one request every 11 cycles). Under
+Linux with all 8 harts loaded (2026-10-31, `m8n8_fix_n8_20261030`; measured with the slowdown, below), at
+`LAT_RD = LAT_WR = 256` and `OCC16 = 512`, `HOLD_CYCLES` read 60.5 M after 9.5 minutes for 40.9 M reads, 1.5 cycles
+per read. Each wrap adds 105 per read, so one wrap would mean 106.6, while these reads were held about 180 cycles or
+more (`LAT_RD` less the 76 cycles after which their first beats came at the 1 GHz values): it had wrapped at least
+twice, every 4.7 minutes or less. At the 1 GHz values that load wraps `RD_BEATS` and `HOLD_CYCLES` in about an hour.
 
 The generated SoC control block decodes only the low 8 address bits; apb_soc_control routes offsets 0x100-0x1FF
 to the model's registers and everything else to the generated block.
@@ -122,9 +146,10 @@ with the model off, and reading it back 1.2 s against 0.7 s. The model saw 5.7 M
 enabled was then judged against its own accept time, and the one late read matches that, by the DDR4's own 12 cycles.)
 It was a JTAG boot on the MIG bitstream, with the LLC caching only its reset window of 8 MB. Since 9834bf51
 (2026-10-19) the netboot loader widens that window to all of RAM, so a netbooted kernel's traffic reaches the model as
-the LLC's 64-byte refills and write-backs instead. On the 16x OpenDRAM build the same values would add little to a
-read that opens a new DRAM row and still tens of cycles to one that finds its row open, whether the LLC caches it or
-not (next section); what that comes to for a kernel has not been measured.
+the LLC's 64-byte refills and write-backs instead. On the 16x OpenDRAM build the same values add little to a line
+refill that opens a new DRAM row, while a 16-byte fill that finds its row open still gets tens of cycles more (next
+section); under Linux with the slowdown they changed one hart's streaming bandwidth by at most 0.1 MB/s (measured
+with the slowdown, below).
 
 ## Measured with OpenDRAM (2026-10-22 to -24)
 
@@ -185,6 +210,16 @@ line read's first beat now comes 81-83 cycles after the accept, where c2c758d8 g
 at `LAT_RD = 256` it is 79-81, as before. The builds differ in more than the slowdown, so these differences are not
 its cost alone. In xsim a model-off line read takes 110-113 cycles and a fill 70, against 82 and 48-49 on 2026-10-15.
 
+Under Linux on the 8-core bitstream (2026-10-31: Linux 6.1 netbooted on 8 CPUs, so the LLC caches all of RAM) the
+model was switched on, changed and switched off with devmem between the steps of the board soak, which ran
+`t_storm_linux`, `chk2` and `stress_all` on all 8 harts with it on; every check passed and nothing hung. One hart's
+streaming read, write and copy of 8 MiB went from 8.6, 5.3 and 6.7 MB/s with the model off to 8.5, 5.2 and 6.6 at the
+1 GHz values (1-3 % slower) and to 3.8, 2.1 and 2.7 at `LAT_RD = LAT_WR = 256`, `OCC16 = 512`, and were 8.5, 5.3 and
+6.7 with the model off again. In the 29 minutes at the 1 GHz values the model saw 282 M reads (8.00 beats each) and
+175 M write bursts: 66 % of the reads came later than modelled, by 4.8 cycles on average, and the others were held
+back 20.8 cycles each, so their first beats came about 76 cycles after the accept on average. In the 9.5 minutes at
+256/256/512, 167 of 40.9 M reads were late.
+
 ## Latency sweep
 
 `software/soc_tests/t_sweep` chases a random cyclic chain of 16-byte elements (one L1 line each) through arrays
@@ -201,8 +236,8 @@ the MIG's DDR4 controller, before the slowdown):
 | 2 MB | 58.8 | 99.3 | |
 | 7 MB | 65.7 | 127.0 | mostly DRAM; a 64-byte LLC line holds 4 elements, so a share of the hops still hit the LLC and the curve keeps climbing towards the pure miss (85 cycles in `t_dram`, whose chain thrashes one set) |
 
-With `OPENDRAM=1` (16x timing) nearly every refill of the random chase opens a new DRAM row, so the 1 GHz settings
-should add next to nothing (the two previous sections) and the 1ghz curve be about the memory's own latency:
+With `OPENDRAM=1` (16x timing) the 1 GHz settings should add next to nothing to the random chase's refills (the two
+previous sections and below) and the 1ghz curve be about the memory's own latency:
 `t_sweep` then prints `1 GHz target not emulated`, from the model's counters after the largest array, and skips its
 check that those settings slow that array down; `plot_sweep.py` labels the curve accordingly.
 
@@ -212,7 +247,8 @@ the slowdown in the path) the 8-core and 4-core curves agree to within 0.7 cycle
 the largest array's 1 GHz chase the model saw 817426 reads, 251451 and 252204 of them late, and held them back 17
 cycles each on average. The curve moves much less than that hold: from 2 MB to 7 MB the 1 GHz settings add 0.8-1.2
 cycles per read, and at 1152 and 1280 KB the 1 GHz chase, which runs second on the same chain, is faster than the
-model-off one (65.22 against 70.35 and 79.02 against 81.81 cycles with eight cores). Why is not settled yet.
+model-off one (65.22 against 70.35 and 79.02 against 81.81 cycles with eight cores). `software/soc_tests/t_sweep_probe`
+shows why (after the table).
 
 | Array | Model off | 1 GHz settings | |
 |---|---|---|---|
@@ -220,6 +256,37 @@ model-off one (65.22 against 70.35 and 79.02 against 81.81 cycles with eight cor
 | 128 KB to 1 MB | 45.0-45.1 | 45.0 | LLC hit, as on the MIG build: the slowdown and the model are behind the LLC |
 | 2 MB | 117.50-117.63 | 118.44-118.46 | |
 | 7 MB | 155.45-155.63 | 156.66-156.69 | mostly DRAM, still climbing towards the pure miss (174-176 cycles in `t_dram`); the 1 GHz settings add about 1 cycle per read |
+
+`t_sweep_probe` runs `t_sweep`'s chain and chase (it includes `t_sweep.c`) in two print-only experiments. On the
+8-core 10-30 bitstream (`m8n8_fix_n8_20261030`) on 2026-10-31 neither result is the model's fault:
+
+- The hold is the first beat's, but the LLC answers the core only when all 8 beats of a line are in. The probe ran
+  the 2 MB chase with `LAT_RD` 1, 60, 80, 100, 120 and 160 (`LAT_WR` 80, `OCC16` 20). 1, 60 and 80 cost the same
+  (118.55, 118.60 and 118.63 cycles per read; 117.76-117.80 with the model off), although at 80 the model held 69 %
+  of the reads back, by 26 cycles each (17.8 per read, counted as `t_sweep` counts its 17). From 100 on the chase
+  slows (124.80, 136.08, 159.70), between 120 and 160 by 0.59 cycles per read per cycle of `LAT_RD`, which is one
+  cycle per refill: the model saw 155000 refills in the chase's two passes of 131072 reads (an untimed warm-up and
+  the timed pass), 0.59 per read. That line meets the flat part at `LAT_RD` 90, a modelled last beat 99 cycles after
+  the accept, which is when this chase's lines are complete on average; the 1 GHz values release the last beat at
+  89. With 99 for every line, a refill that ends at the later of the two predicts `LAT_RD` 100, the one setting not
+  used to draw the line, to within 1 cycle per refill (124.3 against 124.80; a spread of completion times puts the
+  measured value above it). What the 1 GHz values add here, 1.4 cycles per refill, is nearly all there with
+  `LAT_RD = 1` too (1.3), where every read is late and none is held: about one cycle of it is the buffer cycle of a
+  beat that arrives after its modelled time.
+- The dip at 1152 and 1280 KB comes from the order of the chases. The first chase on a freshly written chain writes
+  back the LLC's dirty lines: at 1152 KB the model counted 12707 writes in it, 2066 in the next and 479 in the third.
+  With the same model settings (enabled with `LAT_RD`, `LAT_WR` and `OCC16` at 0, so that it counts; that adds only
+  its buffer cycle) the second chase is faster than the first by about as much as `t_sweep`'s 1 GHz chase is (65.06
+  against 70.31 cycles at 1152 KB, 79.14 against 82.19 at 1280), and writing every element again brings the time and
+  the writes back (69.92 and 12258, 82.35 and 15736). At 1536 KB the first chase writes back nearly the whole LLC
+  (16373 of its 16384 lines) and its timed pass is no slower (98.26 against 98.30). The counts cover both passes and
+  only the second is timed, so most of these write-backs probably fall in the untimed warm-up pass, which has about
+  41500 refills there, 2.5 per LLC line, against about 11700 at 1152 KB, 0.7 per line, where many dirty lines are
+  still in the LLC when the timed pass starts; whether the rest cost nothing at 1536 KB is open, and it does not
+  involve the model.
+
+So `1 GHz target not emulated` is the right verdict, but not for the reason `t_sweep` prints (that the model adds 17
+of the target's 80 cycles): on this memory a whole line comes later than the 1 GHz target would deliver it.
 
 ## Test
 
