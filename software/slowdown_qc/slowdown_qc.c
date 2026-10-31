@@ -15,8 +15,10 @@
  * two parked CVA6 harts; the PMU's own Ibex core is NOT used. Once all four
  * cores have checked in, core 0 undoes the wake-up and starts the traffic.
  * A quad-core program: on a SoC with more cores, cores 4 and up stay parked in
- * the boot ROM, and the MEM_* selects (quad_boot/pmu_defines.h) number the
- * ports as the quad-core SoC does (memory SPU = port 9).
+ * the boot ROM. The MEM_* selects (quad_boot/pmu_defines.h) follow the build's
+ * core count N = SOC_NUM_CORES (4 unless built with SOC_NUM_CORES=<n>): memory
+ * SPU = port 2N+1, 9 with four cores and 17 with eight. Build for the
+ * bitstream's core count.
  *
  * Why this stresses main memory (and thus the slowdown):
  *   - Core 0 first WIDENS the LLC cached region (APB SoC-ctrl reg): by default
@@ -33,7 +35,7 @@
  *     In RTL sim 4 x 32 KB fit in the LLC: the cold misses reach memory, the
  *     writers' dirty lines stay in the LLC.
  *
- * PMU confirms it: per-core MEM_RD / MEM_WR request counts (SPU port 9) show
+ * PMU confirms it: per-core MEM_RD / MEM_WR request counts (SPU port 2N+1) show
  * traffic actually reached main memory through the regulator. Cycle counts
  * show the regulation cost.
  *
@@ -86,8 +88,10 @@ static inline void unlock_uart(void) {
 #define PLIC_CLAIM1     (PLIC_BASE + 0x205004UL)   /* claim/complete of context 5 */
 #define PLIC_CLAIM2     (PLIC_BASE + 0x207004UL)   /* context 7 */
 
-/* Event selects — MEM request counts, per core (SPU port 9 sources 0-3 = cores
- * 0-3 at main memory, 4/5 = socket/Ethernet DMA, more in quad_boot/pmu_defines.h).
+/* Event selects — MEM request counts, per core (memory SPU = port
+ * 2N+1, N = SOC_NUM_CORES; sources 0-3 = cores 0-3 at main memory, N/N+1 =
+ * socket/Ethernet DMA: port 9 and sources 4/5 with four cores, port 17 and 8/9
+ * with eight; more in quad_boot/pmu_defines.h).
  * We count exactly the traffic that crosses the slowdown: per-core requests at
  * MAIN MEMORY, i.e. what the LLC could not satisfy and had to send to DRAM
  * through the regulator. 8 plain counters — no overflow, no interrupt. */

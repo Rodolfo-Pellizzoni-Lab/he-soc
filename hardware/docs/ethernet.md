@@ -82,29 +82,31 @@ sleep_ms=90000`).
 
 `software/soc_tests/t_srcid`, phase E, sends one frame through the same loopback with its descriptors and buffers
 outside the LLC window and checks that the APMU's memory-port SPU credits all of the DMA's DRAM reads and writes to
-source 5 (`CcuEthPort`) and none to the cores or the socket, and how many there are: every request is one 64-bit
-beat, and the DMA fetches 13 descriptor words for TX (7 beats) and 8 for RX (4) and writes back the status word for
-TX (1) and the status and app0-4 words for RX (4). A frame in 64-byte-aligned buffers thus makes 11 reads plus its
-TX beats and 5 writes plus its RX beats at the coherence unit: exactly 19 reads and 13 writes for phase E's 64 bytes.
-(The writes all reach the LLC, so t_eth's QoS table shows its 16 frames' 786; most of its reads are answered from
-the core's L1.)
+source N+1 (`CcuEthPort`: 5 with four cores, 9 with eight) and none to the cores or the socket, and how many there
+are: every request is one 64-bit beat, and the DMA fetches 13 descriptor words for TX (7 beats) and 8 for RX (4) and
+writes back the status word for TX (1) and the status and app0-4 words for RX (4). A frame in 64-byte-aligned buffers
+thus makes 11 reads plus its TX beats and 5 writes plus its RX beats at the coherence unit: exactly 19 reads and 13
+writes for phase E's 64 bytes. (The writes all reach the LLC, so t_eth's QoS table shows its 16 frames' 786; most of
+its reads are answered from the core's L1.)
 
-`software/netboot`: the network boot loader. Linked at 0x8F00_0000 (`netboot.ld`), it brings the link up, takes
-its address (`STATIC_IP=`, or DHCP), finds the server with a UDP broadcast (`ALSAQR-NETBOOT?` on port 6969,
-fallback `SERVER_IP=`), fetches `alsaqr.dtb` to 0x8180_0000 and `fw_payload.bin` to 0x8000_0000 with TFTP
-(blksize 1428; 19.5 MB in 25.6 s, 0.76 MB/s, lock-step), prints an additive checksum of both (compare with
-`sum(open(f,'rb').read()) & 0xffffffff` on the host) and jumps to the payload with a0 = hart id, a1 = the DTB.
-Before anything else it widens the LLC's cached address range (SoC control 0x1A10_6018/1C, 8 MB out of reset: the
-kernel image only) to all of RAM (`LLC_CACHED_END`, default 0xA000_0000; `make LLC_CACHED_END=0` keeps the ROM's),
-so Linux and its buffers are LLC-cached; it must be done here, while nothing runs, because shrinking that range on a
-running system wedges the SoC (hardware/docs/qos.md). It answers ARP and ping meanwhile and keeps retrying discovery for ever (printing the MAC's statistics counters
-each round: 0x200 RX bytes, 0x208 TX bytes, 0x290 RX frames, 0x2D8 TX frames). All four harts enter OpenSBI, as
-with the JTAG flow: hart 1, parked by the start-up code, and harts 2-3, parked in the boot ROM, wait in
-`enter_payload` (the ROM's mailbox at 0x1040_4000 points there; hart 1 is rung through the mailbox doorbell, harts
-2-3 through the APMU interrupts as t_smp does) and follow hart 0 into the payload a moment later, so hart 0 is the
-cold-boot hart. The loader has its own copy of the start-up `syscalls.c` only because the common one sends hart 1
-to 0x8000_0000 before anything is loaded there. The server is `alsaqr-mcp/scripts/netboot_server.py --dir <dir>`
-(symlinks to the bundle's `install64` files are fine), unprivileged (port 6969). Build:
+`software/netboot`: the network boot loader. Linked at 0x8F00_0000 (`netboot.ld`), it brings the link up, takes its
+address (`STATIC_IP=`, or DHCP), finds the server with a UDP broadcast (`ALSAQR-NETBOOT?` on port 6969, fallback
+`SERVER_IP=`), fetches `alsaqr.dtb` to 0x8180_0000 and `fw_payload.bin` to 0x8000_0000 with TFTP (blksize 1428; 19.5
+MB in 25.6 s, 0.76 MB/s, lock-step), prints an additive checksum of both (compare with
+`sum(open(f,'rb').read()) & 0xffffffff` on the host) and jumps to the payload with a0 = hart id, a1 = the DTB. Before
+anything else it widens the LLC's cached address range (SoC control 0x1A10_6018/1C, 8 MB out of reset: the kernel
+image only) to all of RAM (`LLC_CACHED_END`, default 0xA000_0000; `make SERVER_IP=<ip> LLC_CACHED_END=0` keeps the
+ROM's: the Makefile reads `LLC_CACHED_END` only with `SERVER_IP`), so Linux and its buffers are LLC-cached; it must
+be done here, while nothing runs, because shrinking that range on a running system wedges the SoC
+(hardware/docs/qos.md). It answers ARP and ping meanwhile and keeps retrying discovery for ever (printing the MAC's
+statistics counters each round: 0x200 RX bytes, 0x208 TX bytes, 0x290 RX frames, 0x2D8 TX frames). All
+`SOC_NUM_CORES` harts (four unless the loader is built with `SOC_NUM_CORES=<n>` for an n-core SoC) enter OpenSBI, as
+with the JTAG flow: harts 1 to n-1, parked in the boot ROM, wait in `enter_payload` (the ROM's mailbox at 0x1040_4000
+points there; hart 1 is rung through the mailbox doorbell, harts 2 to n-1 through the APMU interrupts, with
+`soc_wake_all` as t_smp does) and follow hart 0 into the payload a moment later, so hart 0 is the cold-boot hart. The
+loader has its own copy of the start-up `syscalls.c` only because the common one sends hart 1 to 0x8000_0000 before
+anything is loaded there. The server is `alsaqr-mcp/scripts/netboot_server.py --dir <dir>` (symlinks to the bundle's
+`install64` files are fine), unprivileged (port 6969). Build:
 `make fpga=1 SERVER_IP=10.42.0.1 STATIC_IP=10.42.0.2 STATIC_MASK=255.255.255.0 STATIC_GW=10.42.0.1`.
 
 **The link to the PC.** The board is never on a wider network: a USB Ethernet adapter of the host PC is cabled

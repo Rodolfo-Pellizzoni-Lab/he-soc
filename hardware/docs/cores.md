@@ -21,8 +21,8 @@ What had to change for a fifth core and up (branch `more-cores`, 2026-10-24):
   S-mode PLIC context `2h+1` and, for h >= 2, wakes on the overflow of APMU counter `h-2` (PLIC source `156+h-2`);
 - the soc_tests harness woke harts 2 and 3 only.
 
-Not done: the Linux side (device-tree CPU nodes, OpenSBI's `NUM_HARTS` build variable, the `llcpart` module and
-docs that assume a 3-bit port field in the user word).
+Linux: an 8-hart device tree and OpenSBI built with `NUM_HARTS=8` (alsaqr-software) boot eight CPUs (below). Not
+checked with more than four cores: the `llcpart` module.
 
 ## The APMU with more than four cores
 

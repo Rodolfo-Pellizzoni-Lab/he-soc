@@ -146,7 +146,9 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
     ways 8–15) share one LLC set. Reading the victims again causes **0** LLC read misses, counted by the
     SoC control block's LLC miss counter at `0x1A10_6008`. With shared masks the same sequence causes **8**.
   - **Code/data split.** Code fetched under RCID 3 goes only into that RCID's code ways.
-  - **4-core stress.** RCIDs 4–7 have disjoint 4-way masks and write and read 16 lines each in one set.
+  - **All-core stress.** Every core c, with RCID 4 + c and a disjoint data mask of 16 / `SOC_NUM_CORES` ways,
+    writes 64 / `SOC_NUM_CORES` lines in one LLC set and must read back what it wrote. With four cores, RCIDs 4–7
+    have 4 ways and 16 lines each; with eight, RCIDs 4–11 have 2 ways and 8 lines each.
 
 **Simulation checkers** (both in every simulation; `sim_status` reports their errors as `qos_errors`, and
 `sim_regress` fails a test that has any):

@@ -41,7 +41,7 @@
 /// The one copy of the APMU map: the soc tests, the PMU benches' CVA6 code (their pmu_defines.h) and the PE firmware
 /// (pmu_firmware/include/pmu_hw_desc.h) include this file.
 /// The event selects depend on the SoC's core count (the hardware's NUM_CVA6): build with -DSOC_NUM_CORES=<n> for an
-/// n-core SoC (soc_tests/common.mk adds it for SOC_NUM_CORES=<n> or NUM_CVA6=<n>); without it, four cores. Addresses
+/// n-core SoC (software/common.mk adds it for SOC_NUM_CORES=<n> or NUM_CVA6=<n>); without it, four cores. Addresses
 /// and counter indexes do not depend on it.
 #ifndef PMU_DEFINES_H
 #define PMU_DEFINES_H
