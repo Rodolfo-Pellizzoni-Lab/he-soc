@@ -34,8 +34,8 @@
 #define write_32b(addr, val)  (*(volatile uint32_t *)(uintptr_t)(addr) = (val))
 
 /* ---------------------------------------------------------------------------
- * PMU address map: COUNTER_B_BASE_ADDR, COUNTER_BUNDLE_SIZE, DSPM_BASE_ADDR and
- * EVU_EID_REG from quad_boot/pmu_defines.h
+ * PMU address map: COUNTER_B_BASE_ADDR, COUNTER_BUNDLE_SIZE and EVU_EID_REG
+ * from quad_boot/pmu_defines.h
  * ---------------------------------------------------------------------------*/
 /* Offsets within a counter bundle */
 #define CNTR_OFF   0x0   /* counter value */
@@ -48,9 +48,23 @@
 #define PC_MILESTONE_C1_BASE 0x10606040UL   /* 4 × (lo32, hi32) at +0..+1C */
 
 /* ---------------------------------------------------------------------------
- * DSPM — inter-core synchronisation
+ * Inter-core synchronisation, in .sbss/.bss: hart 0 clears them in crt.S before
+ * the runtime wakes hart 1 (board builds; board_run also zeroes them, and the
+ * simulated DRAM reads zero), so the flag starts at 0 in every run. It used to
+ * sit in the APMU's DSPM, which keeps its contents from one program to the next
+ * and which the APMU's processing element (PE) also uses: a 1 left there would
+ * start Core 1 before its milestones are set (c1_v2's zero counts on the
+ * VCU118, 2026-10-31, look like that).
  * ---------------------------------------------------------------------------*/
-#define CORE1_START_FLAG (DSPM_BASE_ADDR + 0x10UL)
+static volatile uint32_t core1_start;
+
+/* Bit 31 of a counter word is not part of the count: it can be set at count 0 */
+#define COUNT_MASK 0x7FFFFFFFu
+
+/* Core 0's wait for each counter (a few seconds of APMU reads on the board): far
+ * longer than Core 1's pass, so that a milestone that never counts ends in a
+ * printed failure instead of a hang */
+#define WAIT_POLLS (1u << 22)
 
 /* ---------------------------------------------------------------------------
  * APMU counter programming values
@@ -201,7 +215,7 @@ int main(void)
         /* Signal Core 1 to start                                              */
         /* ------------------------------------------------------------------ */
         printf("[CORE0] Signalling Core 1 to start...\n");
-        write_32b(CORE1_START_FLAG, 1);
+        core1_start = 1;
         asm volatile("fence iorw, iorw" ::: "memory");
 
         /* ------------------------------------------------------------------ */
@@ -217,20 +231,30 @@ int main(void)
         };
         static const char *ordinal[4] = { "1st", "2nd", "3rd", "4th" };
 
+        int tracked = 0;
         for (int n = 0; n < 4; n++) {
-            while (counter_read(n) == 0)
+            uint32_t poll = 0;
+            while ((counter_read(n) & COUNT_MASK) == 0 && poll++ < WAIT_POLLS)
                 asm volatile("" ::: "memory");
-            printf("[CORE0] %s PC track successful: %s hit (count=%u)\n",
-                   ordinal[n], labels[n], counter_read(n));
+            uint32_t cnt = counter_read(n) & COUNT_MASK;
+            if (cnt) {
+                printf("[CORE0] %s PC track successful: %s hit (count=%u)\n", ordinal[n], labels[n], cnt);
+                tracked++;
+            } else {
+                printf("[CORE0] %s PC track failed: %s never counted\n", ordinal[n], labels[n]);
+            }
         }
 
-        printf("[CORE0] All 4 PC milestones tracked successfully!\n");
+        if (tracked == 4)
+            printf("[CORE0] All 4 PC milestones tracked successfully!\n");
+        else
+            printf("[CORE0] Only %d of 4 PC milestones tracked.\n", tracked);
 
     } else if (hartid == 1) {
         /* ------------------------------------------------------------------ */
         /* Core 1 — Wait for signal then run benchmark                         */
         /* ------------------------------------------------------------------ */
-        while (read_32b(CORE1_START_FLAG) == 0)
+        while (core1_start == 0)
             asm volatile("" ::: "memory");
 
         func_A();

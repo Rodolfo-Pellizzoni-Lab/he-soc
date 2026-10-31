@@ -41,12 +41,17 @@ SECTIONS
     __cluster_code_end = . ;
     } > L3
 
+  /* cleared by crt.S on hart 0 in board builds (_bss_start.._bss_end) */
   .sbss : {
+    . = ALIGN(8);
+    _bss_start = .;
     *(.sbss .sbss.* .gnu.linkonce.sb.*)
     *(.scommon)
   } > L3
   .bss : {
     *(.bss)
+    . = ALIGN(8);
+    _bss_end = .;
   } > L3
 
   .tdata :
