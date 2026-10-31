@@ -77,12 +77,17 @@ Both tests measure what the model adds at the 1 GHz values by its hold time per 
 `1 GHz target not emulated` when that is under half of `LAT_RD`; that hold is the first beat's, so it is only a proxy
 for what reaches the core.
 
-When the real memory is slower than the model (the data arrives after its modelled time) the beat leaves one cycle
-after it arrives: while the model is enabled every beat spends at least a cycle in its buffer, which a held beat
-spends inside its hold. A read whose first beat is late is counted in `RD_LATE` / `LATE_CYCLES` (the lateness
-without that cycle; later beats are not judged): a measured error, not a hang. The second step, gating the SoC
-clock while a response is overdue, removes that error. Responses are assumed in request order, which the simulated
-DRAM and the DDR4 controller provide; the simulation reports a different ID at the head of the queue.
+While the model is enabled every beat spends at least a cycle in its buffer: it is due at its modelled time or one
+cycle after it arrives, whichever is later (a held beat spends that cycle inside its hold). When the real memory is
+slower than the model (the data arrives after its modelled time) the beat therefore leaves one cycle after it arrives.
+A read whose first beat arrives after its modelled time is counted in `RD_LATE`, and that lateness, in whole cycles
+and without the buffer cycle, in `LATE_CYCLES`. A first beat that arrives in the cycle it is due in (the first cycle
+at or after its modelled time) also leaves a cycle late and adds nothing to `LATE_CYCLES` or `HOLD_CYCLES` (`RD_LATE`
+counts it only when its modelled time, set by a bus time in 1/16 cycles, is not a whole cycle): a memory exactly as
+fast as the model costs each read a cycle that the counters do not show. Later beats and write responses are not
+judged. Lateness is a measured error, not a hang; the second step, gating the SoC clock while a response is overdue,
+would remove it. Responses are assumed in request order, which the simulated DRAM and the DDR4 controller provide; a
+response whose ID differs from the one at the head of the queue is reported in simulation.
 
 ## Registers (SoC control + 0x100, 32-bit)
 
@@ -108,6 +113,19 @@ Linux with all 8 harts loaded (2026-10-31, `m8n8_fix_n8_20261030`; measured with
 per read. Each wrap adds 105 per read, so one wrap would mean 106.6, while these reads were held about 180 cycles or
 more (`LAT_RD` less the 76 cycles after which their first beats came at the 1 GHz values): it had wrapped at least
 twice, every 4.7 minutes or less. At the 1 GHz values that load wraps `RD_BEATS` and `HOLD_CYCLES` in about an hour.
+
+The model's own time base wraps as well, and that is not harmless: it counts 1/16 cycles in 48 bits from reset, so it
+wraps after 2^44 cycles (4.07 days at 50 MHz), and its time compares are not wrap-safe. A response whose release time
+is from before the wrap but that comes back after it, or is still in the buffer then, waits until the time base
+reaches that time again, up to 2^44 cycles, and the responses behind it wait with it. A read or write accepted near or
+after the wrap gets such a time while the modelled bus time is still from before the wrap (its now + latency, small
+once wrapped, loses the unsigned compare); if its response comes back before the wrap, it may leave early instead. So
+with the model enabled across the wrap, or enabled again after it before a write accepted while disabled has reset the
+bus time, the memory path stops for up to four more days, and disabling the model does not free the responses it
+holds. A unit simulation with the time base forced to 300 cycles before the wrap shows this (2026-10-31, `LAT_RD` =
+20): a read accepted 200 cycles before the wrap is unaffected, one accepted 10 cycles before it and one after it do
+not come out in 2000 cycles each. Until the compares are fixed, enable the model only within four days of the last
+reset (programming the FPGA resets it).
 
 The generated SoC control block decodes only the low 8 address bits; apb_soc_control routes offsets 0x100-0x1FF
 to the model's registers and everything else to the generated block.
@@ -276,17 +294,22 @@ shows why (after the table).
 - The dip at 1152 and 1280 KB comes from the order of the chases. The first chase on a freshly written chain writes
   back the LLC's dirty lines: at 1152 KB the model counted 12707 writes in it, 2066 in the next and 479 in the third.
   With the same model settings (enabled with `LAT_RD`, `LAT_WR` and `OCC16` at 0, so that it counts; that adds only
-  its buffer cycle) the second chase is faster than the first by about as much as `t_sweep`'s 1 GHz chase is (65.06
-  against 70.31 cycles at 1152 KB, 79.14 against 82.19 at 1280), and writing every element again brings the time and
-  the writes back (69.92 and 12258, 82.35 and 15736). At 1536 KB the first chase writes back nearly the whole LLC
-  (16373 of its 16384 lines) and its timed pass is no slower (98.26 against 98.30). The counts cover both passes and
-  only the second is timed, so most of these write-backs probably fall in the untimed warm-up pass, which has about
-  41500 refills there, 2.5 per LLC line, against about 11700 at 1152 KB, 0.7 per line, where many dirty lines are
-  still in the LLC when the timed pass starts; whether the rest cost nothing at 1536 KB is open, and it does not
+  its buffer cycle) the second chase is faster than the first (65.06 against 70.31 cycles at 1152 KB, 79.14 against
+  82.19 at 1280), by about the size of the dip in `t_sweep`'s 1 GHz chase, and writing every element again brings the
+  time and the writes back (69.92 and 12258, 82.35 and 15736). At 1536 KB the first chase writes back nearly the whole
+  LLC (16373 of its 16384 lines) and its timed pass is no slower (98.26 against 98.30). The counts cover both passes
+  and only the second is timed, so most of these write-backs probably fall in the untimed warm-up pass, which has
+  about 41500 refills there, 2.5 per LLC line, against about 11700 at 1152 KB, 0.7 per line, where many dirty lines
+  are still in the LLC when the timed pass starts; whether the rest cost nothing at 1536 KB is open, and it does not
   involve the model.
 
 So `1 GHz target not emulated` is the right verdict, but not for the reason `t_sweep` prints (that the model adds 17
 of the target's 80 cycles): on this memory a whole line comes later than the 1 GHz target would deliver it.
+
+On the 4-core bitstream (`m8n8_fix_n4_20261030`) each cycles-per-read figure of both experiments is within 0.07 of
+the 8-core run's (the bullets above). The model's read and write counts in the second (chase order) are identical;
+in the first (`LAT_RD` sweep) the reads agree to within one, the late reads to within 600 (48089 against 47493 at
+`LAT_RD` 80) and the hold cycles to within 0.7 %.
 
 ## Test
 

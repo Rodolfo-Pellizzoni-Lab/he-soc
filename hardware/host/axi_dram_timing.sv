@@ -2,9 +2,11 @@
 //
 // The SoC clock is read as the clock of the target being emulated (one SoC cycle = one target cycle, whatever the
 // FPGA runs at). Requests go to the real memory at once; every response is held in the model until the DRAM of the
-// target would have delivered it: the first read beat lat_rd target cycles after the accepted AR, the write response
-// lat_wr after the accepted AW, and no earlier than the modelled data bus is free (occ16: 1/16 target cycles of bus
-// time per 8-byte beat, so a 64-byte line costs 8 * occ16 / 16 cycles). Beats of one burst are paced at occ16.
+// target would have delivered it. A read burst starts lat_rd target cycles after the accepted AR, a write burst
+// lat_wr after the accepted AW, but not before the modelled data bus is free; each burst then holds the bus for its
+// bus time (occ16: 1/16 target cycles per 8-byte beat, so a 64-byte line costs 8 * occ16 / 16 cycles). The first
+// read beat is modelled at the burst's start and the others occ16 / 16 cycles apart; the write response at the end
+// of the burst's bus time, i.e. at max(AW + lat_wr, bus free) + bus time.
 //
 // Sits in front of the DRAM path in host_domain, after the SPU and the slowdown regulator that follow the LLC's
 // memory port; configured and counted through the SoC
@@ -14,9 +16,14 @@
 // request order (the simulated DRAM and the DDR4 controller do); a different ID at the head of the queue is
 // reported in simulation.
 //
-// When the real memory is slower than the model (data arrives after its modelled time) the beat is released at
-// arrival and counted in rd_late / late_cycles: that is the case the second step (gating the target clock) will
-// absorb; until then it is a measured error, not a hang.
+// While the model is enabled every beat spends at least a cycle in its buffer: it is due at its modelled time or one
+// cycle after it arrives, whichever is later. When the real memory is slower than the model (data arrives after its
+// modelled time) the beat therefore leaves one cycle after it arrives, and a read whose first beat arrives after its
+// modelled time is counted in rd_late / late_cycles (whole cycles, without the buffer cycle); a first beat that
+// arrives in the cycle it is due in (the first cycle at or after its modelled time) also leaves a cycle late and adds
+// nothing to late_cycles or hold_cycles (rd_late counts it only when its modelled time, set by a bus time in 1/16
+// cycles, is not a whole cycle); later beats and write responses are not judged. Lateness is what the second step
+// (gating the target clock) will absorb; until then it is a measured error, not a hang.
 
 package dram_model_pkg;
   typedef struct packed {
@@ -57,7 +64,10 @@ module axi_dram_timing #(
   output axi_req_t             mst_req_o,
   input  axi_resp_t            mst_resp_i
 );
-  localparam int unsigned TW = 48;                 // time in 1/16 target cycles: 2^44 cycles before wrap
+  // time in 1/16 target cycles: 2^44 cycles (4.07 days at 50 MHz) before wrap. The compares below are not wrap-safe:
+  // enabled across the wrap, or enabled again after it before a write accepted while disabled has set bus_free_q
+  // to now, the model holds its responses for up to as long again (hardware/docs/dram_model.md).
+  localparam int unsigned TW = 48;
   typedef logic [TW-1:0]      t16_t;
   typedef logic [IdWidth-1:0] id_t;
   localparam int unsigned RdPW = $clog2(RdDepth);

@@ -112,8 +112,8 @@ module tb_axi_dram_timing;
     r_cycles.delete(); t0 = cyc; send_ar(5, 7); send_ar(6, 7);
     repeat (600) @(posedge clk);
     check(r_cycles.size() == 16, $sformatf("occ 32: %0d beats", r_cycles.size()));
-    // the first beat is late (the memory's MemLat against lat_rd 0) and comes out at arrival; the others are paced
-    // 32 cycles after the burst's modelled start (the AR, 2 cycles after t0)
+    // the first beat is late (the memory's MemLat against lat_rd 0) and comes out one cycle after it arrives; the
+    // others are paced 32 cycles after the burst's modelled start (the AR, 2 cycles after t0)
     check(r_cycles[0] - t0 <= MemLat + 4 && r_cycles[2] - r_cycles[1] == 32 && r_cycles[7] - r_cycles[1] == 192,
           $sformatf("occ 32: beats of burst 1 at +%0d +%0d .. +%0d", r_cycles[0] - t0, r_cycles[1] - t0, r_cycles[7] - t0));
     check(r_cycles[8] - r_cycles[1] == 224 && r_cycles[15] - r_cycles[8] == 224, $sformatf("occ 32: burst 2 at +%0d .. +%0d", r_cycles[8] - t0, r_cycles[15] - t0));
