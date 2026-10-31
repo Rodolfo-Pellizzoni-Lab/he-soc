@@ -158,15 +158,14 @@ int thread_entry(int cid, int nc){
   pointer = (int *) 0x10404020;
   *pointer = 0x1;
 
-  #ifdef FPGA_EMULATION
-  uint32_t baud_rate = 9600;
-  uint32_t test_freq = 100000000;
-  #else
+  // On the board the startup code has set the UART: its DLL is hard-wired, so the divisor for 9600 Bd at
+  // 100 MHz (651) would set DLM and garble the console. Only the simulation sets it here.
+  #ifndef FPGA_EMULATION
   set_flls();
   uint32_t baud_rate = 115200;
   uint32_t test_freq = 50000000;
-  #endif
   uart_set_cfg(0,(test_freq/baud_rate)>>4);
+  #endif
   count = 0;
 
   uint64_t misa = read_csr(misa);
