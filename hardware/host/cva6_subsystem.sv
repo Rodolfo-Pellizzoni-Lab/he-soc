@@ -371,6 +371,11 @@ module cva6_subsystem
   );
 
 
+  // The debug module's bus bridge is reset with the crossbar that feeds it (ndmreset_n), the debug module itself only
+  // at power-on. On the power-on reset, an ndmreset that came while it held a write's AW but not yet its W (the
+  // crossbar sends W a cycle after AW, so every HALTED store of a hart parked in the debug ROM passes WAIT_WVALID)
+  // cleared the W but not the bridge: it then refused every AR and AW, so no hart could fetch the debug ROM and halt
+  // until a power-on reset (xsim/tests/run_dm_bridge.sh). Upstream CVA6's ariane_xilinx.sv has the same split.
   axi2mem #(
     .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
     .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
@@ -378,7 +383,7 @@ module cva6_subsystem
     .AXI_USER_WIDTH ( AXI_USER_WIDTH           )
   ) i_dm_axi2mem (
     .clk_i      ( clk_i                         ),
-    .rst_ni     ( rst_ni                        ),
+    .rst_ni     ( ndmreset_n                    ),
     .slave      ( master[ariane_soc::Debug_Slv] ),
     .req_o      ( dm_slave_req                  ),
     .we_o       ( dm_slave_we                   ),
