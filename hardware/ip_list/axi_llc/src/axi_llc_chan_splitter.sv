@@ -63,31 +63,38 @@ module axi_llc_chan_splitter #(
 
   chan_t curr_chan;
   chan_t next_chan;
+  // xsim: proc_control_cut writes these and assigns the ports and curr_chan once at its end: its defaults crossed
+  // into the burst cutter and i_rw_arb_tree, whose outputs it reads, and the transients chased each other
+  // without end (hardware/xsim/README.md, section 2)
+  chan_t curr_chan_xc;       // xsim: shadow of curr_chan
+  logic  ax_chan_ready_o_xc; // xsim: shadow of ax_chan_ready_o
+  logic  desc_valid_o_xc;    // xsim: shadow of desc_valid_o
+  logic  unit_busy_o_xc;     // xsim: shadow of unit_busy_o
 
   always_comb begin : proc_control_cut
     // default assignments
-    curr_chan       = ax_chan_slv_i;
+    curr_chan_xc    = ax_chan_slv_i;
     chan_d          = chan_q;
     load_chan       = 1'b0;
     busy_d          = busy_q;
     load_busy       = 1'b0;
     // handshakes
-    ax_chan_ready_o = 1'b0;
-    desc_valid_o    = 1'b0;
+    ax_chan_ready_o_xc = 1'b0;
+    desc_valid_o_xc    = 1'b0;
     // status flag
-    unit_busy_o     = 1'b0;
+    unit_busy_o_xc     = 1'b0;
 
     // control
     if (busy_q) begin
-      unit_busy_o  = 1'b1;
-      curr_chan    = chan_q;
-      desc_valid_o = 1'b1;
+      unit_busy_o_xc  = 1'b1;
+      curr_chan_xc    = chan_q;
+      desc_valid_o_xc = 1'b1;
       // handshake downstream
       if (desc_ready_i) begin
         // do something different, if it is the last descriptor or not
         // it is the last descriptor
         if (desc_o.x_last) begin
-          ax_chan_ready_o = 1'b1;
+          ax_chan_ready_o_xc = 1'b1;
           // handshake new ax vector
           if (ax_chan_valid_i) begin
             chan_d    = ax_chan_slv_i;
@@ -106,11 +113,11 @@ module axi_llc_chan_splitter #(
 
     // we are ready to take in a new vector, if we do not get stalled of flushing
     end else begin
-      ax_chan_ready_o = 1'b1;
+      ax_chan_ready_o_xc = 1'b1;
       // handshake the new vector
       if (ax_chan_valid_i) begin
-        unit_busy_o  = 1'b1;
-        desc_valid_o = 1'b1;
+        unit_busy_o_xc  = 1'b1;
+        desc_valid_o_xc = 1'b1;
         // what happens, if the descriptor handshakes out
         // downstream is ready
         if (desc_ready_i) begin
@@ -130,6 +137,10 @@ module axi_llc_chan_splitter #(
         end
       end
     end
+    curr_chan       = curr_chan_xc;       // xsim: outputs assigned once
+    ax_chan_ready_o = ax_chan_ready_o_xc; // xsim: outputs assigned once
+    desc_valid_o    = desc_valid_o_xc;    // xsim: outputs assigned once
+    unit_busy_o     = unit_busy_o_xc;     // xsim: outputs assigned once
   end
 
   // this module determines how many data beats of the AX request map onto a cache line

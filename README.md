@@ -34,7 +34,7 @@ The **AXI-LLC** (`ip_list/axi_llc/`, the upstream PULP last-level cache) carries
 Under `software/` (each builds a `.riscv` plus the memory image; see *Building & running* below):
 
 - **`pmu_test/`** — APMU bring-up: programs the PMU counter bundles and runs a bubble-sort program on the APMU's **Ibex processing element** (loaded into its ISPM/DSPM scratchpads), checking the core and the counter-register interface work.
-- **`pmu_cntr_test/`** — quad-core memory-traffic benchmark: each core streams its own disjoint 320 KB L3 region (load + store per cache line) while the PMU counts **per-core LLC and main-memory read/write requests**; cores 2/3 are woken by counter-overflow → PLIC IRQ.
+- **`pmu_cntr_test/`** — multi-core memory-traffic test (any core count, `-DSOC_NUM_CORES=<n>`): each core streams its own disjoint 64 KB of DRAM outside the LLC window (load + store per cache line) while the PMU counts **per-core LLC and main-memory read/write requests**, and checks that each core's requests are credited to it (self-checking: the exit code is the number of failed checks); cores 2 and up are woken by counter-overflow → PLIC IRQ.
 - **`pmu_evu_bench/`** — CVA6-EVU profiling: the APMU's Ibex uses **PC-milestone windows** (function entry/exit) to profile two CVA6 functions — a pure-ALU chain vs a cold-load-heavy one — via the EVU events (L1D misses, stalls, branches), showing they produce distinct profiles.
 - **`hello_culsans/`** — minimal dual-boot (CVA6 + OpenTitan) bring-up + UART sanity test.
 - **`quad_boot/`** — brings up all four CVA6 cores (each prints a hello): core 0 boots and arms PMU counters 0/1 to overflow → PLIC IRQs that wake cores 2/3, while core 1 comes up on its own — a quad-core boot + PMU-interrupt-wakeup demo.

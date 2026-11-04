@@ -60,6 +60,10 @@ vsim2xsim.py    bender vsim Tcl -> one xvlog/xvhdl call per bender block (keeps 
 chain_dbg.sh    stall finder: debug snapshot, step to the stall, ptrace ranking of the spinning processes
 tools/comb_fix.py  mechanical rewrite of a combinational ring (section 2): comb_fix.py <file> <var> [<var> ...]
 sw/uint_compat.h   'typedef unsigned int uint' for the software build
+tests/          unit tests on a built work dir (XSIM_WORK): run_hpm.sh (perf_counters), run_accel_socket.sh
+                (accel_socket's memory side and tag policy); run_spu_b.sh (the SPU's write-response events with a
+                held B; needs no built SoC); run_dm_bridge.sh (the debug module's bus bridge across ndmreset at every
+                offset of the debug ROM's park loop; CONTROL=1 adds the old power-on wiring; needs no built SoC)
 ```
 
 ## 1. What hardware is simulated
@@ -120,15 +124,16 @@ a shadow variable (`<var>_xc`, lines marked `// xsim:`). Rewritten:
 | CVA6 miss handler pack block ↔ bypass arbiter | `cva6/core/cache_subsystem/miss_handler.sv` | t=0 |
 | AXI atop filter ↔ demux | `axi_atop_filter.sv`, `axi_demux_simple.sv` | 1.5 ms |
 | CDC reset controller ↔ 4-phase handshake (DMI) | `cdc_reset_ctrlr.sv`, `cdc_4phase.sv` | 1.9 ms |
+| Debug module memory: rw-logic ↔ hart control queue | `riscv-dbg/src/dm_mem.sv` (+ `dm_csrs.sv` outputs) | first "halted" write, 2.016 ms |
+| AXI data-width downsizer W/R blocks ↔ fall-through fifo | `axi_dw_downsizer.sv`, `fifo_v3.sv` (data_o) | first UART write, 2.53 ms |
+| SPU monitor CAM: each entry's block read `ptr_d[mmatch]`, written by the other entries' blocks (rewritten to `mmatch_next` from registered state, which also removed the `addr_idx_o` latch) | `spu/src/spu_r_chan.sv`, `spu_w_chan.sv` | only with the board-like DRAM path: a read response and a new request in the same cycle, 2.62 ms |
+| LLC channel splitter control ↔ its burst cutter and the descriptor arbiter (`i_rw_arb_tree`): the splitter's defaults for `curr_chan` and `desc_valid_o`, the cutter's for `desc_o` | `axi_llc_chan_splitter.sv`, `axi_llc_burst_cutter.sv` | t_qos with 8 cores, 4.26 ms (2026-10-30) |
 
 The rewrite's final assignment must sit at the top level of the block. An earlier revision of the
 `miss_handler.sv` rewrite left `bypass_ports_req = bpr;` inside the innermost `else`, which turned the port array into
 a latch: atomics/SC (and LR to shareable DRAM) never reached the bypass arbiter in xsim ("AMO hang"), and on the FPGA
 they only worked through a latch data-vs-enable race that depended on placement (fixed 2026-09-16). After running
 `comb_fix.py`, check the Vivado synthesis log for `inferring latch` in the rewritten file.
-| Debug module memory: rw-logic ↔ hart control queue | `riscv-dbg/src/dm_mem.sv` (+ `dm_csrs.sv` outputs) | first "halted" write, 2.016 ms |
-| AXI data-width downsizer W/R blocks ↔ fall-through fifo | `axi_dw_downsizer.sv`, `fifo_v3.sv` (data_o) | first UART write, 2.53 ms |
-| SPU monitor CAM: each entry's block read `ptr_d[mmatch]`, written by the other entries' blocks (rewritten to `mmatch_next` from registered state, which also removed the `addr_idx_o` latch) | `spu/src/spu_r_chan.sv`, `spu_w_chan.sv` | only with the board-like DRAM path: a read response and a new request in the same cycle, 2.62 ms |
 
 ### Other xsim patches
 
@@ -144,6 +149,9 @@ they only worked through a latch data-vs-enable race that depended on placement 
   (memory in the SoC clock domain, answers within a cycle or two). The ideal path hid a zero-delay ring in the SPU
   (table above) that the jitter exposes.
 - Testbench: direct ELF preload (XSIM_L2_PRELOAD: L2 banks, plus the sim DRAM with XSIM_L3_FLOW) instead of JTAG SBA bit-banging; XSIM_L3_FLOW selects entry 0x8000_0000 / tohost 0x1C00_0000; XSIM_TICK prints a heartbeat every 10 µs for the watchdog.
+- `host/qos_monitor.sv` decodes user fields inline in its `final` block: in a statement with several function calls
+  that take a `foreach` index, xsim returns 0 from every call after the first (`$display(..., f_src(u), f_rcid(u), ...)`
+  printed rcid=0 mcid=0 for every tag). One call per statement, or the index copied to a variable first, is correct.
 - Left in the sources, off by default: bisection hooks used while hunting the rings (`XSIM_CUT_<inst>`, `XSIM_V_CLK/RST/IN` in host_domain, `XSIM_INIT_REGS`, `XSIM_FORCE_RESET/REGS`, `XSIM_LLC_DEBUG`, `XSIM_DMI_DEBUG`, ...).
 
 ### Real repo issues found on the way (not xsim artefacts)

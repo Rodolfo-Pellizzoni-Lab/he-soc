@@ -1,6 +1,8 @@
 // Unit test of host/axi_dram_timing.sv: an AXI master issues line reads and writes, a memory answers after a
 // fixed delay, and the test checks the cycle at which every beat and response comes out of the model.
-//   cd hardware/xsim/work && xvlog -sv -work work ../tb_axi_dram_timing.sv && xelab -s tb_dm tb_axi_dram_timing && xsim tb_dm -R
+//   cd hardware/xsim/work && xvlog -sv -work work ../tb_axi_dram_timing.sv &&
+//     xelab -s tb_dm tb_axi_dram_timing --timescale 1ns/1ps && xsim tb_dm -R
+//   (the SoC packages have no timescale of their own, so xelab needs one)
 `timescale 1ns/1ps
 module tb_axi_dram_timing;
   import ariane_axi_soc::*;
@@ -110,8 +112,8 @@ module tb_axi_dram_timing;
     r_cycles.delete(); t0 = cyc; send_ar(5, 7); send_ar(6, 7);
     repeat (600) @(posedge clk);
     check(r_cycles.size() == 16, $sformatf("occ 32: %0d beats", r_cycles.size()));
-    // the first beat is late (the memory's MemLat against lat_rd 0) and comes out at arrival; the others are paced
-    // 32 cycles after the burst's modelled start (the AR, 2 cycles after t0)
+    // the first beat is late (the memory's MemLat against lat_rd 0) and comes out one cycle after it arrives; the
+    // others are paced 32 cycles after the burst's modelled start (the AR, 2 cycles after t0)
     check(r_cycles[0] - t0 <= MemLat + 4 && r_cycles[2] - r_cycles[1] == 32 && r_cycles[7] - r_cycles[1] == 192,
           $sformatf("occ 32: beats of burst 1 at +%0d +%0d .. +%0d", r_cycles[0] - t0, r_cycles[1] - t0, r_cycles[7] - t0));
     check(r_cycles[8] - r_cycles[1] == 224 && r_cycles[15] - r_cycles[8] == 224, $sformatf("occ 32: burst 2 at +%0d .. +%0d", r_cycles[8] - t0, r_cycles[15] - t0));
@@ -140,6 +142,7 @@ module tb_axi_dram_timing;
           $sformatf("enable in flight: %0d beats, burst 1 done at +%0d, burst 2 at +%0d", r_cycles.size(), r_cycles[7] - t0, r_cycles[8] - t0));
     // rd_count counts bursts accepted while enabled (the second), rd_beats every beat delivered while enabled
     check(cnt.rd_count == 1 && cnt.rd_beats == 16 && dut.rd_cnt_q == 0, $sformatf("enable in flight: rd %0d beats %0d outstanding %0d", cnt.rd_count, cnt.rd_beats, dut.rd_cnt_q));
+    check(cnt.rd_late == 0 && cnt.late_cycles == 0, $sformatf("enable in flight: rd_late %0d late_cycles %0d (a read accepted while disabled has no modelled time)", cnt.rd_late, cnt.late_cycles));
     // 7. disable while beats are held: they still come out, in order, before anything passes through
     cfg.lat_rd = 60; @(posedge clk);
     r_cycles.delete(); t0 = cyc; send_ar(3, 7);
@@ -148,6 +151,25 @@ module tb_axi_dram_timing;
     repeat (120) @(posedge clk);
     check(r_cycles.size() == 16 && r_cycles[0] - t0 >= 60 && r_cycles[8] > r_cycles[7] && dut.rb_cnt_q == 0,
           $sformatf("disable with data held: %0d beats, first at +%0d, second burst at +%0d, buffered %0d", r_cycles.size(), r_cycles[0] - t0, r_cycles[8] - t0, dut.rb_cnt_q));
+    // 8. a clear while enabled (cfg driven with nonblocking assignments so it meets the AR in the same cycle):
+    //    a read in flight across the clear was counted in the old interval and is not judged in the new one; an AR
+    //    accepted in the clear cycle is counted and judged in the new one (lat_rd 1 < MemLat: late)
+    cfg.enable <= 0; @(posedge clk); cfg.lat_rd <= 1; cfg.clear <= 1; cfg.enable <= 1; @(posedge clk); cfg.clear <= 0;
+    send_ar(1, 0);
+    cfg.clear <= 1; @(posedge clk); cfg.clear <= 0;     // the beat is still MemLat cycles away
+    repeat (30) @(posedge clk);
+    check(cnt.rd_count == 0 && cnt.rd_late == 0 && cnt.late_cycles == 0 && cnt.hold_cycles == 0,
+          $sformatf("clear in flight: rd %0d late %0d late_cycles %0d hold %0d", cnt.rd_count, cnt.rd_late, cnt.late_cycles, cnt.hold_cycles));
+    @(posedge clk); slv_req.ar <= '0; slv_req.ar.id <= 2; slv_req.ar.size <= 3; slv_req.ar_valid <= 1; cfg.clear <= 1;
+    @(posedge clk); slv_req.ar_valid <= 0; cfg.clear <= 0;     // handshake and clear in the same cycle
+    repeat (30) @(posedge clk);
+    check(cnt.rd_count == 1 && cnt.rd_late == 1, $sformatf("AR in the clear cycle: rd %0d late %0d", cnt.rd_count, cnt.rd_late));
+    //    the first beat of an earlier read arriving in the clear cycle itself is not judged either
+    send_ar(3, 0);
+    wait (r_valid_q); cfg.clear <= 1; @(posedge clk); cfg.clear <= 0;
+    repeat (30) @(posedge clk);
+    check(cnt.rd_count == 0 && cnt.rd_late == 0 && cnt.hold_cycles == 0,
+          $sformatf("first beat in the clear cycle: rd %0d late %0d hold %0d", cnt.rd_count, cnt.rd_late, cnt.hold_cycles));
     if (fails == 0) $display("UNIT PASS tb_axi_dram_timing"); else $display("UNIT FAIL tb_axi_dram_timing: %0d", fails);
     $finish;
   end

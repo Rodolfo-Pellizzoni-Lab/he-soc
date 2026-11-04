@@ -21,11 +21,12 @@ package ariane_axi_soc;
     typedef enum logic { SINGLE_REQ, CACHE_LINE_REQ } ad_req_t;
 
     // AXI user field of the SoC buses:
-    //   [QosUserLsb-1:0]                       source port of a CCU request, written by the CCU: 0-3 the cores,
-    //                                          4 the accelerator socket's DMA port (cva6_synth_wrap)
+    //   [QosUserLsb-1:0]                       source port of a CCU request, written by the CCU: the cores
+    //                                          0..NumCVA6-1, then the accelerator socket's and the Ethernet's DMA ports
+    //                                          (ariane_soc::CcuAccelPort, CcuEthPort); 0 from other masters
     //   [QosUserLsb +: ariane_pkg::QOS_TAG_WIDTH] QoS tag {AT, MCID, RCID} of the requesting hart (Ssqosid srmcfg,
     //                                          for CBQRI capacity / bandwidth controllers); 0 from other masters
-    localparam int unsigned QosUserLsb = $clog2(ariane_soc::NumCVA6 + 1);
+    localparam int unsigned QosUserLsb = ariane_soc::CcuSrcWidth;
     localparam UserWidth = QosUserLsb + ariane_pkg::QOS_TAG_WIDTH;
     localparam AddrWidth = 64;
     localparam DataWidth = 64;
@@ -46,6 +47,16 @@ package ariane_axi_soc;
     endfunction
     function automatic user_t qos_user(ariane_pkg::qos_tag_t tag);
         return user_t'(tag) << QosUserLsb;
+    endfunction
+    // Source of a request at the LLC memory port (ariane_soc::NumMemSrcs codes): for the CVA6 crossbar port the CCU
+    // source in the user field, for crossbar master p >= 1 NumCcuPorts + p - 1. slv_id is the ID the crossbar hands
+    // its slaves, {crossbar port, the master's own ID}; the LLC's memory port adds one bit above it.
+    function automatic logic [ariane_soc::MemSrcWidth-1:0] mem_src(logic [ariane_soc::IdWidthSlave-1:0] slv_id,
+                                                                   user_t user);
+        logic [ariane_soc::XbarPortWidth-1:0] p;
+        p = slv_id[ariane_soc::IdWidth +: ariane_soc::XbarPortWidth];
+        if (p == ariane_soc::CVA6) return ariane_soc::MemSrcWidth'(user[QosUserLsb-1:0]);
+        return ariane_soc::MemSrcWidth'(ariane_soc::NumCcuPorts + p - 1);
     endfunction
     typedef logic [DataWidth32-1:0] data32_t;
 
@@ -410,5 +421,37 @@ package ariane_axi_soc;
       r_chan_lite_t  r;
       logic          r_valid;
     } resp_lite_t;
+
+    // ---- Types used by the slowdown memory-bandwidth regulator IP (ip_list/slowdown) ----
+    typedef struct packed {
+        logic             ar_valid;
+        ar_chan_slv_mem_t ar_signals;
+    } ar_fifo_entry_t;
+
+    typedef struct packed {
+        logic    w_valid;
+        w_chan_t w_signals;
+    } w_data_fifo_entry_t;
+
+    typedef struct packed {
+        id_slv_mem_t      id;
+        addr_t            addr;
+        axi_pkg::len_t    len;
+        axi_pkg::size_t   size;
+        axi_pkg::burst_t  burst;
+        logic             lock;
+        axi_pkg::cache_t  cache;
+        axi_pkg::prot_t   prot;
+        axi_pkg::qos_t    qos;
+        axi_pkg::region_t region;
+        axi_pkg::atop_t   atop; // not present in AR channel, present in AW channel
+        user_t            user;
+    } address_queue_signals_t;
+
+    typedef struct packed {
+        logic                   valid;
+        address_queue_signals_t AR_AW_signals;
+        logic                   AR_AW_tag;  // AR = 1, AW = 0
+    } address_queue_entry_t;
 
 endpackage

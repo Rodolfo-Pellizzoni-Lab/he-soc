@@ -19,14 +19,18 @@ SoC for tests.
 | PLIC 11 / 15 | DMA TX / RX completion (previously unused sources), taken only once the DMA's reset-out lines have been high for 8 cycles |
 
 **DMA path.** The DMA's three AXI masters (descriptors, 32-bit; TX reads and RX writes, 64-bit) are upsized, muxed
-(IDs 0, 2, 4) and split into single beats (`axi_burst_splitter`). In `cva6_subsystem` they are muxed with the
-accelerator socket's DMA on 3-bit IDs into a 4-bit one, which is the coherence unit's own ID width
-(`axi_id_width_adapt` zero-extends and truncates around it), and enter the CCU's DMA port (`cva6_synth_wrap`,
-`DmaCcuPort`): every read is a ReadOnce, every write a WriteUnique, so received frames and descriptor updates are
-coherent with the cores' write-back L1 caches without any software maintenance. That is what Linux 5.10 on RISC-V
-needs (it has no non-coherent DMA support). Both DMAs share one in-order port, so they serialise each other.
-(`axi_id_serialize` with one unique ID was tried first and deadlocked: it re-issued a read whose response it then
-refused; the probes are in the branch history.)
+(IDs 0, 2, 4) and split into single beats (`axi_burst_splitter`). They enter the coherence unit through a CCU port
+of their own, `NumCVA6 + 1` (`ariane_soc::CcuEthPort`, 5 with four cores), next to the accelerator socket's DMA port
+(`CcuAccelPort`, 4). `cva6_subsystem` puts a register stage on its AW and AR, and `cva6_synth_wrap` turns every read
+into a ReadOnce and every write into a WriteUnique, so received frames and descriptor updates are coherent with the
+cores' write-back L1 caches without any software maintenance. That is what Linux 5.10 on RISC-V needs (it has no
+non-coherent DMA support). The IDs fit the coherence unit's 4-bit ID, to which the wrapper cuts them. The CCU writes
+the port number into the user field, so the APMU's SPU on the memory port counts the Ethernet's DRAM traffic as
+source 5, apart from the socket's 4 (`hardware/ip_list/apmu/README.md`); its QoS tag is 0. The CCU still handles one
+snooped transaction at a time, so the two DMAs still serialise each other. (Before the Ethernet had a port of its
+own, `cva6_subsystem` muxed the two DMAs on 3-bit IDs into one DMA port. `axi_id_serialize` with one unique ID was
+tried first and deadlocked: it re-issued a read whose response it then refused; the probes are in the branch
+history.)
 
 **Clocks and pins.** The AXI side of both IPs runs on the 50 MHz SoC clock (the IP's AXI clock range is 10-300
 MHz). The IP takes the PHY's 625 MHz LVDS clock directly (`xeth_lvds_clk_p/n`, AT22/AU22) and derives its own
@@ -50,13 +54,13 @@ stream the DMA expects (tag + app0-4, length in the last word). The DMA control 
 the DMA itself, so the stand-in accepts and ignores that stream.
 
 Two simulation-only aids live in the RTL under `ifndef SYNTHESIS`: `tb/axi_x_monitor.sv` instances on the DMA's
-output, on the coherence unit's DMA port and on both sides of the LLC report the first AXI handshakes that carry
-an X (none in a healthy run), and the interrupt gate above exists because of a start-up glitch of the IP's VHDL:
-about 90 ns after reset release its reset-out lines go high for one cycle and drop again, and in that cycle its
-interrupt registers are recomputed from not-yet-initialised flags, so both interrupt outputs are X for one cycle.
-The PLIC gateway latches that into its sticky interrupt-active bits, a later read of the pending register returns
-X, and the branch that tests it poisons the core's frontend (this showed up as a livelock after the burst phase of
-t_eth; the trail is in the branch history).
+output (`eth_dma`), on its coherence-unit port (`ccu_dma_eth`; the socket's is `ccu_dma_accel`) and on both sides of
+the LLC report the first AXI handshakes that carry an X (none in a healthy run), and the interrupt gate above exists
+because of a start-up glitch of the IP's VHDL: about 90 ns after reset release its reset-out lines go high for one
+cycle and drop again, and in that cycle its interrupt registers are recomputed from not-yet-initialised flags, so
+both interrupt outputs are X for one cycle. The PLIC gateway latches that into its sticky interrupt-active bits, a
+later read of the pending register returns X, and the branch that tests it poisons the core's frontend (this showed
+up as a livelock after the burst phase of t_eth; the trail is in the branch history).
 
 ## Software
 
@@ -76,22 +80,33 @@ shows RxDcmLock, MgtRdy and PhyRstCmplt. On the board (bitstream `ethernet`, 202
 trips 2332 cycles for 14 bytes to 27981 for 1514. The test needs about 60 s on the board (`board_regress
 sleep_ms=90000`).
 
-`software/netboot`: the network boot loader. Linked at 0x8F00_0000 (`netboot.ld`), it brings the link up, takes
-its address (`STATIC_IP=`, or DHCP), finds the server with a UDP broadcast (`ALSAQR-NETBOOT?` on port 6969,
-fallback `SERVER_IP=`), fetches `alsaqr.dtb` to 0x8180_0000 and `fw_payload.bin` to 0x8000_0000 with TFTP
-(blksize 1428; 19.5 MB in 25.6 s, 0.76 MB/s, lock-step), prints an additive checksum of both (compare with
-`sum(open(f,'rb').read()) & 0xffffffff` on the host) and jumps to the payload with a0 = hart id, a1 = the DTB.
-Before anything else it widens the LLC's cached address range (SoC control 0x1A10_6018/1C, 8 MB out of reset: the
-kernel image only) to all of RAM (`LLC_CACHED_END`, default 0xA000_0000; `make LLC_CACHED_END=0` keeps the ROM's),
-so Linux and its buffers are LLC-cached; it must be done here, while nothing runs, because shrinking that range on a
-running system wedges the SoC (hardware/docs/qos.md). It answers ARP and ping meanwhile and keeps retrying discovery for ever (printing the MAC's statistics counters
-each round: 0x200 RX bytes, 0x208 TX bytes, 0x290 RX frames, 0x2D8 TX frames). All four harts enter OpenSBI, as
-with the JTAG flow: hart 1, parked by the start-up code, and harts 2-3, parked in the boot ROM, wait in
-`enter_payload` (the ROM's mailbox at 0x1040_4000 points there; hart 1 is rung through the mailbox doorbell, harts
-2-3 through the APMU interrupts as t_smp does) and follow hart 0 into the payload a moment later, so hart 0 is the
-cold-boot hart. The loader has its own copy of the start-up `syscalls.c` only because the common one sends hart 1
-to 0x8000_0000 before anything is loaded there. The server is `alsaqr-mcp/scripts/netboot_server.py --dir <dir>`
-(symlinks to the bundle's `install64` files are fine), unprivileged (port 6969). Build:
+`software/soc_tests/t_srcid`, phase E, sends one frame through the same loopback with its descriptors and buffers
+outside the LLC window and checks that the APMU's memory-port SPU credits all of the DMA's DRAM reads and writes to
+source N+1 (`CcuEthPort`: 5 with four cores, 9 with eight) and none to the cores or the socket, and how many there
+are: every request is one 64-bit beat, and the DMA fetches 13 descriptor words for TX (7 beats) and 8 for RX (4) and
+writes back the status word for TX (1) and the status and app0-4 words for RX (4). A frame in 64-byte-aligned buffers
+thus makes 11 reads plus its TX beats and 5 writes plus its RX beats at the coherence unit: exactly 19 reads and 13
+writes for phase E's 64 bytes. (The writes all reach the LLC, so t_eth's QoS table shows its 16 frames' 786; most of
+its reads are answered from the core's L1.)
+
+`software/netboot`: the network boot loader. Linked at 0x8F00_0000 (`netboot.ld`), it brings the link up, takes its
+address (`STATIC_IP=`, or DHCP), finds the server with a UDP broadcast (`ALSAQR-NETBOOT?` on port 6969, fallback
+`SERVER_IP=`), fetches `alsaqr.dtb` to 0x8180_0000 and `fw_payload.bin` to 0x8000_0000 with TFTP (blksize 1428; 19.5
+MB in 25.6 s, 0.76 MB/s, lock-step), prints an additive checksum of both (compare with
+`sum(open(f,'rb').read()) & 0xffffffff` on the host) and jumps to the payload with a0 = hart id, a1 = the DTB. Before
+anything else it widens the LLC's cached address range (SoC control 0x1A10_6018/1C, 8 MB out of reset: the kernel
+image only) to all of RAM (`LLC_CACHED_END`, default 0xA000_0000; `make SERVER_IP=<ip> LLC_CACHED_END=0` keeps the
+ROM's: the Makefile reads `LLC_CACHED_END` only with `SERVER_IP`), so Linux and its buffers are LLC-cached; it must
+be done here, while nothing runs, because shrinking that range on a running system wedges the SoC
+(hardware/docs/qos.md). It answers ARP and ping meanwhile and keeps retrying discovery for ever (printing the MAC's
+statistics counters each round: 0x200 RX bytes, 0x208 TX bytes, 0x290 RX frames, 0x2D8 TX frames). All
+`SOC_NUM_CORES` harts (four unless the loader is built with `SOC_NUM_CORES=<n>` for an n-core SoC) enter OpenSBI, as
+with the JTAG flow: harts 1 to n-1, parked in the boot ROM, wait in `enter_payload` (the ROM's mailbox at 0x1040_4000
+points there; hart 1 is rung through the mailbox doorbell, harts 2 to n-1 through the APMU interrupts, with
+`soc_wake_all` as t_smp does) and follow hart 0 into the payload a moment later, so hart 0 is the cold-boot hart. The
+loader has its own copy of the start-up `syscalls.c` only because the common one sends hart 1 to 0x8000_0000 before
+anything is loaded there. The server is `alsaqr-mcp/scripts/netboot_server.py --dir <dir>` (symlinks to the bundle's
+`install64` files are fine), unprivileged (port 6969). Build:
 `make fpga=1 SERVER_IP=10.42.0.1 STATIC_IP=10.42.0.2 STATIC_MASK=255.255.255.0 STATIC_GW=10.42.0.1`.
 
 **The link to the PC.** The board is never on a wider network: a USB Ethernet adapter of the host PC is cabled
@@ -111,9 +126,11 @@ Two properties of that DTS had never been booted and cost a day: `timebase-frequ
 the CLINT's mtime rate; OpenSBI's banner says "aclint-mtimer @ 1000000Hz" but that is its own notion), or the
 kernel's timer waits are 25x off and it hangs silently at `clocksource_done_booting` with the harts in WFI, where
 the debugger cannot halt them; and the console is `console=ttyS0,115200` with `clock-frequency` 50 MHz (what the
-JTAG flow and OpenSBI use, and what the host reads at 38400), not 38400. cpu@1-3 are `status = "okay"`; OpenSBI
-disables the ones that did not enter it. Over Ethernet (alsaqr-mcp `linux_boot netboot=true`): link, transfer
-~29 s (22 MB), OpenSBI, kernel, shell in about 95 s from the release of the loader; `smp: Brought up 1 node, 4 CPUs`.
+JTAG flow and OpenSBI use, and what the host reads at 38400), not 38400. cpu@1-3 are `status = "okay"` and stay so:
+OpenSBI's alsaqr platform runs only `fdt_fixups`, which has no CPU fixup, so a hart that did not enter OpenSBI is
+still listed: Linux starts it with the SBI HSM call, waits a second for it and logs `CPUn: failed to come online`.
+Over Ethernet (alsaqr-mcp `linux_boot netboot=true`): link, transfer ~29 s (22 MB), OpenSBI, kernel, shell in about
+95 s from the release of the loader; `smp: Brought up 1 node, 4 CPUs`.
 
 Since 2026-10-19 the bundle's kernel is 6.1.183 (Abdur Rahman's series). Its axienet driver manages the SGMII
 PCS/PMA itself through phylink and takes it from `pcs-handle`, falling back to `phy-handle` (the copper PHY, which it

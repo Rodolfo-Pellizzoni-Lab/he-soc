@@ -427,8 +427,9 @@ module axi_burst_splitter_ax_chan #(
             if (ax_ready_i) begin
               // Reduce number of bursts still to be sent by one and increment address.
               ax_d.len--;
+              // INCR: the beats after the first are aligned to the size (AXI A3.4.1), also when the burst starts unaligned
               if (ax_d.burst == axi_pkg::BURST_INCR) begin
-                ax_d.addr += (1 << ax_d.size);
+                ax_d.addr = axi_pkg::aligned_addr(ax_d.addr, ax_d.size) + (1 << ax_d.size);
               end
             end
             state_d = Busy;
@@ -447,8 +448,9 @@ module axi_burst_splitter_ax_chan #(
           end else begin
             // Otherwise, continue with the next burst.
             ax_d.len--;
+            // INCR: the beats after the first are aligned to the size (AXI A3.4.1), also when the burst starts unaligned
             if (ax_q.burst == axi_pkg::BURST_INCR) begin
-              ax_d.addr += (1 << ax_q.size);
+              ax_d.addr = axi_pkg::aligned_addr(ax_d.addr, ax_q.size) + (1 << ax_q.size);
             end
           end
         end

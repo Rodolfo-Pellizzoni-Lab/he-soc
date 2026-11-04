@@ -2,20 +2,28 @@
 //
 // The SoC clock is read as the clock of the target being emulated (one SoC cycle = one target cycle, whatever the
 // FPGA runs at). Requests go to the real memory at once; every response is held in the model until the DRAM of the
-// target would have delivered it: the first read beat lat_rd target cycles after the accepted AR, the write response
-// lat_wr after the accepted AW, and no earlier than the modelled data bus is free (occ16: 1/16 target cycles of bus
-// time per 8-byte beat, so a 64-byte line costs 8 * occ16 / 16 cycles). Beats of one burst are paced at occ16.
+// target would have delivered it. A read burst starts lat_rd target cycles after the accepted AR, a write burst
+// lat_wr after the accepted AW, but not before the modelled data bus is free; each burst then holds the bus for its
+// bus time (occ16: 1/16 target cycles per 8-byte beat, so a 64-byte line costs 8 * occ16 / 16 cycles). The first
+// read beat is modelled at the burst's start and the others occ16 / 16 cycles apart; the write response at the end
+// of the burst's bus time, i.e. at max(AW + lat_wr, bus free) + bus time.
 //
-// Sits between the LLC's memory port and the DRAM path in host_domain; configured and counted through the SoC
+// Sits in front of the DRAM path in host_domain, after the SPU and the slowdown regulator that follow the LLC's
+// memory port; configured and counted through the SoC
 // control registers at 0x1A10_6100 (apb_soc_control.sv). Outstanding requests are tracked whether the model is
 // enabled or not, so enable can change at any time: disabled, responses pass straight through once the buffers
 // have drained; enabled, they go through the buffers and come out when due. Responses are assumed to come back in
 // request order (the simulated DRAM and the DDR4 controller do); a different ID at the head of the queue is
 // reported in simulation.
 //
-// When the real memory is slower than the model (data arrives after its modelled time) the beat is released at
-// arrival and counted in rd_late / late_cycles: that is the case the second step (gating the target clock) will
-// absorb; until then it is a measured error, not a hang.
+// While the model is enabled every beat spends at least a cycle in its buffer: it is due at its modelled time or one
+// cycle after it arrives, whichever is later. When the real memory is slower than the model (data arrives after its
+// modelled time) the beat therefore leaves one cycle after it arrives, and a read whose first beat arrives after its
+// modelled time is counted in rd_late / late_cycles (whole cycles, without the buffer cycle); a first beat that
+// arrives in the cycle it is due in (the first cycle at or after its modelled time) also leaves a cycle late and adds
+// nothing to late_cycles or hold_cycles (rd_late counts it only when its modelled time, set by a bus time in 1/16
+// cycles, is not a whole cycle); later beats and write responses are not judged. Lateness is what the second step
+// (gating the target clock) will absorb; until then it is a measured error, not a hang.
 
 package dram_model_pkg;
   typedef struct packed {
@@ -56,7 +64,10 @@ module axi_dram_timing #(
   output axi_req_t             mst_req_o,
   input  axi_resp_t            mst_resp_i
 );
-  localparam int unsigned TW = 48;                 // time in 1/16 target cycles: 2^44 cycles before wrap
+  // time in 1/16 target cycles: 2^44 cycles (4.07 days at 50 MHz) before wrap. The compares below are not wrap-safe:
+  // enabled across the wrap, or enabled again after it before a write accepted while disabled has set bus_free_q
+  // to now, the model holds its responses for up to as long again (hardware/docs/dram_model.md).
+  localparam int unsigned TW = 48;
   typedef logic [TW-1:0]      t16_t;
   typedef logic [IdWidth-1:0] id_t;
   localparam int unsigned RdPW = $clog2(RdDepth);
@@ -64,7 +75,7 @@ module axi_dram_timing #(
   localparam int unsigned RbPW = $clog2(RBufDepth);
   localparam int unsigned BbPW = $clog2(BBufDepth);
 
-  typedef struct packed { logic first; id_t id; t16_t next16; } rd_entry_t;   // next16: release time of the next beat
+  typedef struct packed { logic first; logic timed; id_t id; t16_t next16; } rd_entry_t;   // next16: release time of the next beat; timed: accepted while enabled
   typedef struct packed { id_t id; t16_t rel16; }               wr_entry_t;
   typedef struct packed { r_chan_t beat; t16_t rel16; }         rbuf_entry_t;
   typedef struct packed { b_chan_t resp; t16_t rel16; }         bbuf_entry_t;
@@ -131,7 +142,10 @@ module axi_dram_timing #(
     wr_head_d = wr_head_q; wr_tail_d = wr_tail_q; wr_cnt_d = wr_cnt_q;
     rb_rd_d = rb_rd_q; rb_wr_d = rb_wr_q; rb_cnt_d = rb_cnt_q;
     bb_rd_d = bb_rd_q; bb_wr_d = bb_wr_q; bb_cnt_d = bb_cnt_q;
-    cnt_d = cnt_q;
+    cnt_d = cfg_i.clear ? '0 : cnt_q;   // a clear zeroes the counts and keeps this cycle's accepts and beats
+    // reads queued at a clear belong to the old interval: their first beats are not judged in the new one, so
+    // RD_LATE and HOLD_CYCLES only cover reads RD_COUNT has counted since the clear
+    if (cfg_i.clear) for (int i = 0; i < RdDepth; i++) rdq_d[i].timed = 1'b0;
     lat_rd16 = t16_t'(cfg_i.lat_rd) << 4;
     lat_wr16 = t16_t'(cfg_i.lat_wr) << 4;
     occ_ar   = (t16_t'(slv_req_i.ar.len) + 48'd1) * t16_t'(cfg_i.occ16);
@@ -143,11 +157,11 @@ module axi_dram_timing #(
       if (en) begin
         dl = (t16_q + lat_rd16 > bus_free_d) ? t16_q + lat_rd16 : bus_free_d;
         bus_free_d = dl + occ_ar;
-        cnt_d.rd_count = cnt_q.rd_count + 1'b1;
+        cnt_d.rd_count = cnt_d.rd_count + 1'b1;
       end else begin
         dl = t16_q;
       end
-      rdq_d[rd_tail_q] = '{first: 1'b1, id: slv_req_i.ar.id, next16: dl};
+      rdq_d[rd_tail_q] = '{first: 1'b1, timed: en, id: slv_req_i.ar.id, next16: dl};
       rd_tail_d = rd_tail_q + 1'b1;
       rd_cnt_d  = rd_cnt_d + 1'b1;
     end
@@ -156,7 +170,7 @@ module axi_dram_timing #(
       if (en) begin
         dl = (t16_q + lat_wr16 > bus_free_d) ? t16_q + lat_wr16 : bus_free_d;
         bus_free_d = dl + occ_aw;
-        cnt_d.wr_count = cnt_q.wr_count + 1'b1;
+        cnt_d.wr_count = cnt_d.wr_count + 1'b1;
       end else begin
         bus_free_d = t16_q;
       end
@@ -177,13 +191,14 @@ module axi_dram_timing #(
         rdq_d[rd_head_q].next16 = rel + (en ? t16_t'(cfg_i.occ16) : '0);
         rdq_d[rd_head_q].first  = 1'b0;
         if (en) begin
-          cnt_d.rd_beats = cnt_q.rd_beats + 1'b1;
-          if (rdq_q[rd_head_q].first) begin
+          cnt_d.rd_beats = cnt_d.rd_beats + 1'b1;
+          // only a read accepted while enabled, and since the last clear, has a modelled time in this interval
+          if (rdq_q[rd_head_q].first && rdq_q[rd_head_q].timed && !cfg_i.clear) begin
             if (t16_q > rel) begin
-              cnt_d.rd_late     = cnt_q.rd_late + 1'b1;
-              cnt_d.late_cycles = cnt_q.late_cycles + 32'((t16_q - rel) >> 4);
+              cnt_d.rd_late     = cnt_d.rd_late + 1'b1;
+              cnt_d.late_cycles = cnt_d.late_cycles + 32'((t16_q - rel) >> 4);
             end else begin
-              cnt_d.hold_cycles = cnt_q.hold_cycles + 32'((rel - t16_q) >> 4);
+              cnt_d.hold_cycles = cnt_d.hold_cycles + 32'((rel - t16_q) >> 4);
             end
           end
         end
@@ -214,7 +229,6 @@ module axi_dram_timing #(
       bb_rd_d  = bb_rd_q + 1'b1;
       bb_cnt_d = bb_cnt_d - 1'b1;
     end
-    if (cfg_i.clear) cnt_d = '0;
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin

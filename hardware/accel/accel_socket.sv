@@ -1,7 +1,8 @@
 // Accelerator socket: takes the place of the PULP cluster when EXCLUDE_CLUSTER is set.
 //
 //   CPU  --AXI4 (cluster window 0x1000_0000..0x103F_FFFF)--> slave FSM --reg port--> accel_slots
-//   accel_slots --mem ports--> round-robin arbiter --> axi_from_mem --AXI4--> host xbar (DRAM, L2 SPM, ...)
+//   accel_slots --mem ports--> round-robin arbiter --> axi_from_mem --AXI4--> the APMU's SPU --> the socket's port
+//     of the coherence unit (host/cva6_subsystem.sv) --> DRAM, L2 SPM, ...
 //   accel_slots --irq--> PLIC source 8 (interrupt ID 9, the cluster end-of-computation line)
 //
 // Slot i owns the 64 KB window 0x1000_0000 + i * 0x1_0000. Accesses to an empty slot or past the last slot get
@@ -20,7 +21,8 @@
 // of a slot carries the user field the slot asks for (mem_user_o; the template latches reg_user_i at START, so its
 // DMA is tagged with the hart that started the work). The socket is the trusted tagging point: per slot, the
 // policy register at 0x103F_0100 + 8*s can FORCE a tag the OS chose instead (the IOMMU device-context model):
-//   +0  TAG_POLICY  RW  bit 31 FORCE; [11:0] the user field to stamp on the slot's DMA while FORCE is set
+//   +0  TAG_POLICY  RW  bit 31 FORCE; [UserWidth-1:0] (ariane_axi_soc: [11:0] with four cores, [12:0] with eight)
+//                       the user field to stamp on the slot's DMA while FORCE is set
 //   +4  LAST_USER   R   the user field of the slot's most recent DMA request, after the policy
 // The CCU writes its port index into the low QosUserLsb bits of the user field, so those bits are cleared here.
 //
@@ -69,6 +71,16 @@ module accel_socket #(
   logic [NumSlots-1:0][31:0] pol_q;
   logic [NumSlots-1:0][15:0] last_user_q;
   localparam logic [15:0] PortBitsMask = 16'((1 << ariane_axi_soc::QosUserLsb) - 1);
+  // the user field TAG_POLICY can force: all of the SoC's (ariane_axi_soc::UserWidth bits, 12 with four cores and 13
+  // with eight), under the FORCE bit; the socket's user fields are 16 bits
+  localparam int unsigned PolUserW = ariane_axi_soc::UserWidth;
+  localparam logic [31:0] PolMask  = 32'h8000_0000 | 32'((1 << PolUserW) - 1);
+  // pragma translate_off
+  initial begin : p_user_width_assert
+    assert (PolUserW <= 16)
+      else $fatal(1, "accel_socket: the %0d-bit SoC user field does not fit its 16-bit tags", PolUserW);
+  end
+  // pragma translate_on
 
   accel_slots #(.NumSlots(NumSlots)) i_slots (
     .clk_i, .rst_ni,
@@ -130,7 +142,7 @@ module accel_socket #(
   function automatic logic [31:0] policy_write(logic [31:0] old, logic [31:0] wd, logic [3:0] be);
     logic [31:0] v = old;
     for (int b = 0; b < 4; b++) if (be[b]) v[8*b +: 8] = wd[8*b +: 8];
-    return {v[31], 19'b0, v[11:0]};   // bit 31 FORCE, [11:0] the user field; the rest reads as 0
+    return v & PolMask;   // bit 31 FORCE, [PolUserW-1:0] the user field; the rest reads as 0
   endfunction
   function automatic logic [63:0] next_addr(logic [63:0] a, logic [2:0] size, logic [1:0] burst);
     return (burst == axi_pkg::BURST_FIXED) ? a : ((a >> size) + 64'd1) << size;
@@ -274,7 +286,8 @@ module accel_socket #(
 
   // ------------------------------------------------------------------ memory side: round-robin over the slots
   localparam int unsigned MaxReq = 4;
-  logic [SlotW-1:0] rr_q, sel;
+  logic [SlotW-1:0] rr_q, sel, hold_sel_q;
+  logic             hold_q, held;
   logic             dn_req, dn_gnt, dn_rvalid, dn_err;
   logic [63:0]      dn_rdata;
 
@@ -294,7 +307,15 @@ module accel_socket #(
   logic [$clog2(MaxReq):0]      cnt_q;
   logic [$clog2(MaxReq)-1:0]    wp_q, rp_q;
 
-  assign sel    = pick(m_req, rr_q);
+  // The request on axi_from_mem becomes an AXI AR (or AW and W) whose payload and valid must not change before its
+  // handshake: while it waits for its grant, keep its slot (hold_q) and its tag (hold_user_q, below), also when a
+  // slot earlier in round-robin order asks meanwhile. Picked afresh every cycle, such a slot took over a waiting
+  // request: the AR/AW changed or was withdrawn (the APMU's SPU, which counts a request at its first valid cycle,
+  // would count it twice), and with two writing slots one slot's W could go out with the other's AW. A slot holds its
+  // request until it is granted (port contract), so the held slot still asks; should it not, the arbiter picks again
+  // rather than grant a slot that does not ask. The round-robin order moves on at each grant, as before.
+  assign held   = hold_q && m_req[hold_sel_q];
+  assign sel    = held ? hold_sel_q : pick(m_req, rr_q);
   assign dn_req = (|m_req) && (cnt_q != MaxReq);
   for (genvar i = 0; i < NumSlots; i++) begin : gen_route
     assign m_gnt[i]    = dn_req && dn_gnt && (sel == i);
@@ -303,48 +324,117 @@ module accel_socket #(
   end
   assign m_rdata = dn_rdata;
 
-  // the user field of the request being granted: the slot's own tag, or the one the policy register forces;
-  // the port bits are the CCU's to write
-  logic [15:0] sel_user;
-  assign sel_user = (pol_q[sel][31] ? {4'b0, pol_q[sel][11:0]} : m_user[sel]) & ~PortBitsMask;
+  // the tag of the request being served (req_user): the slot's own, or the one the policy register forces; the port
+  // bits are the CCU's to write. Taken in the first cycle the request is offered to axi_from_mem and kept until its
+  // grant: a TAG_POLICY write applies to the requests offered after it, and changes neither the AR or AW nor the W of
+  // a request already waiting. LAST_USER records the tag the request carried.
+  logic [15:0] sel_user, req_user, hold_user_q;
+  assign sel_user = (pol_q[sel][31] ? 16'(pol_q[sel][PolUserW-1:0]) : m_user[sel]) & ~PortBitsMask;
+  assign req_user = held ? hold_user_q : sel_user;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       rr_q <= '0; ord_q <= '0; cnt_q <= '0; wp_q <= '0; rp_q <= '0; last_user_q <= '0;
+      hold_q <= 1'b0; hold_sel_q <= '0; hold_user_q <= '0;
     end else begin
       if (dn_req && dn_gnt) begin
         ord_q[wp_q] <= sel; wp_q <= wp_q + 1'b1;
         rr_q <= SlotW'((sel + 1) % NumSlots);
-        last_user_q[sel] <= sel_user;
+        last_user_q[sel] <= req_user;
+      end
+      // a request waits for its grant: keep its slot and its tag until then
+      hold_q <= dn_req && !dn_gnt;
+      if (dn_req && !dn_gnt) begin
+        hold_sel_q  <= sel;
+        hold_user_q <= req_user;
       end
       if (dn_rvalid) rp_q <= rp_q + 1'b1;
       cnt_q <= cnt_q + (dn_req && dn_gnt) - dn_rvalid;
     end
   end
 
-  // axi_from_mem ties the AXI user fields to 0: carry the granted requests' user fields alongside it, in per-channel
-  // FIFOs (it issues one AW+W or one AR per granted request, in grant order on each channel), and put them on the
-  // channels at their handshakes. Fall-through, so a request issued in its grant cycle sees its own user field.
-  axi_req_t    afm_req;
-  logic [15:0] u_aw, u_w, u_ar;
-  logic        push_w, push_r;
-  assign push_w = dn_req && dn_gnt &&  m_we[sel];
-  assign push_r = dn_req && dn_gnt && !m_we[sel];
-  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_aw (
-    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
-    .data_i(sel_user), .push_i(push_w), .data_o(u_aw), .pop_i(afm_req.aw_valid && mst_resp_i.aw_ready));
-  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_w (
-    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
-    .data_i(sel_user), .push_i(push_w), .data_o(u_w), .pop_i(afm_req.w_valid && mst_resp_i.w_ready));
-  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq + 1), .dtype(logic [15:0])) i_ufifo_ar (
-    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(), .empty_o(), .usage_o(),
-    .data_i(sel_user), .push_i(push_r), .data_o(u_ar), .pop_i(afm_req.ar_valid && mst_resp_i.ar_ready));
+`ifndef SYNTHESIS
+  // The rule above, checked in simulation (axi_lite_from_mem states it as SVA, which the xsim flow elaborates without,
+  // --ignore_assertions): a request waiting for its grant keeps its slot and its fields.
+  logic             chk_wait_q, chk_we_q;
+  logic [SlotW-1:0] chk_sel_q;
+  logic [63:0]      chk_addr_q, chk_wdata_q;
+  logic [7:0]       chk_strb_q;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      chk_wait_q <= 1'b0; chk_we_q <= 1'b0; chk_sel_q <= '0; chk_addr_q <= '0; chk_wdata_q <= '0; chk_strb_q <= '0;
+    end else begin
+      if (chk_wait_q && (!dn_req || sel != chk_sel_q || m_addr[sel] != chk_addr_q || m_we[sel] != chk_we_q ||
+                         (chk_we_q && (m_wdata[sel] != chk_wdata_q || m_strb[sel] != chk_strb_q))))
+        $error("accel_socket: the memory request of slot %0d (addr 0x%0h, we %0d) changed before its grant",
+               chk_sel_q, chk_addr_q, chk_we_q);
+      chk_wait_q  <= dn_req && !dn_gnt;
+      chk_sel_q   <= sel;
+      chk_we_q    <= m_we[sel];
+      chk_addr_q  <= m_addr[sel];
+      chk_wdata_q <= m_wdata[sel];
+      chk_strb_q  <= m_strb[sel];
+    end
+  end
+`endif
+
+  // axi_from_mem ties the AXI user fields to 0, so the socket puts the tag on. axi_from_mem turns the request on its
+  // memory port into the AXI request as it comes (an AR, or an AW and a W, which can be taken in different cycles:
+  // the spill registers in front of the CCU take each when they have room) and grants it once all of it has been
+  // taken; the next request comes after the grant. So the AR, AW and W it offers are always those of the request
+  // being served, and they carry its tag, req_user. (Tags that wait in per-channel FIFOs, pushed at the grant and
+  // popped at each channel's handshake, go wrong: an AW or a W taken before its grant pops an empty FIFO, and from
+  // then on that channel carries the tag of the write before.)
+  axi_req_t afm_req;
+
+  // Responses. axi_from_mem takes them in request order only (it is ready for the R or the B of its oldest open request
+  // alone), but AXI orders them within a channel only, and the CCU does answer out of request order: its state machine
+  // can take a later AR before an earlier AW, a write to a line with a read in flight (a core's refill, say) waits for
+  // that read, and a read waits for an older read of its ID, a write does not. A refused R or B stays on the CCU's
+  // response path, which all its ports share and its state machine waits on: when the response the socket waits for
+  // needs that path (the write behind a core's refill), the whole SoC hangs. So the socket takes every R and B as it
+  // comes, into FIFOs that hold the responses of all MaxReq requests it can have open (never full), and axi_from_mem
+  // reads them from there in its own order. Fall-through: a response axi_from_mem is waiting for passes in the same
+  // cycle, as before.
+  typedef struct packed {
+    logic [63:0]    data;
+    axi_pkg::resp_t resp;
+  } r_buf_t;
+  r_buf_t         r_in, r_out;
+  axi_pkg::resp_t b_out;
+  logic           r_full, r_empty, b_full, b_empty;
+  axi_resp_t      afm_rsp;
+  axi_resp_t      afm_rsp_xc;   // xsim: shadow of afm_rsp
+  axi_req_t       mst_req_o_xc; // xsim: shadow of mst_req_o
+  assign r_in = '{data: mst_resp_i.r.data, resp: mst_resp_i.r.resp};
+  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq), .dtype(r_buf_t)) i_rsp_r (
+    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(r_full), .empty_o(r_empty), .usage_o(),
+    .data_i(r_in), .push_i(mst_resp_i.r_valid && !r_full), .data_o(r_out), .pop_i(afm_req.r_ready && !r_empty));
+  fifo_v3 #(.FALL_THROUGH(1'b1), .DEPTH(MaxReq), .dtype(axi_pkg::resp_t)) i_rsp_b (
+    .clk_i, .rst_ni, .flush_i(1'b0), .testmode_i(1'b0), .full_o(b_full), .empty_o(b_empty), .usage_o(),
+    .data_i(mst_resp_i.b.resp), .push_i(mst_resp_i.b_valid && !b_full), .data_o(b_out),
+    .pop_i(afm_req.b_ready && !b_empty));
 
   always_comb begin
-    mst_req_o         = afm_req;
-    mst_req_o.aw.user = $bits(mst_req_o.aw.user)'(u_aw);
-    mst_req_o.w.user  = $bits(mst_req_o.w.user)'(u_w);
-    mst_req_o.ar.user = $bits(mst_req_o.ar.user)'(u_ar);
+    afm_rsp_xc         = mst_resp_i;
+    afm_rsp_xc.r       = '0;
+    afm_rsp_xc.r.data  = r_out.data;
+    afm_rsp_xc.r.resp  = r_out.resp;
+    afm_rsp_xc.r_valid = !r_empty;
+    afm_rsp_xc.b       = '0;
+    afm_rsp_xc.b.resp  = b_out;
+    afm_rsp_xc.b_valid = !b_empty;
+    afm_rsp            = afm_rsp_xc; // xsim: assigned once
+  end
+
+  always_comb begin
+    mst_req_o_xc         = afm_req;
+    mst_req_o_xc.aw.user = $bits(mst_req_o.aw.user)'(req_user);
+    mst_req_o_xc.w.user  = $bits(mst_req_o.w.user)'(req_user);
+    mst_req_o_xc.ar.user = $bits(mst_req_o.ar.user)'(req_user);
+    mst_req_o_xc.r_ready = !r_full;
+    mst_req_o_xc.b_ready = !b_full;
+    mst_req_o            = mst_req_o_xc; // xsim: assigned once
   end
 
   axi_from_mem #(
@@ -369,7 +459,7 @@ module accel_socket #(
     .slv_aw_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
     .slv_ar_cache_i  ( axi_pkg::CACHE_MODIFIABLE ),
     .axi_req_o       ( afm_req      ),
-    .axi_rsp_i       ( mst_resp_i   )
+    .axi_rsp_i       ( afm_rsp      )
   );
 
   always_ff @(posedge clk_i or negedge rst_ni) begin

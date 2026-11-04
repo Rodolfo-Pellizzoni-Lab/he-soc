@@ -35,11 +35,12 @@ Inside CVA6, every AR and AW leaving the core gets `user[QOS_TAG_WIDTH-1:0] = {A
 - The W, R and B channels are not tagged.
 
 On the SoC buses (`ariane_axi_soc` package), the user field is `QosUserLsb + 9` bits wide, where `QosUserLsb =
-$clog2(NumCVA6 + 1)` is the width of the CCU source-port field: 3 bits (a 12-bit user word) up to 7 cores, 4 bits
-(13-bit) for 8 to 15 cores. With the four cores of the default build:
+$clog2(NumCVA6 + 2)` is the width of the CCU source-port field: 3 bits (a 12-bit user word) up to 6 cores, 4 bits
+(13-bit) for 7 to 14 cores. With the four cores of the default build:
 
 ```
-user[2:0]   source port of the CCU (written by the CCU): 0-3 the cores, 4 the accelerator socket's DMA port
+user[2:0]   source port of the CCU (written by the CCU): 0-3 the cores, 4 the accelerator socket's DMA, 5 the
+            Xilinx Ethernet's DMA (NumCVA6 and NumCVA6 + 1 in general: ariane_soc::CcuAccelPort, CcuEthPort)
 user[3+:4]  RCID                     (user[QosUserLsb +: 4] in general)
 user[7+:4]  MCID                     (user[QosUserLsb+4 +: 4])
 user[11]    AT                       (user[QosUserLsb+8])
@@ -48,8 +49,11 @@ user[11]    AT                       (user[QosUserLsb+8])
 Software that decodes the word (the QoS probe in `soc_tests/t_qos`, `soc_test.h`'s `SOC_SRC_BITS`) derives the
 port width from `SOC_NUM_CORES`; with `NUM_CVA6=8` the RCID starts at bit 4.
 
-(`QosUserLsb` is `$clog2(NumCVA6 + 1)`: the CCU writes its port index into the low bits, and the socket's DMA is its
-fifth port, see `hardware/accel/README.md`.)
+(`QosUserLsb` is `ariane_soc::CcuSrcWidth`, `$clog2(NumCcuPorts)` with `NumCcuPorts` the cores plus the two DMA
+ports: the CCU writes its port index into the low bits, see `hardware/accel/README.md`. The same bits tell the APMU's
+SPU on the LLC memory port the source of a request; the APMU's source field, which numbers the other crossbar masters
+too, is wider: 4 bits with up to four cores, 5 with more (`pmu_pkg::SOURCE_ID_BITS`), see
+`hardware/ip_list/apmu/README.md`.)
 
 Use `ariane_axi_soc::qos_tag(user)` to decode a SoC user field into an `ariane_pkg::qos_tag_t {at, mcid, rcid}`,
 and `ariane_axi_soc::qos_user(tag)` to build one.
@@ -61,15 +65,16 @@ and `ariane_axi_soc::qos_user(tag)` to build one.
 | host xbar, CDC FIFOs, ID remapper, AMO/LR-SC adapters | pass `user` through |
 | LLC (`ip_list/axi_llc`) | allocates by the tag's RCID and AT (next section). Refills and evictions carry the tag of the request that caused them (new descriptor field `a_x_user`); config-port flushes carry 0 |
 | DRAM / HyperRAM / peripherals | ignore it |
-| Accelerator socket (`hardware/accel`, CCU port 4) | tags each slot's DMA either with the user field the accelerator presents (the template: the tag of the hart that wrote START, so I/O is charged to the hart it works for) or with a tag the OS forces per slot in `TAG_POLICY` (`0x103F_0100 + 8*slot`); `LAST_USER` reads it back. `t_iotag` |
-| Other masters (debug module, iDMA, uDMA, cluster) | tag 0 (RCID 0, MCID 0) |
+| Accelerator socket (`hardware/accel`, CCU port `CcuAccelPort`: 4, 8 with eight cores) | tags each slot's DMA either with the user field the accelerator presents (the template: the tag of the hart that wrote START, so I/O is charged to the hart it works for) or with a tag the OS forces per slot in `TAG_POLICY` (`0x103F_0100 + 8*slot`); `LAST_USER` reads it back. `t_iotag` |
+| Other masters (debug module, iDMA, uDMA, cluster, the Xilinx Ethernet DMA on CCU port `CcuEthPort`: 5, 9 with eight cores) | tag 0 (RCID 0, MCID 0) |
 
 **The source-port bits also key LR/SC reservations.** Both `axi_riscv_atomics` adapters (L2 and L3,
-`host/cva6_subsystem.sv`) track reservations per `user[2:0]` (`AXI_USER_AS_ID`, one entry per CCU port) instead of per
-AXI ID. The core-side ID remapper (`cva6_axi_id_remap`, separate read and write tables) does not keep the LR's AR ID
-and the SC's AW ID equal when other transactions are in flight, so an ID-keyed table only worked by timing luck: on the
-VCU118 every SC to the uncached L2 failed while simulation (instant UART / L2 responses) passed. The address-based clear
-on any write is unchanged. Masters other than the cores share entry 0.
+`host/cva6_subsystem.sv`) track reservations per `user[QosUserLsb-1:0]` (`user[2:0]` with four cores, `user[3:0]` with
+eight; `AXI_USER_AS_ID`, one entry per CCU port) instead of per AXI ID. The core-side ID remapper (`cva6_axi_id_remap`,
+separate read and write tables) does not keep the LR's AR ID and the SC's AW ID equal when other transactions are in
+flight, so an ID-keyed table only worked by timing luck: on the VCU118 every SC to the uncached L2 failed while
+simulation (instant UART / L2 responses) passed. The address-based clear on any write is unchanged. Masters other than
+the cores share entry 0.
 
 ## LLC capacity controller (CBQRI)
 
@@ -104,6 +109,24 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
 - **How it is wired.** `axi_llc_hit_miss` locks the ways outside the mask for the replacement decision of the
   descriptor under lookup. That decision uses the RCID/AT of `desc_q`, which is stable for the whole lookup.
   It ORs with the SPM lock and the old AXI-ID partitioning (`SourceIDStart/End`, still there, default off).
+- **The DMA ports share cores' old per-ID masks.** The old masks (16 bits each from `0x1040_1040`) are indexed by the
+  AXI ID above the remapper's slot bits, `ID[7:2]`: the crossbar port, then the CCU source as far as it fits. The ID
+  holds only the source's low two bits (`ariane_soc::RemapSrcWidth`), so index k serves every CCU source s with s mod
+  4 = k: with four cores core k, and also the accelerator socket's DMA port (source 4) for k = 0 and the Ethernet
+  DMA's (source 5) for k = 1; with eight cores cores k and k + 4, and the socket's DMA (source 8) for k = 0 and the
+  Ethernet DMA (source 9) for k = 1. So the socket's DMA uses **core 0's mask** and the Ethernet DMA **core 1's** (the
+  remapper puts the plain low source bits into the ID; until the Ethernet DMA had a CCU port of its own it shared the
+  socket's, and with it core 0's mask). With the old masks programmed, a DMA's LLC misses allocate in that core's ways
+  and evict its lines, so a per-core isolation result for core 0 includes the socket's traffic and one for core 1 the
+  Ethernet's (and with eight cores core k's includes core k + 4's). CBQRI is unaffected: it takes the RCID and AT from
+  the user field (`user[QosUserLsb +: 4]`, `user[QosUserLsb+8]`: `user[6:3]` and `user[11]` with four cores), which
+  neither the remapper nor the CCU changes, so the socket's DMA allocates by the RCID of its tag and the Ethernet DMA
+  by RCID 0. The PMU benches that still program the old masks (`pmu_evu_bench`, `pmu_evu_simple_sim`, and in
+  alsaqr-software `pmu_mempol_synth`, `pmu_sdvb`, `pmu_sad_profile`) give each of four cores four ways this way. On
+  bitstreams with the old remapper (2026-10-16 to -25) every core's refills used core 2's mask and the DMA port's
+  traffic core 3's, so no DMA master has ever had a mask of its own. Giving them one would take the LLC indexing the
+  masks by the full source from the user field (`{ID[7:4], user[QosUserLsb-1:0]}`); the masks are kept as they are,
+  and partitioning uses CBQRI (decided 2026-10-27).
 - **Parameters.** `axi_llc_top` takes `QosRcidWidth` (0 turns the controller off), `QosRcidLsb`, `QosAtBit`
   and `QosCcOffset`.
 
@@ -123,7 +146,9 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
     ways 8–15) share one LLC set. Reading the victims again causes **0** LLC read misses, counted by the
     SoC control block's LLC miss counter at `0x1A10_6008`. With shared masks the same sequence causes **8**.
   - **Code/data split.** Code fetched under RCID 3 goes only into that RCID's code ways.
-  - **4-core stress.** RCIDs 4–7 have disjoint 4-way masks and write and read 16 lines each in one set.
+  - **All-core stress.** Every core c, with RCID 4 + c and a disjoint data mask of 16 / `SOC_NUM_CORES` ways,
+    writes 64 / `SOC_NUM_CORES` lines in one LLC set and must read back what it wrote. With four cores, RCIDs 4–7
+    have 4 ways and 16 lines each; with eight, RCIDs 4–11 have 2 ways and 8 lines each.
 
 **Simulation checkers** (both in every simulation; `sim_status` reports their errors as `qos_errors`, and
 `sim_regress` fails a test that has any):
@@ -134,7 +159,11 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
   - At the **LLC input**, a request must carry a tag its source core issued for that 64-byte line, or, for
     CCU write-backs, a tag another core issued for that line.
   - At the **LLC output**, a refill must carry the user field of a recent LLC request to that line. An
-    eviction must carry the user field of a recent request to that set.
+    eviction must carry the user field of a recent request to that set. A write-back of an LLC flush has no
+    requester: it carries user field 0 and AXI ID 0, so the memory SPU charges it to source 0, core 0's code
+    (`hardware/ip_list/apmu/README.md`). The LLC isolates its slave port while it flushes, so every eviction in that
+    window is a flush write-back: each must carry user field 0, uses up one of the LLC's `evict_flush` events (one
+    per line a flush writes back), and counts as `flush` if it matches no recent request.
 - **Allocation checker** (`axi_llc_hit_miss`): every refill must land in a way of its (RCID, AT) mask.
 
 `sim_status(run_id, qos=true)` shows the checkers' summaries. It also lists per-RCID allocation counts and the

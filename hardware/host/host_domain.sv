@@ -20,6 +20,10 @@
 `include "common_cells/registers.svh"
 `define APMU_IOPMP
 `define APMU_IP
+// ---- Slowdown regulator enable switch (ip_list/slowdown) ----
+//   `define USE_SLOWDOWN  => LLC -> SPU -> slowdown -> DRAM timing model -> memory (normal operation)
+//     (left commented)    => LLC -> SPU -> DRAM timing model -> memory           (slowdown bypassed)
+`define USE_SLOWDOWN
 
 module host_domain
   import axi_pkg::xbar_cfg_t;
@@ -175,7 +179,9 @@ module host_domain
 
    ariane_axi_soc::req_slv_mem_t  axi_mem_req;
    ariane_axi_soc::resp_slv_mem_t axi_mem_res;
-   // the LLC's memory port after the DRAM timing model (host/axi_dram_timing.sv)
+   // the DRAM timing model (host/axi_dram_timing.sv): its input after the slowdown, its output to the DRAM path
+   ariane_axi_soc::req_slv_mem_t  axi_model_req;
+   ariane_axi_soc::resp_slv_mem_t axi_model_res;
    ariane_axi_soc::req_slv_mem_t  axi_dram_req;
    ariane_axi_soc::resp_slv_mem_t axi_dram_res;
    dram_model_pkg::cfg_t          s_dram_model_cfg;
@@ -344,6 +350,29 @@ module host_domain
     .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
    ) mem_axi_bus_spu_o_bus();
 
+   // Intermediate AXI buses: SPU master -> slowdown regulator -> DRAM timing model
+   AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH          ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH             ),
+    `ifdef EXCLUDE_LLC
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave   ),
+    `else
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave+1 ),
+    `endif
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
+   ) mem_axi_bus_spu_mst();
+
+   AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH          ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH             ),
+    `ifdef EXCLUDE_LLC
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave   ),
+    `else
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave+1 ),
+    `endif
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH             )
+   ) mem_axi_bus_slowdown_mst();
+
    AXI_LITE #(
     .AXI_ADDR_WIDTH (AXI_LITE_AW),
     .AXI_DATA_WIDTH (AXI_LITE_DW)
@@ -372,7 +401,9 @@ module host_domain
    ariane_axi_soc::resp_lite_t axi_lite_perfc_cfg_resp;
 
    logic  [APMU_NUM_COUNTER-1:0] pmu_intr_o;
-   pmu_pkg::pmu_event_t [2 * ariane_soc::NumCVA6:0] spu_o;
+   // APMU event ports: element i is port i + 1 (ariane_soc::Apmu*Idx): the cores' EVUs, the SPUs on the cores' CCU
+   // ports, the SPU on the LLC memory port, the SPU on the accelerator socket's DMA
+   pmu_pkg::pmu_event_t [ariane_soc::ApmuNumPorts-1:0] spu_o;
 
 
    XBAR_TCDM_BUS axi_bridge_2_interconnect[AXI64_2_TCDM32_N_PORTS]();
@@ -385,7 +416,7 @@ module host_domain
 `endif
   `ifdef XSIM_SIM_DRAM
    // xsim: with NO_L3_CONNECTION no HyperRAM model sits on the pads, so an LLC refill never returns and the
-   // CCU FSM blocks every core. Terminate mem_axi_bus (LLC -> SPU -> HyperBus path) in a simulation memory
+   // CCU FSM blocks every core. Terminate mem_axi_bus (LLC -> SPU -> slowdown -> DRAM model -> HyperBus path) in a simulation memory
    // and give the HyperBus subsystem an idle bus instead.
    AXI_BUS #(
      .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH           ),
@@ -565,8 +596,42 @@ module host_domain
 
    `AXI_ASSIGN_TO_REQ(axi_cpu_req,hyper_axi_bus)
    `AXI_ASSIGN_FROM_RESP(hyper_axi_bus,axi_cpu_res)
-   // DRAM timing model between the LLC's memory port and the DRAM path: a wire until it is enabled through the
+   // Memory path after the LLC's memory port:
+   //   LLC -> SPU (i_spu_llc_mem, APMU memory events) -> slowdown regulator (ip_list/slowdown, USE_SLOWDOWN)
+   //       -> DRAM timing model -> DRAM path (mem_axi_bus)
+   // The SPU sees each request as the LLC issues it and each response after the slowdown's and the model's delays.
+   `ifdef APMU_IP
+    // Converts request packets to AXI Bus signals.
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_mem_req )
+    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus_spu_o_bus )
+  `else
+    // No SPU: the LLC feeds the slowdown directly.
+    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_mst, axi_mem_req )
+    `AXI_ASSIGN_TO_RESP( axi_mem_res, mem_axi_bus_spu_mst )
+  `endif
+
+  `ifdef USE_SLOWDOWN
+   // Slowdown regulator between the SPU (post-LLC) and the DRAM timing model: caps the request rate and delays
+   // every R/B response (hardware/ip_list/slowdown/README.md)
+   slowdown_mem_top #(
+    .Latency_param            ( 20 ),  // must be >= 2
+    .Throughput_timer_param   ( 10 ),
+    .Throughput_FIFO_depth    (  8 )
+    // Throughput_COUNTER_WIDTH is a localparam ($clog2) inside the module
+   ) i_slowdown (
+    .clk_i            ( s_soc_clk                ),
+    .rst_ni           ( s_synch_soc_rst          ),
+    .slowdown_mem_slv ( mem_axi_bus_spu_mst      ),
+    .slowdown_mem_mst ( mem_axi_bus_slowdown_mst )
+   );
+  `else
+   `AXI_ASSIGN( mem_axi_bus_slowdown_mst, mem_axi_bus_spu_mst )
+  `endif
+
+   // DRAM timing model after the slowdown, in front of the DRAM path: a wire until it is enabled through the
    // SoC control registers at 0x1A10_6100 (hardware/docs/dram_model.md)
+   `AXI_ASSIGN_TO_REQ( axi_model_req, mem_axi_bus_slowdown_mst )
+   `AXI_ASSIGN_FROM_RESP( mem_axi_bus_slowdown_mst, axi_model_res )
    axi_dram_timing #(
      .axi_req_t  ( ariane_axi_soc::req_slv_mem_t    ),
      .axi_resp_t ( ariane_axi_soc::resp_slv_mem_t   ),
@@ -578,20 +643,14 @@ module host_domain
      .rst_ni     ( s_synch_soc_rst  ),
      .cfg_i      ( s_dram_model_cfg ),
      .cnt_o      ( s_dram_model_cnt ),
-     .slv_req_i  ( axi_mem_req      ),
-     .slv_resp_o ( axi_mem_res      ),
+     .slv_req_i  ( axi_model_req    ),
+     .slv_resp_o ( axi_model_res    ),
      .mst_req_o  ( axi_dram_req     ),
      .mst_resp_i ( axi_dram_res     )
    );
-   `ifdef APMU_IP
-    // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus_spu_o_bus, axi_dram_req )
-    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus_spu_o_bus )
-  `else
-    // Converts request packets to AXI Bus signals.
-    `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_dram_req )
-    `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus )
-  `endif
+   // Converts request packets to AXI Bus signals.
+   `AXI_ASSIGN_FROM_REQ( mem_axi_bus, axi_dram_req )
+   `AXI_ASSIGN_TO_RESP( axi_dram_res, mem_axi_bus )
    `AXI_LITE_ASSIGN_TO_REQ(axi_llc_cfg_req,llc_cfg_bus)
    `AXI_LITE_ASSIGN_FROM_RESP(llc_cfg_bus,axi_llc_cfg_res)
 
@@ -612,10 +671,11 @@ module host_domain
       .lite_req_t       ( ariane_axi_soc::req_lite_t     ),
       .lite_resp_t      ( ariane_axi_soc::resp_lite_t    ),
       .rule_full_t      ( rule_full_t                    ),
-      // Source ID Specifications
-      .SourceIDStart    ( 2                              ),
-      .SourceIDEnd      (  ariane_soc::IdWidthSlave-1    ),
-      .NumCfgRegcp      ( 64                             ),
+      // Source ID Specifications: per-source way masks indexed by the ID above the remapper's slot bits, {crossbar
+      // port, the remapper's source prefix}, one mask per index value
+      .SourceIDStart    ( ariane_soc::RemapSlotWidth     ),
+      .SourceIDEnd      ( ariane_soc::IdWidthSlave-1     ),
+      .NumCfgRegcp      ( 2**(ariane_soc::IdWidthSlave - ariane_soc::RemapSlotWidth) ),
       // CBQRI capacity controller at LLC config base + 0x800 (0x1040_1800): ways allocated per (RCID, AT) of the
       // QoS tag in the AXI user field (ariane_axi_soc layout, hardware/docs/qos.md)
       .QosRcidWidth     ( ariane_pkg::QOS_RCID_WIDTH     ),
@@ -662,10 +722,11 @@ module host_domain
      .req_t  ( ariane_axi_soc::req_slv_mem_t  ),
      .resp_t ( ariane_axi_soc::resp_slv_mem_t )
    ) i_qos_mon_llc_out (
-     .clk_i  ( s_soc_clk       ),
-     .rst_ni ( s_synch_soc_rst ),
-     .req_i  ( axi_mem_req     ),
-     .resp_i ( axi_mem_res     )
+     .clk_i             ( s_soc_clk                      ),
+     .rst_ni            ( s_synch_soc_rst                ),
+     .req_i             ( axi_mem_req                    ),
+     .resp_i            ( axi_mem_res                    ),
+     .llc_flush_evict_i ( llc_events.evict_flush.active  )
    );
    `endif
 
@@ -791,17 +852,37 @@ module host_domain
          end_addr:   ariane_soc::HYAXIBase + ariane_soc::HYAXILength
    };
 
+   // Source of each request on the LLC memory port for the APMU (ariane_axi_soc::mem_src, ariane_soc::NumMemSrcs
+   // codes): for CVA6-port traffic the CCU source in the user field (the cores, then the accelerator socket's and the
+   // Ethernet's DMA ports), for every other crossbar master a code of its own. A response reports its request's.
+   logic [ariane_soc::MemSrcWidth-1:0] spu_mem_ar_src, spu_mem_aw_src;
+   assign spu_mem_ar_src = ariane_axi_soc::mem_src(mem_axi_bus_spu_o_bus.ar_id[ariane_soc::IdWidthSlave-1:0],
+                                                   mem_axi_bus_spu_o_bus.ar_user);
+   assign spu_mem_aw_src = ariane_axi_soc::mem_src(mem_axi_bus_spu_o_bus.aw_id[ariane_soc::IdWidthSlave-1:0],
+                                                   mem_axi_bus_spu_o_bus.aw_user);
+   // pragma translate_off
+   initial begin : p_mem_src_assert
+     assert (ariane_soc::MemSrcWidth == pmu_pkg::SOURCE_ID_BITS && ariane_soc::NumMemSrcs <= 2**ariane_soc::MemSrcWidth)
+       else $fatal(1, "APMU memory-port sources: %0d codes in a %0d-bit field (pmu_pkg %0d bits)", ariane_soc::NumMemSrcs,
+                   ariane_soc::MemSrcWidth, pmu_pkg::SOURCE_ID_BITS);
+     // the LLC's per-source registers (64 + 8 bytes each, axi_llc_config) must stay below its CBQRI window (QosCcOffset)
+     assert (64 + 8 * 2**(ariane_soc::IdWidthSlave - ariane_soc::RemapSlotWidth) <= 32'h800)
+       else $fatal(1, "LLC: %0d per-source way masks overlap the CBQRI window", 2**(ariane_soc::IdWidthSlave - ariane_soc::RemapSlotWidth));
+   end
+   // pragma translate_on
+
 `ifndef XSIM_CUT_i_spu_llc_mem // xsim bisect
 axi_spu_top #(
      // Static configuration parameters of the cache.
      .SetAssociativity   ( ariane_soc::LLC_SET_ASSOC   ),
      .NumLines           ( ariane_soc::LLC_NUM_LINES   ),
      .NumBlocks          ( ariane_soc::LLC_NUM_BLOCKS  ),
-     // Source ID Specifications
-     .SourceIDStart      (  2                          ),
-     .SourceIDEnd        (  ariane_soc::IdWidthSlave-1 ),
-     // AXI4 Specifications
-     .IdWidth            ( ariane_soc::IdWidthSlave    ),
+     // Source ID Specifications: MemSrcWidth-bit sources from spu_mem_ar_src / spu_mem_aw_src
+     .SourceIDStart      (  0                          ),
+     .SourceIDEnd        (  ariane_soc::MemSrcWidth-1  ),
+     .ExtSource          (  1'b1                       ),
+     // AXI4 Specifications: the LLC memory port's full ID, so that its bypass and cache paths never alias
+     .IdWidth            ( ariane_soc::IdWidthSlave+1  ),
      .AddrWidth          ( AXI_ADDRESS_WIDTH           ),
      .DataWidth          ( AXI_DATA_WIDTH              ),
      // Address Indexing
@@ -815,8 +896,10 @@ axi_spu_top #(
      .rst_ni             ( s_synch_soc_rst             ),
      .addr_map_i         ( spu_mem_addr_map            ),
      .spu_slv            ( mem_axi_bus_spu_o_bus       ),
-     .spu_mst            ( mem_axi_bus                 ),
-     .e_out              ( spu_o[2*ariane_soc::NumCVA6]  )
+     .spu_mst            ( mem_axi_bus_spu_mst         ),  // SPU -> slowdown -> DRAM timing model -> memory
+     .ar_src_i           ( spu_mem_ar_src              ),
+     .aw_src_i           ( spu_mem_aw_src              ),
+     .e_out              ( spu_o[ariane_soc::ApmuMemSpuIdx] )   // APMU port 2*NumCVA6+1
    );
 `endif // XSIM_CUT_i_spu_llc_mem
 
@@ -921,10 +1004,20 @@ axi_spu_top #(
      .out             ( axi_iopmp_rp    )
    );
 
+   // pragma translate_off
+   initial begin : p_apmu_port_assert
+     // an event select names a port by its PORT_ID 1..ApmuNumPorts in pmu_pkg::PORT_ID_BITS bits: a higher port
+     // would count for a lower one (pmu_port compares the masked PORT_ID with the select's value)
+     assert (ariane_soc::ApmuNumPorts < 2**pmu_pkg::PORT_ID_BITS)
+       else $fatal(1, "APMU: %0d event ports, the %0d-bit PORT_ID names ports 1..%0d", ariane_soc::ApmuNumPorts,
+                   pmu_pkg::PORT_ID_BITS, 2**pmu_pkg::PORT_ID_BITS - 1);
+   end
+   // pragma translate_on
+
    // The PMU only works with 32-bit AXI4-Lite port.
 `ifndef XSIM_CUT_i_pmu_top // xsim bisect
    pmu_top #(
-     .NUM_PORT         ( (ariane_soc::NumCVA6)* 2 + 1   ),
+     .NUM_PORT         ( ariane_soc::ApmuNumPorts       ),
      .NUM_COUNTER      ( APMU_NUM_COUNTER               ),
      .ISPM_NUM_WORDS   ( 2048                           ),  // 8 KB size
      .DSPM_BASE_ADDR   ( 32'h1042_9000                    ),  // follows 8 KiB ISPM
@@ -933,8 +1026,9 @@ axi_spu_top #(
     //  .MEMORY_BASE_ADDR ( ariane_soc::L2SPMBase          ),
     //  .MEMORY_LENGTH    ( ariane_soc::L2SPMBase + ariane_soc::L2SPMLength        ),
     // // APMU Addresses and SPM configuration
-     .MEMORY_BASE_ADDR ( 32'h1060_6000),
-     .MEMORY_LENGTH    ( 32'h0000_0100),
+     // the cores' EVU registers, the window the CPUs use too (ariane_soc: 0x100 bytes with four cores, 0x200 with eight)
+     .MEMORY_BASE_ADDR ( ariane_soc::PerfcEvuBase     ),
+     .MEMORY_LENGTH    ( ariane_soc::PerfcEvuLength   ),
      .req_lite_t       ( ariane_axi_soc::req_lite_t     ),
      .resp_lite_t      ( ariane_axi_soc::resp_lite_t    ),
      .aw_chan_lite_t   ( ariane_axi_soc::aw_chan_lite_t ),
@@ -1067,7 +1161,8 @@ axi_spu_top #(
         .udma_tx_l3_axi_slave ( udma_tx_l3_axi_bus   ),
 
         // EVU 
-        .spu_core_o           ( spu_o[ariane_soc::NumCVA6 +: ariane_soc::NumCVA6]),
+        .spu_core_o           ( spu_o[ariane_soc::ApmuCoreSpuIdx +: ariane_soc::NumCVA6]),
+        .spu_accel_o          ( spu_o[ariane_soc::ApmuAccelSpuIdx] ),
         // APMU
 `ifdef XSIM_V_IN
     .pmu_intr_i('0),
@@ -1098,7 +1193,7 @@ axi_spu_top #(
 `endif
         .perfc_cfg_req_i       ( axi_lite_perfc_cfg_req  ),
         .perfc_cfg_resp_o       ( axi_lite_perfc_cfg_resp ),
-        .perfc_evu_status_resp_o( spu_o[0 +: ariane_soc::NumCVA6]) 
+        .perfc_evu_status_resp_o( spu_o[ariane_soc::ApmuEvuIdx +: ariane_soc::NumCVA6]) 
     );
 `endif // XSIM_CUT_i_cva6_subsystem
 

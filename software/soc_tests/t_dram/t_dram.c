@@ -73,6 +73,26 @@ static void build_chain(uint64_t base) {
   for (int i = 0; i < N; i++) st(base + i * SET_STEP, base + ((i + 1) % N) * SET_STEP);
 }
 
+// Two counters at one moment. While an uncached load is in flight the core fetches ahead, and fetching code that has
+// never run misses the LLC: a DRAM read through the model, which can be counted between two counter loads (and with
+// LAT_RD 1 be counted late before the second one). Read both until neither moves; returns the number of rounds it
+// took, 0 if they did not settle in DM_ROUNDS. It must stay a loop: unrolled, every round would run code that has
+// never run.
+#define DM_ROUNDS 8
+__attribute__((noinline)) static int dm_pair(uint32_t off_a, uint32_t off_b, uint32_t *a, uint32_t *b) {
+  uint32_t a0, b0;
+  int n = 0;
+#pragma GCC unroll 1
+  do {
+    a0 = REG32(DM + off_a);
+    b0 = REG32(DM + off_b);
+    *a = REG32(DM + off_a);
+    *b = REG32(DM + off_b);
+    n++;
+  } while ((a0 != *a || b0 != *b) && n < DM_ROUNDS);
+  return (a0 == *a && b0 == *b) ? n : 0;
+}
+
 static void dm_set(uint32_t lat_rd, uint32_t lat_wr, uint32_t occ16) {
   REG32(DM + DM_CTRL) = 0;
   REG32(DM + DM_LAT_RD) = lat_rd;
@@ -122,11 +142,13 @@ int main(void) {
   dm_set(256, 0, 0);
   l1_sweep();
   t = chase(BYPASS);
-  rd = REG32(DM + DM_RD_CNT);
-  beats = REG32(DM + DM_BEATS);
+  int rounds = dm_pair(DM_RD_CNT, DM_BEATS, &rd, &beats);
   printf("LAT_RD 256, outside the LLC window: %u cycles per hop, %u reads of %u beats\r\n", t, rd, beats);
+  CHECK(rounds > 0, "bypass path: RD_COUNT and RD_BEATS did not settle in %d rounds", DM_ROUNDS);
   CHECK(t >= 256, "LAT_RD 256 on the bypass path: a hop took %u cycles", t);
-  CHECK(rd >= N - SLACK && rd <= N + 8 && beats >= 2 * rd && beats <= 2 * rd + 8, "bypass path: %u reads of %u beats for %d hops", rd, beats, N);
+  // every read beyond the chase's own may be an 8-beat refill of code fetched meanwhile, 6 beats more than a fill
+  CHECK(rd >= N - SLACK && rd <= N + 8 && beats >= 2 * rd && beats <= 2 * rd + 6 * (rd - (N - SLACK)),
+        "bypass path: %u reads of %u beats for %d hops", rd, beats, N);
   dm_set(0, 0, 512);
   l1_sweep();
   t = chase(BYPASS);
@@ -136,10 +158,11 @@ int main(void) {
   // 3. the real memory slower than the model
   dm_set(1, 0, 0);
   t = chase(CHASE);
-  rd = REG32(DM + DM_RD_CNT);
-  late = REG32(DM + DM_RD_LATE);
+  rounds = dm_pair(DM_RD_CNT, DM_RD_LATE, &rd, &late);
   uint32_t late_cy = REG32(DM + DM_LATE_CY);
-  printf("LAT_RD 1: %u cycles per hop, %u reads, %u late, %u late cycles\r\n", t, rd, late, late_cy);
+  printf("LAT_RD 1: %u cycles per hop, %u reads, %u late, %u late cycles (counters read in %d rounds)\r\n", t, rd, late,
+         late_cy, rounds);
+  CHECK(rounds > 0, "LAT_RD 1: RD_COUNT and RD_LATE did not settle in %d rounds", DM_ROUNDS);
   CHECK(late >= N - SLACK && late == rd, "LAT_RD 1: %u of %u reads counted late", late, rd);
   CHECK(late_cy > 0, "LAT_RD 1: no late cycles");
   CHECK(t <= base + 16, "LAT_RD 1: %u cycles per hop, the model should add nothing (%u)", t, base);

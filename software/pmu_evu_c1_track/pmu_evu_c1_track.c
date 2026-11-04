@@ -2,7 +2,7 @@
  * pmu_evu_c1_track.c — CVA6-EVU PC Milestone Tracking Test (Core 1)
  *
  * Core 0 role:
- *   1. Writes Core 1's CVA6-EVU registers: EVENTID1=0x17 (PC milestone), PC addresses
+ *   1. Writes Core 1's CVA6-EVU registers: slot 1's event ID = 0x17 (PC milestone), PC addresses
  *   2. Configures 4 APMU counter bundles to detect each individual milestone hit
  *   3. Signals Core 1 to start
  *   4. Polls counters 0-3 in order; prints a message on each hit
@@ -11,8 +11,8 @@
  *   1. Waits for Core 0's go signal
  *   2. Calls func_A() then func_B(), each instrumented with entry/exit probes
  *
- * EVU register layout for Core 1 (cva6_synth_wrap.sv flip bug accounted for):
- *   EVENTID2 reg (0x10606038, addr+8) → ev_id2 field (bits[9:5]) → perf slot i=1
+ * EVU register layout for Core 1 (the event-ID registers are in reverse slot order, EVU_EID_REG):
+ *   EVU_EID_REG(1, 1) (0x10606038, addr+8) → ev_id2 field (bits[9:5]) → perf slot i=1
  *     → perfc_resp[1]=1 → e_id[1]=1 → e_id=0x2  (matches EVU_C1_EV1_SEL event_id_val=2)
  *   PC milestones 0-3 (0x10606040..0x1060605F): compared against commit_pc
  *   When milestone N matches: e_info[N] = 1 in the outgoing event packet
@@ -25,6 +25,7 @@
 #include "encoding.h"
 #include <stdio.h>
 #include <stdint.h>
+#include "../quad_boot/pmu_defines.h"
 
 /* ---------------------------------------------------------------------------
  * Memory-mapped I/O primitives
@@ -33,13 +34,9 @@
 #define write_32b(addr, val)  (*(volatile uint32_t *)(uintptr_t)(addr) = (val))
 
 /* ---------------------------------------------------------------------------
- * PMU address map (from pmu_top.sv)
+ * PMU address map: COUNTER_B_BASE_ADDR, COUNTER_BUNDLE_SIZE and EVU_EID_REG
+ * from quad_boot/pmu_defines.h
  * ---------------------------------------------------------------------------*/
-#define PMU_B_BASE_ADDR      0x10405000UL
-#define PMU_BUNDLE_SIZE      0x2000UL
-#define COUNTER_B_BASE_ADDR  (PMU_B_BASE_ADDR + PMU_BUNDLE_SIZE)  /* 0x10407000 */
-#define COUNTER_BUNDLE_SIZE  0x1000UL
-
 /* Offsets within a counter bundle */
 #define CNTR_OFF   0x0   /* counter value */
 #define SEL_OFF    0x4   /* Event Selection Cfg */
@@ -48,14 +45,26 @@
 /* ---------------------------------------------------------------------------
  * CVA6-EVU registers for Core 1 (cva6_synth_wrap.sv)
  * ---------------------------------------------------------------------------*/
-#define EVENTID_C1_BASE      0x10606030UL   /* EID0..EID3 at +0,+4,+8,+C */
 #define PC_MILESTONE_C1_BASE 0x10606040UL   /* 4 × (lo32, hi32) at +0..+1C */
 
 /* ---------------------------------------------------------------------------
- * DSPM — inter-core synchronisation
+ * Inter-core synchronisation, in .sbss/.bss: hart 0 clears them in crt.S before
+ * the runtime wakes hart 1 (board builds; board_run also zeroes them, and the
+ * simulated DRAM reads zero), so the flag starts at 0 in every run. It used to
+ * sit in the APMU's DSPM, which keeps its contents from one program to the next
+ * and which the APMU's processing element (PE) also uses: a 1 left there would
+ * start Core 1 before its milestones are set (c1_v2's zero counts on the
+ * VCU118, 2026-10-31, look like that).
  * ---------------------------------------------------------------------------*/
-#define DSPM_BASE_ADDR   0x10428000UL
-#define CORE1_START_FLAG (DSPM_BASE_ADDR + 0x10UL)
+static volatile uint32_t core1_start;
+
+/* Bit 31 of a counter word is not part of the count: it can be set at count 0 */
+#define COUNT_MASK 0x7FFFFFFFu
+
+/* Core 0's wait for each counter (a few seconds of APMU reads on the board): far
+ * longer than Core 1's pass, so that a milestone that never counts ends in a
+ * printed failure instead of a hang */
+#define WAIT_POLLS (1u << 22)
 
 /* ---------------------------------------------------------------------------
  * APMU counter programming values
@@ -162,14 +171,14 @@ int main(void)
 
         printf("[CORE0] Programming Core 1 CVA6-EVU...\n");
 
-        /* EVU event IDs: EVENTID2 reg (addr+8) = 0x17 (PC milestone)
+        /* EVU event IDs: slot 1 (EVU_EID_REG(1, 1), addr+8) = 0x17 (PC milestone)
          * addr+8 → ev_id2 field (bits[9:5] of perfc_req) → perf slot i=1
          * → perfc_resp[1]=1 → e_id[1]=1 → e_id=2
          * Matches EVU_C1_EV1_SEL event_id_val=2: (mask=2 & e_id=2)==2 ✓ */
-        write_32b(EVENTID_C1_BASE + 0,  0x00);   /* EVENTID0: disabled */
-        write_32b(EVENTID_C1_BASE + 4,  0x00);   /* EVENTID1: disabled */
-        write_32b(EVENTID_C1_BASE + 8,  0x17);   /* EVENTID2: PC milestone → e_id=2 */
-        write_32b(EVENTID_C1_BASE + 12, 0x00);   /* EVENTID3: disabled */
+        write_32b(EVU_EID_REG(1, 3), 0x00);   /* slot 3 (addr+0): disabled */
+        write_32b(EVU_EID_REG(1, 2), 0x00);   /* slot 2 (addr+4): disabled */
+        write_32b(EVU_EID_REG(1, 1), 0x17);   /* slot 1 (addr+8): PC milestone → e_id=2 */
+        write_32b(EVU_EID_REG(1, 0), 0x00);   /* slot 0 (addr+C): disabled */
 
         /*
          * PC milestone addresses — lower 32 bits of each 64-bit register pair.
@@ -206,7 +215,7 @@ int main(void)
         /* Signal Core 1 to start                                              */
         /* ------------------------------------------------------------------ */
         printf("[CORE0] Signalling Core 1 to start...\n");
-        write_32b(CORE1_START_FLAG, 1);
+        core1_start = 1;
         asm volatile("fence iorw, iorw" ::: "memory");
 
         /* ------------------------------------------------------------------ */
@@ -222,20 +231,30 @@ int main(void)
         };
         static const char *ordinal[4] = { "1st", "2nd", "3rd", "4th" };
 
+        int tracked = 0;
         for (int n = 0; n < 4; n++) {
-            while (counter_read(n) == 0)
+            uint32_t poll = 0;
+            while ((counter_read(n) & COUNT_MASK) == 0 && poll++ < WAIT_POLLS)
                 asm volatile("" ::: "memory");
-            printf("[CORE0] %s PC track successful: %s hit (count=%u)\n",
-                   ordinal[n], labels[n], counter_read(n));
+            uint32_t cnt = counter_read(n) & COUNT_MASK;
+            if (cnt) {
+                printf("[CORE0] %s PC track successful: %s hit (count=%u)\n", ordinal[n], labels[n], cnt);
+                tracked++;
+            } else {
+                printf("[CORE0] %s PC track failed: %s never counted\n", ordinal[n], labels[n]);
+            }
         }
 
-        printf("[CORE0] All 4 PC milestones tracked successfully!\n");
+        if (tracked == 4)
+            printf("[CORE0] All 4 PC milestones tracked successfully!\n");
+        else
+            printf("[CORE0] Only %d of 4 PC milestones tracked.\n", tracked);
 
     } else if (hartid == 1) {
         /* ------------------------------------------------------------------ */
         /* Core 1 — Wait for signal then run benchmark                         */
         /* ------------------------------------------------------------------ */
-        while (read_32b(CORE1_START_FLAG) == 0)
+        while (core1_start == 0)
             asm volatile("" ::: "memory");
 
         func_A();

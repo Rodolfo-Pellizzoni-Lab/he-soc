@@ -52,6 +52,7 @@ module spu_w_chan #(
     input  logic        clk_i,
     input  logic        rst_ni,
     input  aw_chan_t    aw_chan_i,
+    input  source_id_t  aw_src_i,       // source of the request in aw_chan_i, kept for its response event
     input  b_chan_t     b_chan_i,
     input  addr_map_t   addr_map_i,
     output logic        valid_o,         // Can omit this later?
@@ -80,6 +81,7 @@ logic       [DEPTH-1:0] oldest_d;       // Is this request the oldest among all 
 logic       [DEPTH-1:0] youngest_d;     // Is this request the youngest among all requests with same ID?
 idx_t       [DEPTH-1:0] ptr_d;          // Pointer to the next oldest request with the same ID.
 addr_idx_t  [DEPTH-1:0] addr_idx_d;     // Stores the address index of the request.
+source_id_t [DEPTH-1:0] src_d;          // Stores the source of the request.
 
 id_t        [DEPTH-1:0] id_q;           // ID of the request being monitored.
 timer_l_t   [DEPTH-1:0] req_start_q;    // Stores the starting time (lower 32-bits) of the request.
@@ -88,6 +90,7 @@ logic       [DEPTH-1:0] oldest_q;       // Is this request the oldest among all 
 logic       [DEPTH-1:0] youngest_q;     // Is this request the youngest among all requests with same ID?
 idx_t       [DEPTH-1:0] ptr_q;          // Pointer to the next oldest request with the same ID.
 addr_idx_t  [DEPTH-1:0] addr_idx_q;     // Stores the address index of the request.
+source_id_t [DEPTH-1:0] src_q;          // Stores the source of the request.
 
 logic       ins_op;     // Indicates that a new request will be added to the CAM.
 logic       del_op;     // Indicates that an old request will be removed from the CAM.
@@ -192,6 +195,7 @@ for(gen_i=0; gen_i<DEPTH; gen_i=gen_i+1) begin
         req_start_d[gen_i] = req_start_q[gen_i];
         valid_d[gen_i]     = valid_q[gen_i];
         addr_idx_d[gen_i]  = addr_idx_q[gen_i];
+        src_d[gen_i]       = src_q[gen_i];
 
         if (ins_op) begin
             // See if another entry with same ID exists.
@@ -214,6 +218,7 @@ for(gen_i=0; gen_i<DEPTH; gen_i=gen_i+1) begin
                 req_start_d[gen_i] = spu_timer;
                 valid_d[gen_i]     = 1'b1;
                 addr_idx_d[gen_i]  = dec_addr_idx;
+                src_d[gen_i]       = aw_src_i;
 
                 // If no other request with same ID is present, then this is the first
                 // request for that ID group, make it both the oldest and the youngest.
@@ -243,7 +248,7 @@ end
 
 // Hardware to store and output latency.
 assign valid_o     = del_op && mmatch_valid;
-assign source_id_o = b_chan_i.id[ SourceIDStart +: SOURCE_ID_BITS ];
+assign source_id_o = src_q[mmatch];
 
 // Output logic.
 always_comb begin
@@ -265,6 +270,7 @@ for(gen_i=0; gen_i<DEPTH; gen_i=gen_i+1) begin
             ptr_q[gen_i]       <= '0;
             valid_q[gen_i]     <= 1'b0;
             addr_idx_q[gen_i]  <= '0;
+            src_q[gen_i]       <= '0;
         end else begin
             id_q[gen_i]        <= id_d[gen_i];
             req_start_q[gen_i] <= req_start_d[gen_i];
@@ -273,6 +279,7 @@ for(gen_i=0; gen_i<DEPTH; gen_i=gen_i+1) begin
             ptr_q[gen_i]       <= ptr_d[gen_i];
             valid_q[gen_i]     <= valid_d[gen_i];
             addr_idx_q[gen_i]  <= addr_idx_d[gen_i];
+            src_q[gen_i]       <= src_d[gen_i];
         end
     end
 end 

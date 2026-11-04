@@ -2,22 +2,24 @@
 // accelerator, or an emulated disk / NIC / GPU driven by Linux) sees of the memory the cores wrote, and what the
 // cores see of the memory the device wrote.
 //
-// The socket's memory port enters the host crossbar after the coherency unit (hardware/accel/README.md), so it
-// is not snooped by the cores' write-back L1 data caches (cv64a6_imafdc_sv39_wb: 16 KB, 16-byte lines). In that
-// configuration CVA6 treats a plain `fence` as a no-op for the data cache (the cache is coherent with the other
-// cores), while `fence.i` writes back every dirty line and invalidates the whole data cache
-// (core/controller.sv, INVALIDATE_ON_FLUSH). This test pins those facts down with slot 0 of the socket (`example`,
-// dst[i] = src[i] + ARG, one 64-bit word in flight) and measures the cost of the maintenance:
+// The socket's memory port is a port of the coherence unit (hardware/accel/README.md): its reads are ReadOnce and its
+// writes WriteUnique, so the device reads what a core still holds dirty in its write-back L1 data cache
+// (cv64a6_imafdc_sv39_wb: 16 KB, 16-byte lines) and its writes invalidate the cores' copies. In that configuration
+// CVA6 treats a plain `fence` as a no-op for the data cache (the cache is coherent with the other cores), while
+// `fence.i` writes back every dirty line and invalidates the whole data cache (core/controller.sv,
+// INVALIDATE_ON_FLUSH). This test pins those facts down with slot 0 of the socket (`example`, dst[i] = src[i] + ARG,
+// one 64-bit word in flight) and measures the cost of the maintenance:
 //   1. buffers in the uncached on-chip SRAM: correct without any maintenance
-//   2. source in DRAM, written by the core, plain fence: the device reads the old DRAM contents (stale)
-//   3. source in DRAM, fence.i before the start: the device reads the new data
-//   4. destination in DRAM already in the L1: the core reads its stale copy until a fence.i
-//   5. the full recipe for DRAM buffers: fence.i before the start, fence.i after completion
+//   2. source in DRAM, written by the core, plain fence: the device reads the new data, dirty in the L1
+//   3. source in DRAM, fence.i before the start: the device reads the new data (and what fence.i costs)
+//   4. destination in DRAM already in the L1: after a plain fence the core reads what the device wrote
+//   5. fence.i before the start and after completion, the recipe for a socket outside the coherence unit
 //   6. DRAM above the cacheable region
 //   7. the DRAM timing model applies to the device: DMA from DRAM outside the LLC window slows down by the
 //      configured latency when the model is enabled, an SRAM-to-SRAM copy does not
-// The stale cases are reported as the observed behaviour (either outcome passes, corruption fails) and the
-// summary line says whether the socket's DMA is coherent with the L1, so a change of the hardware shows up here.
+// Steps 2 and 4 fail if the socket's DMA is not coherent with the L1s. Built with DMA_NONCOHERENT=1, for bitstreams
+// from before a0dd722c (2026-10-16) whose socket master entered the host crossbar after the coherence unit, they
+// report the stale outcome instead (either outcome passes, corruption fails). The summary line says which it was.
 #include "accel.h"
 
 #define SLOT 0
@@ -91,6 +93,10 @@ int main(void) {
   classify(dst_sram, 2, 3, &stale, &fresh);
   CHECK(stale + fresh == N, "DRAM source after a plain fence: %d stale, %d fresh of %d words (the rest corrupt)", stale, fresh, N);
   src_coherent = (fresh == N);
+#ifndef DMA_NONCOHERENT
+  CHECK(src_coherent, "DRAM source dirty in the L1, plain fence: the device read %d stale words of %d (it does not see the L1)",
+        stale, N);
+#endif
   printf("DRAM source dirty in the L1, plain fence: the device read %d stale, %d fresh words: %s\r\n", stale, fresh,
          src_coherent ? "COHERENT" : "NOT coherent (fence does not write back the L1)");
   printf("DRAM to SRAM: %d cycles for %d words (%d per word)\r\n", cyc, N, cyc / N);
@@ -122,6 +128,10 @@ int main(void) {
   classify(dst_dram, 5, 6, &stale, &fresh);                       // stale here = old value + ARG: never expected
   CHECK(stale_raw + fresh == N, "DRAM destination after a plain fence: %d stale, %d fresh of %d words (the rest corrupt)", stale_raw, fresh, N);
   dst_coherent = (fresh == N);
+#ifndef DMA_NONCOHERENT
+  CHECK(dst_coherent, "DRAM destination cached in the L1, plain fence: the core read %d stale words of %d (the device's "
+        "writes did not invalidate the L1)", stale_raw, N);
+#endif
   printf("DRAM destination cached in the L1, plain fence: the core read %d stale, %d fresh words: %s\r\n", stale_raw, fresh,
          dst_coherent ? "COHERENT" : "NOT coherent (the device's writes do not invalidate the L1)");
   fence_i();
@@ -129,7 +139,7 @@ int main(void) {
   CHECK(fresh == N, "DRAM destination after fence.i: %d fresh of %d words", fresh, N);
   printf("SRAM to DRAM: %d cycles for %d words (%d per word)\r\n", cyc, N, cyc / N);
 
-  // ---- 5. the recipe for DRAM buffers on both sides
+  // ---- 5. the recipe for DRAM buffers on both sides when the socket is outside the coherence unit
   for (int i = 0; i < N; i++) { src_dram[i] = pat(7, i); dst_dram[i] = 0; }
   fence_i();                                                      // before the start: write back the source
   cyc = run((uintptr_t)src_dram, (uintptr_t)dst_dram, N);

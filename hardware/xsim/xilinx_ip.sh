@@ -12,8 +12,9 @@ source "$(dirname "$0")/env.sh"
 IPDIR=$XILINX_IP_DIR
 CFG=$HW/fpga/alsaqr/tcl/ips/eth_dma/config.tcl
 stamp=$(md5sum "$CFG" | cut -c1-8)
+# up to date when the stamp matches and work holds the IP's top: eth_dma.vdb (xvhdl; a Verilog top would be .sdb)
 if [ "$1" != "-f" ] && [ -f "$IPDIR/libs.txt" ] && [ "$(cat "$IPDIR/stamp" 2>/dev/null)" = "$stamp" ] \
-   && ls "$WORK"/xsim.dir/work/eth_dma*.sdb >/dev/null 2>&1; then
+   && ls "$WORK"/xsim.dir/work/eth_dma.[sv]db >/dev/null 2>&1; then
   echo "xilinx_ip: up to date ($IPDIR)"; exit 0
 fi
 GLOBAL_INI=${XILINX_VIVADO:?}/data/xsim/xsim.ini

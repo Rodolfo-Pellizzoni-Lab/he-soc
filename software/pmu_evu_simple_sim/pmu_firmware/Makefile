@@ -8,8 +8,11 @@ OBJDUMP = $(RISCV_PREFIX)objdump
 OBJCOPY = $(RISCV_PREFIX)objcopy
 
 # Compiler flags for RV32IM (Ibex core)
-# GCC 8.3.0 (SiFive) bundles CSR instructions into rv32im — no _zicsr suffix needed
-CFLAGS = -march=rv32im -mabi=ilp32 -mcmodel=medlow \
+# GCC 8.3.0 (SiFive) bundles CSR instructions into rv32im — no _zicsr suffix needed; GCC 12 and later (the
+# alsaqr-software toolchain is 15.1) need it for crt0.s and the csr asm, so add it when the toolchain takes it
+ZICSR := $(shell echo 'csrr a0, mcycle' | $(CC) -march=rv32im_zicsr -mabi=ilp32 -x assembler -c -o /dev/null - \
+                   2>/dev/null && echo _zicsr)
+CFLAGS = -march=rv32im$(ZICSR) -mabi=ilp32 -mcmodel=medlow \
          -Wall -fvisibility=hidden -ffreestanding \
          -O2 -nostdlib \
          -I include

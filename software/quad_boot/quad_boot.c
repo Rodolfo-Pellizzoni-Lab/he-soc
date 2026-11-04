@@ -1,54 +1,64 @@
+// Four-core boot check. Core 1 is woken by the startup code; core 0 wakes cores 2 and 3 through APMU counter
+// overflows (counters 0/1 -> PLIC sources 156/157 on the S-mode contexts 5 and 7, the ones that wake a core parked in
+// the boot ROM's wfi). Cores 1-3 then say hello in turn and check in, and park instead of returning (a return would
+// end the test at that core's exit). Core 0 undoes the wake-up and returns the number of cores that did not check in
+// (TEST PASS/FAIL, software/soc_tests/include/soc_test.h). On a SoC with more cores it still checks cores 0-3 only:
+// cores 4 and up stay parked in the boot ROM (soc_tests/t_smp wakes and checks every core).
 #include "encoding.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include "utils.h"
-#include "pmu_test_func.c"
+#include "soc_test.h"
 
-// The CUA will always miss in the L1 but after one run of the loop, it will never miss in the LLC.
-#define NUM_NON_CUA 3
-
-__attribute__ ((section(".heapl2ram"))) volatile int flag[2] = { 0, 0};
-
-__attribute__ ((section(".heapl2ram"))) volatile int victim = -1;
-
-__attribute__ ((section(".heapl2ram"))) volatile int core_1 = -1;
-
-static __attribute__ ((noinline)) void lock(int cid) {
- flag[cid] = 1;
- victim = cid;
- int other_cid = 1-cid;
- while( flag[other_cid] && (victim==cid) ) {
-   __asm__ volatile("nop;");
- }
-}
-
-static __attribute__ ((noinline)) void unlock(int cid) {
- flag[cid] = 0;
-}
-
-
-
-// ********************************************************************************************************//
-
-#ifndef TESTS_AUTO
-  #define JUMP_CUA        8    // multiply by 8 for bytes
-  #define JUMP_NONCUA     8    // multiply by 8 for bytes
-  // #define LEN_NONCUA   32768
-  // #define LEN_NONCUA   524288
-  #define LEN_NONCUA   40960      // array size: 320 kB
-  // #define LEN_NONCUA   262144  // array size: 2048 kB
-  #define START_NONCUA    0
+#ifdef FPGA_EMULATION
+#define WAIT_MAX 100000000ULL   // cycles core 0 waits for each core's hello (2 s at 50 MHz)
+#else
+#define WAIT_MAX 300000ULL
 #endif
-
-
-#define INTF_RD
-
-void end_test(uint32_t mhartid){
-  printf("Exiting: %0d.\r\n", mhartid);
-}
 
 #define read_32b(addr)         (*(volatile uint32_t *)(long)(addr))
 #define write_32b(addr, val_)  (*(volatile uint32_t *)(long)(addr) = val_)
+
+// PLIC code
+#define PLIC_BASE      0x0C000000
+#define PLIC_CHECK1    (PLIC_BASE + 0x205004)   // claim/complete of context 5 (hart 2, S-mode)
+#define PLIC_CHECK2    (PLIC_BASE + 0x207004)   // context 7 (hart 3, S-mode)
+// enable words of contexts 5 and 7 (+4 per 32 sources)
+#define PLIC_EN_BITS1  (PLIC_BASE + 0x2280)
+#define PLIC_EN_BITS2  (PLIC_BASE + 0x2380)
+
+SOC_SRAM static volatile uint32_t turn;    // the core that may print now (uncached on-chip SRAM)
+SOC_SRAM static volatile uint32_t up[4];   // 0x100 + mhartid once a core has said hello
+
+// cores 1-3: say hello when it is their turn, so the lines do not interleave, check in and park
+static void hello(uint32_t mhartid) {
+  while (turn != mhartid) __asm__ volatile("nop");
+  printf("Hello from Core%d %d!! :) \n", mhartid, mhartid);
+  uart_wait_tx_done();
+  up[mhartid] = 0x100 + soc_hartid();
+  while (1) __asm__ volatile("wfi");
+}
+
+// Undo the wake-up once cores 2 and 3 run (as soc_wake_all() in soc_test.h). The boot ROM completes 156/157 without
+// claiming them, so they stay pending with counters 0/1 overflowed (a level): whoever enables them later takes a stale
+// interrupt. Clear the overflow while its interrupt enable is still set (cleared first, the APMU would freeze the line
+// high), enable the sources again (the ROM's write to enable word 0 clears the whole context on this PLIC) so that a
+// claim + complete clears the pending bit, then disable them.
+static void wake_release(int pmu_plic_id1, int pmu_plic_id2) {
+  write_32b(COUNTER_BASE_ADDR, 0);
+  write_32b(COUNTER_BASE_ADDR + COUNTER_BUNDLE_SIZE, 0);
+  write_32b(EVENT_INFO_BASE_ADDR, 0);
+  write_32b(EVENT_INFO_BASE_ADDR + COUNTER_BUNDLE_SIZE, 0);
+  write_32b(PLIC_EN_BITS1+(((int)(pmu_plic_id1/32))*4), 1<<(pmu_plic_id1%32));
+  write_32b(PLIC_EN_BITS2+(((int)(pmu_plic_id2/32))*4), 1<<(pmu_plic_id2%32));
+  __asm__ volatile("fence" ::: "memory");   // line low and sources enabled before the claims
+  uint32_t id = read_32b(PLIC_CHECK1);
+  if (id) write_32b(PLIC_CHECK1, id);
+  id = read_32b(PLIC_CHECK2);
+  if (id) write_32b(PLIC_CHECK2, id);
+  write_32b(PLIC_EN_BITS1+(((int)(pmu_plic_id1/32))*4), 0);
+  write_32b(PLIC_EN_BITS2+(((int)(pmu_plic_id2/32))*4), 0);
+}
 
 int thread_entry(int cid, int nc){
   return 0;
@@ -58,22 +68,12 @@ int thread_entry(int cid, int nc){
 // Main Function
 // *********************************************************************
 int main(int argc, char const *argv[]) {
-  
-  volatile uint32_t read_target_0;
-  volatile uint32_t read_target_1;
-  volatile uint32_t read_target_2;
-  volatile uint32_t read_target_3;
-
-  
 
   uint32_t mhartid;
   asm volatile (
     "csrr %0, 0xF14\n"
     : "=r" (mhartid)
   );
-  uint32_t dspm_base_addr;
-  uint32_t read_target;
-  uint32_t error_count = 0;
 
   // In RTL: PMU Connected to irq_sources 155 <=> 162
   // pmu_plic_id needs to be 156 <=> 163
@@ -83,101 +83,59 @@ int main(int argc, char const *argv[]) {
   // *******************************************************************
   // Core 0
   // *******************************************************************
-  if (mhartid == 0) {   
-    #ifdef FPGA_EMULATION
-    uint32_t baud_rate = 9600;
-    uint32_t test_freq = 100000000;
-    #else
+  if (mhartid == 0) {
+    // On the board the startup code has set the UART: its DLL is hard-wired, so the divisor for 9600 Bd at 100 MHz
+    // (651) would set DLM and garble the console. Only the simulation sets it here.
+    #ifndef FPGA_EMULATION
     set_flls();
     uint32_t baud_rate = 115200;
     uint32_t test_freq = 50000000;
-    #endif
     uart_set_cfg(0,(test_freq/baud_rate)>>4);
+    #endif
+    soc_test_begin("quad_boot");
 
     // Fix for LLC Addr
     write_32b(0x1C + 0x1A106000, 0xA0000000);
-    lock(mhartid);
     printf("Hello from Core0 %d!! :) \n", mhartid);
-    unlock(mhartid);
-    // PLIC code
-    #define PLIC_BASE     0x0C000000
-    #define PLIC_CHECK1    PLIC_BASE + 0x205004
-    #define PLIC_CHECK2    PLIC_BASE + 0x207004
-    //enable bits for sources 0-31
-    #define PLIC_EN_BITS1  PLIC_BASE + 0x2280
-    #define PLIC_EN_BITS2  PLIC_BASE + 0x2380
-    
-    
+
     // Initialazing the interrupt controller - 1
     pulp_write32(PLIC_BASE+pmu_plic_id1*4, 1);                                // set pmu interrupt priority to 1
     pulp_write32(PLIC_EN_BITS1+(((int)(pmu_plic_id1/32))*4), 1<<(pmu_plic_id1%32)); // enable interrupt
-    lock(mhartid);
     printf("PLIC Configured \n");
-    unlock(mhartid);
     // Initialazing the interrupt controller - 2
     pulp_write32(PLIC_BASE+pmu_plic_id2*4, 1);                                // set pmu interrupt priority to 1
     pulp_write32(PLIC_EN_BITS2+(((int)(pmu_plic_id2/32))*4), 1<<(pmu_plic_id2%32)); // enable interrupt
 
     // PMU Config
-    uint32_t event_info_val = OVERFLOW_EN; 
+    uint32_t event_info_val = OVERFLOW_EN;
     // Counter 0:
     write_32b (EVENT_INFO_BASE_ADDR, event_info_val);
     write_32b (COUNTER_BASE_ADDR, 0x40000000);
-    lock(mhartid);
     printf("PMU Interrupt Raised - Counter0! \n");
-    unlock(mhartid);
     // Counter 1:
     write_32b (EVENT_INFO_BASE_ADDR + COUNTER_BUNDLE_SIZE, event_info_val);
     write_32b (COUNTER_BASE_ADDR + COUNTER_BUNDLE_SIZE, 0x40000000);
-    lock(mhartid);
     printf("PMU Interrupt Raised - Counter1! \n");
-    unlock(mhartid);
+    uart_wait_tx_done();
 
-    while (1) {    
+    // cores 1-3 say hello one after the other; a core that does not within WAIT_MAX loses its turn
+    for (uint32_t h = 1; h <= 3; h++) {
+      turn = h;
+      uint64_t t0 = soc_cycles();
+      while (up[h] == 0 && soc_cycles() - t0 < WAIT_MAX) __asm__ volatile("nop");
+      turn = 0;
+      CHECK(up[h] == 0x100 + h, "core %d did not check in (0x%x)", h, up[h]);
     }
-
+    wake_release(pmu_plic_id1, pmu_plic_id2);
+    return soc_test_end();
 
   // *******************************************************************
   // Core 1-3
   // *******************************************************************
-  } else if (mhartid == 1) {
-      lock(mhartid);
-      printf("Hello from Core1 %d!! :) \n", mhartid);
-      unlock(mhartid);
-
-
-  } else if (mhartid == 2) {
-      // Start of """Interrupt Service Routine""" (this code should be into an IRQ Handler)
-      // printf("irq has been received and processed. :)\r\n");
-      // pulp_write32(0x10407000, 0x00000000); // Cleaning the irq source
-      // pulp_write32(PLIC_CHECK1, pmu_plic_id1);    // Completing irq (according to riscv specs)
-      
-      // Disabling the Overflow interrupt of PMU:
-      // #define OVERFLOW_EN    0x1000000
-      //   uint32_t event_info_val_disable = 0x0000000; 
-      // // Counter 0:
-      // write_32b (EVENT_INFO_BASE_ADDR, event_info_val_disable);
-      // write_32b (COUNTER_BASE_ADDR, 0x40000000);
-
-      //lock(mhartid);
-      printf("Hello from Core2 %d!! :) \n", mhartid);
-      //unlock(mhartid);
-
-    
-
-} else if (mhartid == 3) {
-  
-  printf("Hello from Core3 %d!! :) \n", mhartid);
-
-} else if (mhartid <= NUM_NON_CUA) {
-    uint64_t var;
-    while (1) {    
-    }
-    
-  } else {
-    end_test(mhartid);
-    uart_wait_tx_done();
-    while (1);
+  } else if (mhartid <= 3) {
+    soc_install_trap_guard();
+    hello(mhartid);
   }
-  return 0;
+
+  while (1) __asm__ volatile("wfi");
 }

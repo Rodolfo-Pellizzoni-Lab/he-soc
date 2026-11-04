@@ -77,9 +77,6 @@
 #define CNT_MEM_RD_LAT     27
 #define CNT_MEM_WR_LAT     28
 
-// CVA6-EVU event ID registers for Core 0 (Ibex writes these via AXI-lite)
-#define EVENTID_C0_BASE_ADDR    0x10606000
-
 // PC milestone slot 0 (64-bit register — lower 32 bits at this address)
 #define PC_MILESTONE_SLOT0      0x10606010
 
@@ -182,7 +179,7 @@ int main() {
     asm volatile ("nop");
     asm volatile ("nop");
 
-    WRITE_MEM(0x10429000, 0xC4A0E440);
+    WRITE_MEM(DSPM_BASE_ADDR + 0x1000, 0xC4A0E440);
 
     asm volatile ("csrw 0x320, zero");
 
@@ -208,15 +205,16 @@ int main() {
 
     // ================================================================
     // Step A: Configure CVA6-EVU event IDs via Ibex AXI-lite master
-    //   EID0 = 0x02: L1D miss        → counter 21
-    //   EID1 = 0x17: PC milestone    → counter 20 (cnt_wfp target)
-    //   EID2 = 0x16: pipeline stalls → counter 22
-    //   EID3 = 0x09: branch instrs   → counter 23
+    //   slot 0 = 0x02: L1D miss        → counter 21 (EV0)
+    //   slot 1 = 0x17: PC milestone    → counter 20 (EV1, cnt_wfp target)
+    //   slot 2 = 0x16: pipeline stalls → counter 22 (EV2)
+    //   slot 3 = 0x09: branch instrs   → counter 23 (EV3)
+    // The registers are in reverse slot order (slot 0 at +0xC): EVU_EID_REG.
     // ================================================================
-    WRITE_MEM(EVENTID_C0_BASE_ADDR + 0x00, 0x00000002);
-    WRITE_MEM(EVENTID_C0_BASE_ADDR + 0x04, 0x00000017);
-    WRITE_MEM(EVENTID_C0_BASE_ADDR + 0x08, 0x00000016);
-    WRITE_MEM(EVENTID_C0_BASE_ADDR + 0x0C, 0x00000009);
+    WRITE_MEM(EVU_EID_REG(0, 0), 0x00000002);
+    WRITE_MEM(EVU_EID_REG(0, 1), 0x00000017);
+    WRITE_MEM(EVU_EID_REG(0, 2), 0x00000016);
+    WRITE_MEM(EVU_EID_REG(0, 3), 0x00000009);
 
     // ================================================================
     // Step B: Clear all stat counters

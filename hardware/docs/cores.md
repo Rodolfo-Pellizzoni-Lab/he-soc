@@ -1,9 +1,10 @@
 # Number of CVA6 cores
 
-`ariane_soc_pkg::NumCVA6` sizes the whole host: the CCU ports (`NumCVA6 + 1`, the extra one is the accelerator
-socket's DMA port), the CLINT, the PLIC contexts (`2 * NumCVA6`), the debug module, the APMU event ports, the
-QoS monitor and the port-index field at the bottom of the SoC AXI user word (`QosUserLsb = $clog2(NumCVA6 + 1)`,
-see `qos.md`). It is 4 under `QUAD_CORE` (set in the package itself) and can be overridden with a define:
+`ariane_soc_pkg::NumCVA6` sizes the whole host: the CCU ports (`NumCVA6 + 2`, the extra two are the DMA ports of the
+accelerator socket and of the Xilinx Ethernet), the CLINT, the PLIC contexts (`2 * NumCVA6`), the debug module, the
+APMU event ports, the QoS monitor and the port-index field at the bottom of the SoC AXI user word (`QosUserLsb =
+$clog2(NumCVA6 + 2)`, see `qos.md`). It is 4 under `QUAD_CORE` (set in the package itself) and can be overridden
+with a define:
 
 | Flow | How |
 |---|---|
@@ -20,8 +21,40 @@ What had to change for a fifth core and up (branch `more-cores`, 2026-10-24):
   S-mode PLIC context `2h+1` and, for h >= 2, wakes on the overflow of APMU counter `h-2` (PLIC source `156+h-2`);
 - the soc_tests harness woke harts 2 and 3 only.
 
-Not done: the Linux side (device-tree CPU nodes, OpenSBI's `NUM_HARTS` build variable, the `llcpart` module and
-docs that assume a 3-bit port field in the user word).
+Linux: an 8-hart device tree and OpenSBI built with `NUM_HARTS=8` (alsaqr-software) boot eight CPUs (below). Not
+checked with more than four cores: the `llcpart` module.
+
+## The APMU with more than four cores
+
+The APMU's event ports and the LLC memory port's sources grow with the core count: 2*N*+2 ports (18 with eight cores,
+where a 4-bit `PORT_ID` names only ports 1-15) and *N*+11 memory-port sources (19, codes 0-18). So the port and source
+fields of the Event Sel register are 5 bits wide with more than four cores and stay 4 bits with up to four
+(`pmu_pkg::PORT_ID_BITS`, `SOURCE_ID_BITS`, set from the `NUM_CVA6` define; CVA6's copy of the event type in
+`ariane_pkg` follows the same rule, and `ariane_soc::MemSrcWidth` is `SOURCE_ID_BITS`). The pad shrinks so that the
+register stays 32 bits:
+
+| Cores | Event Sel | Read requests of the socket's DMA on the LLC memory port |
+|---|---|---|
+| up to 4 | pad [31:24], port [23:20] / mask [19:16], source [15:12] / mask [11:8], event [7:4] / mask [3:0] | `0x9F4F1F` (port 9, source 4) |
+| 5 and more | pad [31:28], port [27:23] / mask [22:18], source [17:13] / mask [12:8], event [7:4] / mask [3:0] | `0x08FD1F1F` with eight cores (port 17, source 8) |
+
+A four-core bitstream keeps the register layout, the port numbers and the cores' source codes, so software built for
+four cores runs on it unchanged, except where it names a memory-port source from 4 up: since the Ethernet DMA has a
+coherence-unit port of its own, 4 is the accelerator socket's DMA alone, 5 the Ethernet DMA, and the other crossbar
+masters moved up by one. On a bitstream with more cores every select has to use the wide layout and that core count's
+numbers; a four-core select matches nothing or the wrong port there, without any error. With eight cores the
+ports are 1-8 (the EVUs), 9-16 (the SPUs on the cores' CCU ports), 17 (the LLC memory port) and 18 (the accelerator
+socket's DMA), and the memory-port sources 0-7 (the cores), 8 (the accelerator socket's DMA), 9 (the Ethernet DMA),
+then 10-18 the other crossbar masters, from the debug module to the APMU's own master port
+(`hardware/ip_list/apmu/README.md` has the tables for both core counts).
+
+The cores' EVU registers (`0x1060_6000 + 0x30*c`, 48 bytes per core) take 0x180 bytes with eight cores. The window
+through which the CPUs (`axi_lite_subsystem`) and the APMU's processing element (`pmu_top`'s `MEMORY_LENGTH`) reach
+them is `ariane_soc::PerfcEvuLength`: 0x100 bytes with up to five cores, as before, and 0x200 with six to ten.
+
+A simulation stops at time 0 when the ports or the memory-port sources do not fit the fields (`host_domain.sv`,
+`pmu_top.sv`), when CVA6's and the APMU's event types differ, or when the EVU window does not cover every core's
+registers (`cva6_synth_wrap.sv`). The 5-bit fields hold up to 14 cores.
 
 ## The PLIC was the limit
 

@@ -230,6 +230,20 @@ module pmu_top import pmu_pkg::*; #(
         $display("PMU %x to %x", PMU_REG_START_ADDR, PMU_REG_START_ADDR+PMU_REG_LENGTH);
     end
     
+    // pragma translate_off
+    initial begin : p_event_sel_assert
+        // the Event Sel register is one 32-bit word of the counter bundle: pmu_pkg's pad must fill it exactly
+        assert ($bits(event_sel_cfg_t) == EVENT_SEL_CFG_WIDTH && EVENT_SEL_CFG_WIDTH == PMU_DATA_WIDTH)
+            else $fatal(1, "APMU: the Event Sel register has %0d bits (EVENT_SEL_CFG_WIDTH %0d), not %0d",
+                        $bits(event_sel_cfg_t), EVENT_SEL_CFG_WIDTH, PMU_DATA_WIDTH);
+        // a select names element i of port_i by its PORT_ID i + 1 (pmu_port_wrap) in PORT_ID_BITS bits: a higher
+        // port would count for a lower one (pmu_port compares the masked PORT_ID with the select's value)
+        assert (NUM_PORT <= 2**PORT_ID_BITS - 1)
+            else $fatal(1, "APMU: %0d ports, the %0d-bit PORT_ID names ports 1..%0d", NUM_PORT, PORT_ID_BITS,
+                        2**PORT_ID_BITS - 1);
+    end
+    // pragma translate_on
+
     // ************************************************************************
     // PMU Core Signals
     // ************************************************************************

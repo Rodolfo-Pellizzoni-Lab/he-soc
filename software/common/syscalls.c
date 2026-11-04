@@ -39,6 +39,9 @@ static uintptr_t syscall(uintptr_t which, uint64_t arg0, uint64_t arg1, uint64_t
 static uintptr_t counters[NUM_COUNTERS];
 static char* counter_names[NUM_COUNTERS];
 
+// one bit per hart that has come through the start-up code (soc_wake_all() waits on the harts it wakes)
+volatile uint32_t harts_up;
+
 void setStats(int enable)
 {
   int i = 0;
@@ -109,6 +112,7 @@ static void init_tls()
 void _init(int cid, int nc)
 {
   init_tls();
+  __atomic_fetch_or(&harts_up, 1u << cid, __ATOMIC_SEQ_CST);
   if(cid==0) {
      int * tmp;
      /* Set UART MUX with hardcoded write */
@@ -403,7 +407,12 @@ int sprintf(char* str, const char* fmt, ...)
   return str - str0;
 }
 
-void* memcpy(void* dest, const void* src, size_t len)
+// At -O3 GCC turns the byte loops below into calls of memcpy / memset, so the unaligned case called itself until
+// the stack had overwritten memory (a memset of 300 bytes at an odd address in the netboot loader's DHCP): keep
+// them loops.
+#define NO_LIBCALL __attribute__((optimize("no-tree-loop-distribute-patterns")))
+
+NO_LIBCALL void* memcpy(void* dest, const void* src, size_t len)
 {
   if ((((uintptr_t)dest | (uintptr_t)src | len) & (sizeof(uintptr_t)-1)) == 0) {
     const uintptr_t* s = src;
@@ -419,7 +428,7 @@ void* memcpy(void* dest, const void* src, size_t len)
   return dest;
 }
 
-void* memset(void* dest, int byte, size_t len)
+NO_LIBCALL void* memset(void* dest, int byte, size_t len)
 {
   if ((((uintptr_t)dest | len) & (sizeof(uintptr_t)-1)) == 0) {
     uintptr_t word = byte & 0xFF;

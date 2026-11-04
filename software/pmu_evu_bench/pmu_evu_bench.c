@@ -178,16 +178,14 @@ int main(int argc, char const *argv[]) {
     asm volatile ("csrr %0, 0xF14" : "=r"(mhartid));
     if (mhartid != 0) { while (1) asm volatile ("wfi"); }
 
-    // UART setup
-    #ifdef FPGA_EMULATION
-    uint32_t baud_rate = 9600;
-    uint32_t test_freq = 100000000;
-    #else
+    // UART setup. On the board the startup code has set the UART: its DLL is hard-wired, so the divisor for
+    // 9600 Bd at 100 MHz (651) would set DLM and garble the console. Only the simulation sets it here.
+    #ifndef FPGA_EMULATION
     set_flls();
     uint32_t baud_rate = 115200;
     uint32_t test_freq = 50000000;
-    #endif
     uart_set_cfg(0, (test_freq / baud_rate) >> 4);
+    #endif
 
     printf("\r\n========================================\r\n");
     printf("PMU EVU Bench — Exhaustive CVA6-EVU Test\r\n");
@@ -214,9 +212,11 @@ int main(int argc, char const *argv[]) {
     for (uint32_t i = 0; i < 0x200; i += 4)
         write_32b(DSPM_BASE_ADDR + i, 0);
 
-    if (text_size > 0 && text_size < 4096) {
-        memcpy((void*)ISPM_BASE_ADDR, _binary_text_section_bin_start, text_size);
-        memcpy((void*)(DSPM_BASE_ADDR + 0x200), _binary_data_rodata_bss_bin_start, data_size);
+    if (text_size > 0 && text_size <= ISPM_SIZE) {
+        // Word stores, not memcpy: the SPMs lose byte stores (see ISPM_BASE_ADDR in quad_boot/pmu_defines.h). The
+        // wrappers align each image to 8 bytes, so rounding the size up reads only their padding.
+        write_32b_regs(ISPM_BASE_ADDR, (text_size + 3) / 4, (uint32_t *)_binary_text_section_bin_start, 4);
+        write_32b_regs(DSPM_BASE_ADDR + 0x200, (data_size + 3) / 4, (uint32_t *)_binary_data_rodata_bss_bin_start, 4);
         asm volatile ("fence iorw, iorw" ::: "memory");
         printf("    Firmware loaded (text=%u, data=%u bytes)\r\n", text_size, data_size);
     } else {

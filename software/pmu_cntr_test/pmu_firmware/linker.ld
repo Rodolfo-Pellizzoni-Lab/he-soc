@@ -30,11 +30,12 @@ STACK_SIZE      = 0x300;
 
 ENTRY(_start)
 
-/* Memory regions for Instruction and Data Memories */
+/* Memory regions for Instruction and Data Memories: ISPM_BASE_ADDR / ISPM_SIZE and DSPM_BASE_ADDR + 0x200 (where
+   the CVA6 loads the data image) of software/quad_boot/pmu_defines.h */
 MEMORY
 {
-    ISPM (rx) : ORIGIN = 0x10427000, LENGTH = 0x1000
-    DSPM (rw) : ORIGIN = 0x10428200, LENGTH = 0x600
+    ISPM (rx) : ORIGIN = 0x10427000, LENGTH = 0x2000
+    DSPM (rw) : ORIGIN = 0x10429200, LENGTH = 0x600
 }
 
 SECTIONS

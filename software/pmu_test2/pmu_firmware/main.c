@@ -1,19 +1,20 @@
 /*
  * PMU Firmware - Bubble Sort (Ibex RV32IM side)
  *
- * Protocol (DSPM communication area, 0x10428000-0x102281FF):
- *   0x10428000: ibex_status   -- Ibex writes: 1=done, 0xDEAD=error
- *   0x10428004: sort_n        -- CVA6 writes number of elements (max 32)
- *   0x10428010: input_array   -- CVA6 writes unsorted array (sort_n * 4 bytes)
- *   0x10428090: output_array  -- Ibex writes sorted result (sort_n * 4 bytes)
+ * Protocol (DSPM communication area, DSPM+0x000-DSPM+0x1FF):
+ *   DSPM+0x000: ibex_status   -- Ibex writes: 1=done, 0xDEAD=error
+ *   DSPM+0x004: sort_n        -- CVA6 writes number of elements (max 32)
+ *   DSPM+0x010: input_array   -- CVA6 writes unsorted array (sort_n * 4 bytes)
+ *   DSPM+0x090: output_array  -- Ibex writes sorted result (sort_n * 4 bytes)
  *
  * Ibex waits for sort_n != 0, sorts the input, writes result, sets status=1.
  */
 
 #include <stdint.h>
 #include <stddef.h>
+#include "include/pmu_hw_desc.h"
 
-#define DSPM_BASE           0x10428000U
+#define DSPM_BASE           DSPM_BASE_ADDR
 
 #define IBEX_STATUS_ADDR    (DSPM_BASE + 0x000)
 #define SORT_N_ADDR         (DSPM_BASE + 0x004)

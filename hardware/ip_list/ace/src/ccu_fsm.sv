@@ -19,7 +19,7 @@ module ccu_fsm
     // a read that needs memory leaves the state machine as soon as its AR is accepted (its R comes back by id);
     // 0 restores the original behaviour (the state machine waits in READ_MEM for the last beat)
     parameter bit          DecoupledReads = 1'b1,
-    // reads in flight at once (one per CCU port is enough for the blocking CVA6 miss handler; the DMA port may
+    // reads in flight at once (one per CCU port is enough for the blocking CVA6 miss handler; a DMA port may
     // have more); when the table is full the read waits in READ_MEM as before
     parameter int unsigned NumInflight = 8
 ) (
@@ -160,7 +160,7 @@ module ccu_fsm
             if (inflight_valid_q[i] && ar_lo <= inflight_hi_q[i] && ar_hi >= inflight_lo_q[i]) conflict_ar = 1'b1;
             if (inflight_valid_q[i] && aw_lo <= inflight_hi_q[i] && aw_hi >= inflight_lo_q[i]) conflict_aw = 1'b1;
             // AXI returns same-id read data in order: a read with the id of one in flight waits, so that an
-            // answer from a snooped L1 cannot overtake memory data still on its way (the DMA port's reads)
+            // answer from a snooped L1 cannot overtake memory data still on its way (a DMA port's reads)
             if (inflight_valid_q[i] && inflight_id_q[i] == ccu_req_i.ar.id) conflict_ar = 1'b1;
         end
         ar_take = ccu_req_i.ar_valid & !conflict_ar;

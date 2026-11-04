@@ -129,6 +129,14 @@ sources:
   - host/clk_gen_hyper.sv
   - host/axi_lite_subsystem.sv
   - host/qos_monitor.sv
+  # Slowdown memory-bandwidth regulator IP (host_domain: LLC -> SPU -> slowdown -> DRAM timing model -> memory)
+  - ip_list/slowdown/src/fifo_sync.sv
+  - ip_list/slowdown/src/countdown_timer.sv
+  - ip_list/slowdown/src/data_write_fifo.sv
+  - ip_list/slowdown/src/throughput_regulator.sv
+  - ip_list/slowdown/src/latency_r_chan.sv
+  - ip_list/slowdown/src/latency_b_chan.sv
+  - ip_list/slowdown/src/slowdown_mem_top.sv
   - host/host_domain.sv
   - host/pad_frame.sv
   # accel: begin (managed by alsaqr-mcp; hardware/accel/slots.json)

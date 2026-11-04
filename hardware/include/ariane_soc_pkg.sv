@@ -70,13 +70,72 @@ package ariane_soc;
       logic [63:0] end_addr;
    } addr_map_rule_t;
 
-  // 4 is recommended by AXI standard, so lets stick to it, do not change
-  // The ID width of the master ports is wider than that of the slave ports.
-  // The additional ID bits are used by the internal multiplexers to route responses.
-  // The ID width of the master ports must be AxiIdWidthSlvPorts + $clog_2(NoSlvPorts).
-  // The same parameters in cva6/include/ariane_axi need to match with the values below!
-  localparam IdWidth   = 4; // Do not change
-  localparam IdWidthSlave = IdWidth + $clog2(NrSlaves);
+  // Host crossbar IDs: every master's port is IdWidth bits, and the crossbar puts the index of that port
+  // (axi_masters_t, XbarPortWidth bits) above them, so its slaves (the LLC among them) see IdWidthSlave bits.
+  // 4 is what the masters on it are built for (OpenTitan's has fixed 4-bit IDs). Raising it widens every slave-side
+  // ID, the LLC memory port's too, and with it the FPGA DDR4 controller, an IP generated with a fixed ID width
+  // (fpga/setup.sh AXI_ID_DDR_WIDTH). (The CVA6 cores' own IDs are ariane_axi::IdWidth, a different width.)
+  localparam IdWidth       = 4;
+  localparam XbarPortWidth = $clog2(NrSlaves);
+  localparam IdWidthSlave  = IdWidth + XbarPortWidth;
+
+  // ---- Masters of the coherence unit (CCU, cva6_synth_wrap): the NumCVA6 cores are its ports 0..NumCVA6-1, then
+  // its DMA ports, one per DMA master (cva6_subsystem): element k of the wrapper's DMA-port array is CCU port
+  // CcuDmaPort + k. Both DMA ports exist in every build (without XILINX_ETHERNET the Ethernet's request is 0), so the
+  // source numbers do not depend on build options. Every number and width that depends on how many masters the CCU
+  // has derives from these.
+  localparam int unsigned NumCcuDmaPorts = 2;
+  localparam int unsigned NumCcuPorts    = NumCVA6 + NumCcuDmaPorts;
+  localparam int unsigned CcuDmaPort     = NumCVA6;   // the first DMA port
+  // The index in the wrapper's DMA-port array and the CCU port (the source the CCU writes: 4 and 5 with four cores,
+  // 8 and 9 with eight) of the accelerator socket's DMA and of the Xilinx Ethernet's AXI DMA
+  localparam int unsigned CcuDmaAccel    = 0;
+  localparam int unsigned CcuDmaEth      = 1;
+  localparam int unsigned CcuAccelPort   = CcuDmaPort + CcuDmaAccel;
+  localparam int unsigned CcuEthPort     = CcuDmaPort + CcuDmaEth;
+  // The CCU writes the port a request came from (its "source") into the low CcuSrcWidth bits of the AXI user field
+  // (ace_ccu_top; ariane_axi_soc::QosUserLsb), and the source travels with the request to the memory.
+  localparam int unsigned CcuSrcWidth    = (NumCcuPorts > 1) ? $clog2(NumCcuPorts) : 1;
+
+  // ---- ID remapper between the CCU and the crossbar (cva6_axi_id_remap): RemapMaxUniqIds IDs in flight per
+  // direction, and AXI ID = {source, slot}. RemapSrcWidth bits of the source fit next to the slot in IdWidth bits;
+  // with fewer than CcuSrcWidth the ID keeps the source's low bits, and what needs the full source reads the user
+  // field. IdWidth >= RemapSlotWidth + CcuSrcWidth would make the ID carry all of it.
+  localparam int unsigned RemapMaxUniqIds = 4;
+  localparam int unsigned RemapTxnsPerId  = 1;
+  localparam int unsigned RemapSlotWidth  = cf_math_pkg::idx_width(RemapMaxUniqIds);   // as the remapper sizes it
+  localparam int unsigned RemapSrcWidth   = IdWidth - RemapSlotWidth;
+
+  // ---- Source of a request at the LLC memory port, as the APMU's SPU there reports it (host_domain,
+  // ariane_axi_soc::mem_src): 0..NumCcuPorts-1 the CCU source (the cores, then CcuAccelPort and CcuEthPort),
+  // NumCcuPorts + p - 1 for crossbar master p >= 1. MemSrcWidth is the APMU's source field, pmu_pkg::SOURCE_ID_BITS:
+  // 4 bits with up to four cores, 5 with more (the NUM_CVA6 define). It must hold all NumMemSrcs (checked in
+  // host_domain): codes 0-14 with four cores, 0-18 with eight.
+  localparam int unsigned NumMemSrcs  = NumCcuPorts + NrSlaves - 1;
+  localparam int unsigned MemSrcWidth = pmu_pkg::SOURCE_ID_BITS;
+
+  // ---- APMU event ports (host_domain: spu_o, the APMU's port_i). Element i is APMU port i + 1, the PORT_ID an event
+  // select names (pmu_port_wrap): the cores' EVUs (ports 1..NumCVA6), the SPUs on the cores' CCU ports
+  // (NumCVA6+1..2*NumCVA6, cva6_synth_wrap), the SPU on the LLC memory port (2*NumCVA6+1, host_domain) and the SPU on
+  // the accelerator socket's DMA (2*NumCVA6+2, cva6_subsystem): ports 1-4, 5-8, 9 and 10 with four cores, 1-8, 9-16,
+  // 17 and 18 with eight. The highest port must fit pmu_pkg::PORT_ID_BITS (checked in host_domain and pmu_top): the
+  // 4 bits of up to four cores name ports 1-15, the 5 bits of more cores ports 1-31 (up to 14 cores).
+  localparam int unsigned ApmuEvuIdx      = 0;
+  localparam int unsigned ApmuCoreSpuIdx  = NumCVA6;
+  localparam int unsigned ApmuMemSpuIdx   = 2 * NumCVA6;
+  localparam int unsigned ApmuAccelSpuIdx = 2 * NumCVA6 + 1;
+  localparam int unsigned ApmuNumPorts    = 2 * NumCVA6 + 2;
+
+  // ---- The cores' EVU configuration registers (cva6_synth_wrap, i_axi_lite_perfc): core c's at PerfcEvuBase +
+  // PerfcEvuBytesPerCore * c, four 4-byte EventID registers, then four 8-byte PC_TRACK registers. The CPUs reach them
+  // through the AXI-lite crossbar (axi_lite_subsystem) and the APMU's processing element as its system memory
+  // (host_domain, pmu_top MEMORY_BASE_ADDR / MEMORY_LENGTH), both through one window of PerfcEvuLength bytes: every
+  // core's registers rounded up to a power of two, at least 0x100. 0x100 with four cores (0xC0 of registers), 0x200
+  // with eight (0x180; cva6_synth_wrap checks that the window covers its registers).
+  localparam logic [31:0] PerfcEvuBase         = 32'h1060_6000;
+  localparam int unsigned PerfcEvuBytesPerCore = 4 * ariane_pkg::NumPerfEvents + 8 * ariane_pkg::NumPCMilesRegs;
+  localparam int unsigned PerfcEvuLength       = (NumCVA6 * PerfcEvuBytesPerCore <= 32'h100) ? 32'h100
+                                                 : 2**$clog2(NumCVA6 * PerfcEvuBytesPerCore);
 
   /// Number of synchronization registers to insert on the async pointers
   localparam CdcSyncStages   = 3;

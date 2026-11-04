@@ -1,0 +1,6 @@
+work/
+transcript
+vsim.wlf
+sim.log
+*.log
+modelsim.ini

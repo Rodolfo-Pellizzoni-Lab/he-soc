@@ -70,6 +70,7 @@ module cva6_subsystem
 
   // APMU
   output pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core_o,
+  output pmu_pkg::pmu_event_t                           spu_accel_o,   // the SPU on the accelerator socket's DMA
   // PMU Interrupt Signal
   input  logic [APMU_NUM_COUNTER-1:0]  pmu_intr_i,
 
@@ -370,6 +371,11 @@ module cva6_subsystem
   );
 
 
+  // The debug module's bus bridge is reset with the crossbar that feeds it (ndmreset_n), the debug module itself only
+  // at power-on. On the power-on reset, an ndmreset that came while it held a write's AW but not yet its W (the
+  // crossbar sends W a cycle after AW, so every HALTED store of a hart parked in the debug ROM passes WAIT_WVALID)
+  // cleared the W but not the bridge: it then refused every AR and AW, so no hart could fetch the debug ROM and halt
+  // until a power-on reset (xsim/tests/run_dm_bridge.sh). Upstream CVA6's ariane_xilinx.sv has the same split.
   axi2mem #(
     .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
     .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
@@ -377,7 +383,7 @@ module cva6_subsystem
     .AXI_USER_WIDTH ( AXI_USER_WIDTH           )
   ) i_dm_axi2mem (
     .clk_i      ( clk_i                         ),
-    .rst_ni     ( rst_ni                        ),
+    .rst_ni     ( ndmreset_n                    ),
     .slave      ( master[ariane_soc::Debug_Slv] ),
     .req_o      ( dm_slave_req                  ),
     .we_o       ( dm_slave_we                   ),
@@ -603,63 +609,133 @@ module cva6_subsystem
   // AXI CLUSTER Master: the accelerator socket's DMA. It enters the SoC through a port of the coherence unit
   // (cva6_synth_wrap), so it is snooped against the cores' L1 data caches; its old xbar port is left idle.
   // ---------------
-  // The Xilinx Ethernet's DMA (ariane_peripherals) shares that port. Both are single-beat masters with small IDs
-  // (socket: 0; Ethernet: 0/2/4), so they are muxed on 3-bit IDs into a 4-bit one, which is exactly the port's
-  // ariane_axi::id_t: the mux's select bit survives the round trip and routes the responses back.
-  ariane_axi_soc::req_slv_t  cluster_dma_req, socket_dma_req, eth_dma_req;
-  ariane_axi_soc::resp_slv_t cluster_dma_resp, socket_dma_resp, eth_dma_resp;
+  // The Xilinx Ethernet's DMA (ariane_peripherals) has a CCU port of its own next to it: element CcuDmaAccel /
+  // CcuDmaEth of the wrapper's DMA-port array is CCU port CcuAccelPort / CcuEthPort (ariane_soc), the source the CCU
+  // writes into the master's requests. Both keep their own IDs (socket: 0; Ethernet: 0/2/4), which fit the CCU's
+  // 4-bit ID that the wrapper cuts them to, and each gets a register stage on AW and AR (one spill register each; W,
+  // B and R pass through) under ndmreset_n, as the 2:1 mux they used to share had. The APMU's SPU on the socket's
+  // DMA (i_spu_accel, below) sits on cluster_axi_slave in front of socket_dma_req: it sees the socket's DMA alone.
+  ariane_axi_soc::req_slv_t  socket_dma_req, eth_dma_req;
+  ariane_axi_soc::resp_slv_t socket_dma_resp, eth_dma_resp;
+  // by CCU DMA port: the masters (as the one-port muxes below take them, one-element arrays) and the CCU side
+  ariane_axi_soc::req_slv_t  [ariane_soc::NumCcuDmaPorts-1:0][0:0] dma_mst_req;
+  ariane_axi_soc::resp_slv_t [ariane_soc::NumCcuDmaPorts-1:0][0:0] dma_mst_resp;
+  ariane_axi_soc::req_slv_t  [ariane_soc::NumCcuDmaPorts-1:0]      ccu_dma_req;
+  ariane_axi_soc::resp_slv_t [ariane_soc::NumCcuDmaPorts-1:0]      ccu_dma_resp;
   ariane_axi_soc::req_t      cluster_xbar_idle_req;
+
+`ifdef APMU_IP
+  // SPU on the accelerator socket's DMA (APMU port 2*NumCVA6+2, ariane_soc::ApmuAccelSpuIdx), like the SPUs in front
+  // of the cores' CCU ports: on the socket's own bus before its CCU port, so it counts the accelerators' requests
+  // before the coherence unit and the LLC (hits and misses alike) and nothing else (the Ethernet DMA has its own CCU
+  // port; the CPU reaches the socket's registers through cluster_axi_master). It only watches (axi_spu_top: every
+  // channel is a continuous assign from spu_slv to spu_mst, only its sampling is registered), runs on the DMA path's
+  // clock and reset, and its events go straight to the APMU, as the LLC memory port SPU's do. Events and address rule
+  // as on the other SPUs: 1 read request, 2 write request, 3 read response, 4 write response, DRAM addresses only
+  // (not the on-chip SRAM or the LLC scratchpad); every event has source CcuAccelPort, the code the LLC memory port's
+  // SPU gives the same requests (ariane_axi_soc::mem_src). The slot is not recorded. CAM: at most 4 socket requests
+  // are in flight (accel_socket MaxReq = its axi_from_mem's MaxRequests), reads and writes together, all with ID 0.
+  AXI_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH           ),
+    .AXI_ID_WIDTH   ( ariane_soc::IdWidthSlave ),
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH           )
+  ) socket_spu_mst();
+
+  ariane_soc::addr_map_rule_t [1:0] spu_accel_addr_map;
+  assign spu_accel_addr_map[0] = '{
+        idx: 0,
+        start_addr: ariane_soc::DebugBase,
+        end_addr:   ariane_soc::HYAXIBase
+  };
+  assign spu_accel_addr_map[1] = '{
+        idx: 1,
+        start_addr: ariane_soc::HYAXIBase,
+        end_addr:   ariane_soc::HYAXIBase + ariane_soc::HYAXILength
+  };
+  localparam logic [ariane_soc::MemSrcWidth-1:0] SpuAccelSrc = ariane_soc::MemSrcWidth'(ariane_soc::CcuAccelPort);
+
+  axi_spu_top #(
+    // Static configuration parameters of the cache.
+    .SetAssociativity   ( ariane_soc::LLC_SET_ASSOC   ),
+    .NumLines           ( ariane_soc::LLC_NUM_LINES   ),
+    .NumBlocks          ( ariane_soc::LLC_NUM_BLOCKS  ),
+    // Source ID Specifications: the constant SpuAccelSrc on ar_src_i / aw_src_i
+    .SourceIDStart      (  0                          ),
+    .SourceIDEnd        (  ariane_soc::MemSrcWidth-1  ),
+    .ExtSource          (  1'b1                       ),
+    // AXI4 Specifications: the socket bus's full ID
+    .IdWidth            ( ariane_soc::IdWidthSlave    ),
+    .AddrWidth          ( AXI_ADDRESS_WIDTH           ),
+    .DataWidth          ( AXI_DATA_WIDTH              ),
+    // Address Indexing
+    .N_ADDR_RULES       (  2                          ),
+    .addr_rule_t        ( ariane_soc::addr_map_rule_t ),
+    // FIFO and CAM Parameters: CAM_DEPTH twice the socket's 4 requests in flight
+    .CAM_DEPTH          (  8                          ),
+`ifndef TARGET_SYNTHESIS
+    .SPU_NAME           ( "spu_accel"                 ),
+`endif
+    .FIFO_DEPTH         (  8                          )
+  ) i_spu_accel (
+    .clk_i              ( clk_i                       ),
+    .rst_ni             ( ndmreset_n                  ),
+    .addr_map_i         ( spu_accel_addr_map          ),
+    .spu_slv            ( cluster_axi_slave           ),
+    .spu_mst            ( socket_spu_mst              ),  // SPU -> socket_dma_req -> the socket's CCU DMA port
+    .ar_src_i           ( SpuAccelSrc                 ),
+    .aw_src_i           ( SpuAccelSrc                 ),
+    .e_out              ( spu_accel_o                 )
+  );
+  `AXI_ASSIGN_TO_REQ(socket_dma_req, socket_spu_mst)
+  `AXI_ASSIGN_FROM_RESP(socket_spu_mst, socket_dma_resp)
+`else
+  // No SPU: the socket's bus feeds its CCU DMA port directly.
   `AXI_ASSIGN_TO_REQ(socket_dma_req, cluster_axi_slave)
   `AXI_ASSIGN_FROM_RESP(cluster_axi_slave, socket_dma_resp)
+  assign spu_accel_o = '0;
+`endif
 
-  typedef logic [2:0] dma_id3_t;
-  typedef logic [3:0] dma_id4_t;
-  `AXI_TYPEDEF_ALL(dma3, ariane_axi_soc::addr_t, dma_id3_t, ariane_axi_soc::data_t, ariane_axi_soc::strb_t, ariane_axi_soc::user_t)
-  `AXI_TYPEDEF_ALL(dma4, ariane_axi_soc::addr_t, dma_id4_t, ariane_axi_soc::data_t, ariane_axi_soc::strb_t, ariane_axi_soc::user_t)
-  dma3_req_t  [1:0] dma3_req;     // 0: socket, 1: Ethernet
-  dma3_resp_t [1:0] dma3_resp;
-  dma4_req_t        dma4_req;
-  dma4_resp_t       dma4_resp;
+  assign dma_mst_req[ariane_soc::CcuDmaAccel][0] = socket_dma_req;
+  assign socket_dma_resp                         = dma_mst_resp[ariane_soc::CcuDmaAccel][0];
+  assign dma_mst_req[ariane_soc::CcuDmaEth][0]   = eth_dma_req;
+  assign eth_dma_resp                            = dma_mst_resp[ariane_soc::CcuDmaEth][0];
 
-  axi_id_width_adapt #(
-    .slv_req_t ( ariane_axi_soc::req_slv_t ), .slv_resp_t ( ariane_axi_soc::resp_slv_t ), .mst_req_t ( dma3_req_t ), .mst_resp_t ( dma3_resp_t )
-  ) i_socket_dma_id (
-    .slv_req_i ( socket_dma_req ), .slv_resp_o ( socket_dma_resp ), .mst_req_o ( dma3_req[0] ), .mst_resp_i ( dma3_resp[0] )
-  );
-  axi_id_width_adapt #(
-    .slv_req_t ( ariane_axi_soc::req_slv_t ), .slv_resp_t ( ariane_axi_soc::resp_slv_t ), .mst_req_t ( dma3_req_t ), .mst_resp_t ( dma3_resp_t )
-  ) i_eth_dma_id (
-    .slv_req_i ( eth_dma_req ), .slv_resp_o ( eth_dma_resp ), .mst_req_o ( dma3_req[1] ), .mst_resp_i ( dma3_resp[1] )
-  );
+  // pragma translate_off
+  initial begin : p_ccu_dma_assert
+    // the two assigns above are all the DMA masters there are: every element of dma_mst_req must be one of them
+    assert (ariane_soc::NumCcuDmaPorts == 2 && ariane_soc::CcuDmaAccel != ariane_soc::CcuDmaEth
+            && ariane_soc::CcuDmaAccel < 2 && ariane_soc::CcuDmaEth < 2)
+      else $fatal(1, "cva6_subsystem drives 2 CCU DMA ports (the accelerator socket's, the Ethernet's), not %0d",
+                  ariane_soc::NumCcuDmaPorts);
+  end
+  // pragma translate_on
 
-  axi_mux #(
-    .SlvAxiIDWidth ( 3              ),
-    .slv_aw_chan_t ( dma3_aw_chan_t ), .mst_aw_chan_t ( dma4_aw_chan_t ),
-    .w_chan_t      ( dma3_w_chan_t  ),
-    .slv_b_chan_t  ( dma3_b_chan_t  ), .mst_b_chan_t  ( dma4_b_chan_t  ),
-    .slv_ar_chan_t ( dma3_ar_chan_t ), .mst_ar_chan_t ( dma4_ar_chan_t ),
-    .slv_r_chan_t  ( dma3_r_chan_t  ), .mst_r_chan_t  ( dma4_r_chan_t  ),
-    .slv_req_t     ( dma3_req_t     ), .slv_resp_t    ( dma3_resp_t    ),
-    .mst_req_t     ( dma4_req_t     ), .mst_resp_t    ( dma4_resp_t    ),
-    .NoSlvPorts    ( 2 ), .MaxWTrans ( 4 ), .FallThrough ( 1'b0 ),
-    .SpillAw ( 1'b1 ), .SpillW ( 1'b0 ), .SpillB ( 1'b0 ), .SpillAr ( 1'b1 ), .SpillR ( 1'b0 )
-  ) i_dma_port_mux (
-    .clk_i,
-    .rst_ni      ( ndmreset_n ),
-    .test_i      ( 1'b0       ),
-    .slv_reqs_i  ( dma3_req   ),
-    .slv_resps_o ( dma3_resp  ),
-    .mst_req_o   ( dma4_req   ),
-    .mst_resp_i  ( dma4_resp  )
-  );
-
-  axi_id_width_adapt #(
-    .slv_req_t ( dma4_req_t ), .slv_resp_t ( dma4_resp_t ), .mst_req_t ( ariane_axi_soc::req_slv_t ), .mst_resp_t ( ariane_axi_soc::resp_slv_t )
-  ) i_dma_port_id (
-    .slv_req_i ( dma4_req ), .slv_resp_o ( dma4_resp ), .mst_req_o ( cluster_dma_req ), .mst_resp_i ( cluster_dma_resp )
-  );
+  for (genvar k = 0; k < ariane_soc::NumCcuDmaPorts; k++) begin : gen_ccu_dma_port
+    axi_mux #(
+      .SlvAxiIDWidth ( ariane_soc::IdWidthSlave      ),
+      .slv_aw_chan_t ( ariane_axi_soc::aw_chan_slv_t ), .mst_aw_chan_t ( ariane_axi_soc::aw_chan_slv_t ),
+      .w_chan_t      ( ariane_axi_soc::w_chan_t      ),
+      .slv_b_chan_t  ( ariane_axi_soc::b_chan_slv_t  ), .mst_b_chan_t  ( ariane_axi_soc::b_chan_slv_t  ),
+      .slv_ar_chan_t ( ariane_axi_soc::ar_chan_slv_t ), .mst_ar_chan_t ( ariane_axi_soc::ar_chan_slv_t ),
+      .slv_r_chan_t  ( ariane_axi_soc::r_chan_slv_t  ), .mst_r_chan_t  ( ariane_axi_soc::r_chan_slv_t  ),
+      .slv_req_t     ( ariane_axi_soc::req_slv_t     ), .slv_resp_t    ( ariane_axi_soc::resp_slv_t    ),
+      .mst_req_t     ( ariane_axi_soc::req_slv_t     ), .mst_resp_t    ( ariane_axi_soc::resp_slv_t    ),
+      .NoSlvPorts    ( 1 ), .MaxWTrans ( 4 ), .FallThrough ( 1'b0 ),
+      .SpillAw ( 1'b1 ), .SpillW ( 1'b0 ), .SpillB ( 1'b0 ), .SpillAr ( 1'b1 ), .SpillR ( 1'b0 )
+    ) i_dma_spill (
+      .clk_i,
+      .rst_ni      ( ndmreset_n      ),
+      .test_i      ( 1'b0            ),
+      .slv_reqs_i  ( dma_mst_req[k]  ),
+      .slv_resps_o ( dma_mst_resp[k] ),
+      .mst_req_o   ( ccu_dma_req[k]  ),
+      .mst_resp_i  ( ccu_dma_resp[k] )
+    );
+  end
 `ifndef SYNTHESIS
-  axi_x_monitor #(.req_t(ariane_axi_soc::req_slv_t), .resp_t(ariane_axi_soc::resp_slv_t), .NAME("ccu_dma_port")) i_xmon_dma (.clk_i(clk_i), .req_i(cluster_dma_req), .resp_i(cluster_dma_resp));
+  axi_x_monitor #(.req_t(ariane_axi_soc::req_slv_t), .resp_t(ariane_axi_soc::resp_slv_t), .NAME("ccu_dma_accel")) i_xmon_dma_accel (.clk_i(clk_i), .req_i(ccu_dma_req[ariane_soc::CcuDmaAccel]), .resp_i(ccu_dma_resp[ariane_soc::CcuDmaAccel]));
+  axi_x_monitor #(.req_t(ariane_axi_soc::req_slv_t), .resp_t(ariane_axi_soc::resp_slv_t), .NAME("ccu_dma_eth")) i_xmon_dma_eth (.clk_i(clk_i), .req_i(ccu_dma_req[ariane_soc::CcuDmaEth]), .resp_i(ccu_dma_resp[ariane_soc::CcuDmaEth]));
 `endif
   assign cluster_xbar_idle_req = '0;
   `AXI_ASSIGN_FROM_REQ(slave[ariane_soc::CLUSTER_MST], cluster_xbar_idle_req)
@@ -999,9 +1075,9 @@ module cva6_subsystem
     .ipi_i                ( ipi                         ), // async signal
     .time_irq_i           ( timer_irq                   ), // async signal
     .debug_req_i          ( debug_req_core              ), // async signal
-    // accelerator socket DMA, as a coherent CCU port
-    .dma_req_i            ( cluster_dma_req             ),
-    .dma_resp_o           ( cluster_dma_resp            ),
+    // the accelerator socket's and the Ethernet's DMA, one coherent CCU port each
+    .dma_req_i            ( ccu_dma_req                 ),
+    .dma_resp_o           ( ccu_dma_resp                ),
     // CVA6 Master
     .data_master_aw_wptr_o( cva6_axi_master_dst.aw_wptr ),
     .data_master_aw_data_o( cva6_axi_master_dst.aw_data ),
