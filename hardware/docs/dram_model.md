@@ -120,12 +120,18 @@ is from before the wrap but that comes back after it, or is still in the buffer 
 reaches that time again, up to 2^44 cycles, and the responses behind it wait with it. A read or write accepted near or
 after the wrap gets such a time while the modelled bus time is still from before the wrap (its now + latency, small
 once wrapped, loses the unsigned compare); if its response comes back before the wrap, it may leave early instead. So
-with the model enabled across the wrap, or enabled again after it before a write accepted while disabled has reset the
-bus time, the memory path stops for up to four more days, and disabling the model does not free the responses it
-holds. A unit simulation with the time base forced to 300 cycles before the wrap shows this (2026-10-31, `LAT_RD` =
+with the model enabled across the wrap, or enabled after it before any write has passed through it since (a write
+accepted while disabled resets the bus time), the memory path stops, and disabling the model does not free the
+responses it holds. A held response comes out at most 2^44 cycles later, but with the model still on and traffic
+running the next ones are held again, so in practice only a reset ends the stall; a release time in the last cycle
+before the wrap, possible when `OCC16` is not a multiple of 16 (the 1 GHz values use 20), is never reached at all.
+A unit simulation with the time base forced to 300 cycles before the wrap shows the stall (2026-10-31, `LAT_RD` =
 20): a read accepted 200 cycles before the wrap is unaffected, one accepted 10 cycles before it and one after it do
-not come out in 2000 cycles each. Until the compares are fixed, enable the model only within four days of the last
-reset (programming the FPGA resets it).
+not come out in 2000 cycles each. Every SoC reset clears the time base and switches the model off: programming the
+FPGA, the board's reset button, and the debug module's ndmreset (OpenOCD's `reset halt`), which
+host/alsaqr_clk_rst_gen.sv's FPGA branch ANDs into the SoC reset. Until the compares are fixed, do not keep the model
+enabled 4.07 days (or a multiple) after the last reset: in practice, do not leave it on in a session, a Linux run for
+example, that stays up for more than four days.
 
 The generated SoC control block decodes only the low 8 address bits; apb_soc_control routes offsets 0x100-0x1FF
 to the model's registers and everything else to the generated block.
@@ -200,7 +206,7 @@ few cycles is not late; `t_part` and `t_sweep` judge by the hold time.
 
 ## Measured with the slowdown (2026-10-30)
 
-`t_dram` on the VCU118 with the 10-30 bitstreams, built from f5d8c723: OpenDRAM with 16x timing and the slowdown in
+`t_dram` on the VCU118 with the 10-30 bitstreams, built from 4531ce90: OpenDRAM with 16x timing and the slowdown in
 the path with host_domain.sv's values (`Latency_param = 20`: every R and B response leaves it 20 cycles late;
 `Throughput_timer_param = 10`: at most one request released every 11 cycles). In xsim, with 4 and with 8 cores,
 `t_dram` prints the same numbers for both. All four runs pass the 22 checks. First beats and fill times are

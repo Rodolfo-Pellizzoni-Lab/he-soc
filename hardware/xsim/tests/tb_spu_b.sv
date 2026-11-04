@@ -1,5 +1,5 @@
 // tb_spu_b.sv: directed check of the SPU's write-response events when the master holds B (b_valid without b_ready).
-// 0476db2b fixed axi_spu_top / ace_spu_top: new_b_resp_q never left 1 (`new_b_resp_q <= new_b_resp_q`), so every
+// 18196e8c fixed axi_spu_top / ace_spu_top: new_b_resp_q never left 1 (`new_b_resp_q <= new_b_resp_q`), so every
 // cycle of a held B reached spu_w_chan as a response; it deletes the oldest CAM entry of that ID each time, so with
 // two writes of one ID outstanding the second is answered by the first's B (a short latency) and its own B later
 // finds no entry. No system run holds a B at an SPU, so only a unit test shows the fix.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Unit test of the SPU's write-response events (tests/tb_spu_b.sv) on ip_list/spu/src/axi_spu_top.sv: a B the master
 # holds (b_valid without b_ready) must give one W_RESP event, paired with its own AW, also while a second write of
-# the same ID is outstanding (0476db2b: new_b_resp_q never left 1, so the second write took the first one's B).
+# the same ID is outstanding (18196e8c: new_b_resp_q never left 1, so the second write took the first one's B).
 # Needs no built SoC: the SPU and the few packages it uses are compiled into $WORK/spu_b. SPU_TOP_SV=<file> tests
 # another axi_spu_top.sv (e.g. one with the old line put back, which must FAIL). ace_spu_top.sv (the core SPUs) has
 # the same B logic: its "Write Response channel" block is identical.
