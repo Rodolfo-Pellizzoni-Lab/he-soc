@@ -64,10 +64,10 @@ module axi_dram_timing #(
   output axi_req_t             mst_req_o,
   input  axi_resp_t            mst_resp_i
 );
-  // time in 1/16 target cycles: 2^44 cycles (4.07 days at 50 MHz) before wrap. The compares below are not wrap-safe:
-  // enabled across the wrap, or enabled again after it before a write accepted while disabled has set bus_free_q
-  // to now, the model holds its responses for up to as long again (hardware/docs/dram_model.md).
-  localparam int unsigned TW = 48;
+  // time in 1/16 target cycles, 64 bits: 2^60 cycles (about 731 years at 50 MHz) before it wraps, so the compares
+  // below need not be wrap-safe. With 48 bits it wrapped after 2^44 cycles (4.07 days) and a model enabled across
+  // the wrap held its responses until a reset (hardware/docs/dram_model.md, tests/tb_dm_wrap.sv).
+  localparam int unsigned TW = 64;
   typedef logic [TW-1:0]      t16_t;
   typedef logic [IdWidth-1:0] id_t;
   localparam int unsigned RdPW = $clog2(RdDepth);
@@ -148,8 +148,8 @@ module axi_dram_timing #(
     if (cfg_i.clear) for (int i = 0; i < RdDepth; i++) rdq_d[i].timed = 1'b0;
     lat_rd16 = t16_t'(cfg_i.lat_rd) << 4;
     lat_wr16 = t16_t'(cfg_i.lat_wr) << 4;
-    occ_ar   = (t16_t'(slv_req_i.ar.len) + 48'd1) * t16_t'(cfg_i.occ16);
-    occ_aw   = (t16_t'(slv_req_i.aw.len) + 48'd1) * t16_t'(cfg_i.occ16);
+    occ_ar   = (t16_t'(slv_req_i.ar.len) + t16_t'(1)) * t16_t'(cfg_i.occ16);
+    occ_aw   = (t16_t'(slv_req_i.aw.len) + t16_t'(1)) * t16_t'(cfg_i.occ16);
     dl = '0; rel = '0;
 
     // accepted read: first beat at max(now + lat_rd, bus free); the burst then occupies the bus. Disabled: due now.
@@ -241,7 +241,7 @@ module axi_dram_timing #(
       bb_rd_q <= '0; bb_wr_q <= '0; bb_cnt_q <= '0;
       cnt_q <= '0;
     end else begin
-      t16_q <= t16_q + 48'd16;
+      t16_q <= t16_q + t16_t'(16);
       bus_free_q <= bus_free_d;
       rdq_q <= rdq_d; wrq_q <= wrq_d; rbuf_q <= rbuf_d; bbuf_q <= bbuf_d;
       rd_head_q <= rd_head_d; rd_tail_q <= rd_tail_d; rd_cnt_q <= rd_cnt_d;
