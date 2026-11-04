@@ -46,6 +46,10 @@ package riscv;
     localparam ModeW            = (XLEN == 32) ? 1 : 4;
     localparam ASIDW            = (XLEN == 32) ? 9 : 16;
     localparam VMIDW            = (XLEN == 32) ? 7 : 14;
+    // Sdtrig assigns 16/34 bits for scontext and 7/14 bits for hcontext on RV32/RV64.
+    // This implementation uses 15 bits for scontext and 4 bits for hcontext on both RV32 and RV64.
+    localparam SCONTEXTW        = 15;
+    localparam HCONTEXTW        = 4;
     localparam PPNW             = (XLEN == 32) ? 22 : 44;
     localparam GPPNW            = (XLEN == 32) ? 22 : 29;
     localparam vm_mode_t        MODE_SV = (XLEN == 32) ? ModeSv32 : ModeSv39;
@@ -469,6 +473,7 @@ package riscv;
         CSR_SATP           = 12'h180,
         CSR_SCOUNTOVF       = 12'hDA0,
         CSR_SRMCFG         = 12'h181, // Ssqosid
+        CSR_SCONTEXT       = 12'h5A8,
         // Hypervisor-extended Supervisor Mode CSRs
         CSR_HSTATUS        = 12'h600,
         CSR_HEDELEG        = 12'h602,
@@ -484,7 +489,7 @@ package riscv;
         CSR_HENVCFG        = 12'h60A,
         CSR_HENVCFGH       = 12'h61A,
         CSR_HGATP          = 12'h680,
-        CSR_HCONTEXT       = 12'h6A8,
+        CSR_HCONTEXT       = 12'h6A8, // Alias of CSR_MCONTEXT
         CSR_HTIMEDELTA     = 12'h605,
         CSR_HTIMEDELTAH    = 12'h615,
         // Machine Mode CSRs
@@ -613,6 +618,7 @@ package riscv;
         CSR_TDATA2         = 12'h7A2,
         CSR_TDATA3         = 12'h7A3,
         CSR_TINFO          = 12'h7A4,
+        CSR_MCONTEXT       = 12'h7A8,
         // Debug CSR
         CSR_DCSR           = 12'h7b0,
         CSR_DPC            = 12'h7b1,

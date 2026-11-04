@@ -49,13 +49,16 @@ module perf_counters_evu
     input fp_event_en,          //Floating Point Instructions
     input stall_issue_en,        //Pipeline bubbles
 
-    input logic [(ariane_pkg::NumPerfEvents * ariane_pkg::EventIDBits)-1:0] perfc_req,  //PerfCounters EVENTID Request.
+    input logic scontext_change_en,
+    input logic hcontext_change_en,
+
+    input logic [(ariane_pkg::NumPerfEvents * ariane_pkg::EventIDBits)-1:0] perfc_req,     //PerfCounters EVENTID Request.
     input logic [(ariane_pkg::NumPCMilesRegs * riscv::VLEN)-1:0]            pcmiles_req,   //PC Milestones to Track.
 
-    input  scoreboard_entry_t [NrCommitPorts-1:0]                   commit_pc,                //The instruction we want to commit
-    input  logic [NrCommitPorts-1:0]                                commit_ack,               //Acknowledge that we are indeed committing
-    output logic [ariane_pkg::NumPerfEvents-1:0]                            perfc_resp,               //Status of each Performance Counter Event Represented by its ID.
-    output logic [ariane_pkg::NumPCMilesRegs-1:0]                           pcmiles_resp              //Status of whether any of the PC Milestones were hit by the Core.
+    input  scoreboard_entry_t [NrCommitPorts-1:0]                           commit_pc,     //The instruction we want to commit
+    input  logic [NrCommitPorts-1:0]                                        commit_ack,    //Acknowledge that we are indeed committing
+    output logic [ariane_pkg::NumPerfEvents-1:0]                            perfc_resp,    //Status of each Performance Counter Event Represented by its ID.
+    output logic [ariane_pkg::NumPCMilesRegs-1:0]                           pcmiles_resp   //Status of whether any of the PC Milestones were hit by the Core.
 );
 
 // This block is used to assign event statuses.
@@ -64,45 +67,65 @@ module perf_counters_evu
 
 logic [ariane_pkg::NumPerfEvents-1:0] pc_track_enable;
 logic [ariane_pkg::NumPCMilesRegs-1:0]  pcmiles_resp_en;
+logic [ariane_pkg::NumPerfEvents-1:0] perfc_resp_q, perfc_resp_q1;
 
 always_ff@(posedge clk_i) begin
  if(!rst_ni) begin
-    perfc_resp  <= '0;
+    perfc_resp_q  <= '0;
+    perfc_resp_q1 <= '0;
     pc_track_enable <= '0;
  end
  else begin
   for(int i=0; i<ariane_pkg::NumPerfEvents; i++) begin
     pc_track_enable[i] <= 0;
+    perfc_resp_q1[i] <= perfc_resp_q[i];
     case(perfc_req[i * ariane_pkg::EventIDBits +: ariane_pkg::EventIDBits])
-        5'b00000: perfc_resp[i] <= 0;
-        5'b00001: perfc_resp[i] <= l1_icache_miss_en;    //L1 I-Cache misses
-        5'b00010: perfc_resp[i] <= l1_dcache_miss_en;    //L1 D-Cache misses
-        5'b00011: perfc_resp[i] <= itlb_miss_en;         //ITLB misses
-        5'b00100: perfc_resp[i] <= dtlb_miss_en;         //DTLB misses
-        5'b00101: perfc_resp[i] <= load_event_en;        //Load accesses
-        5'b00110: perfc_resp[i] <= store_event_en;       //Store accesses
-        5'b00111: perfc_resp[i] <= ex_valid_en;          //Exceptions
-        5'b01000: perfc_resp[i] <= exception_handle_en;  //Exception handler returns
-        5'b01001: perfc_resp[i] <= branch_event_en;      // Branch instructions
-        5'b01010: perfc_resp[i] <= branch_mispredicts_en;//Branch mispredicts
-        5'b01011: perfc_resp[i] <= branch_exceptions_en; //Branch exceptions
-        5'b01100: perfc_resp[i] <= call_event_en;        //Call
-        5'b01101: perfc_resp[i] <= return_event_en;      //Return
-        5'b01110: perfc_resp[i] <= msb_full_en;          //MSB Full
-        5'b01111: perfc_resp[i] <= inst_fetch_empty_en;  //Instruction fetch Empty
-        5'b10000: perfc_resp[i] <= l1_icache_access_en;  //L1 I-Cache accesses
-        5'b10001: perfc_resp[i] <= l1_dcache_access_en;  //L1 D-Cache accesses
-        5'b10010: perfc_resp[i] <= cache_eviction_en;    //eviction
-        5'b10011: perfc_resp[i] <= tlb_flush_en;         //I-TLB flush
-        5'b10100: perfc_resp[i] <= int_event_en;         //Integer instructions
-        5'b10101: perfc_resp[i] <= fp_event_en;          //Floating Point Instructions
-        5'b10110: perfc_resp[i] <= stall_issue_en;       //Pipeline bubbles
-        5'b10111: begin perfc_resp[i] <= (|pcmiles_resp); pc_track_enable[i]<= 1; end //Event ID = 23 Indicates that PC_Milestones must be tracked.
-        default:  perfc_resp[i] <= 0;
+        5'b00000: perfc_resp_q[i] <= 0;
+        5'b00001: perfc_resp_q[i] <= l1_icache_miss_en;    //L1 I-Cache misses
+        5'b00010: perfc_resp_q[i] <= l1_dcache_miss_en;    //L1 D-Cache misses
+        5'b00011: perfc_resp_q[i] <= itlb_miss_en;         //ITLB misses
+        5'b00100: perfc_resp_q[i] <= dtlb_miss_en;         //DTLB misses
+        5'b00101: perfc_resp_q[i] <= load_event_en;        //Load accesses
+        5'b00110: perfc_resp_q[i] <= store_event_en;       //Store accesses
+        5'b00111: perfc_resp_q[i] <= ex_valid_en;          //Exceptions
+        5'b01000: perfc_resp_q[i] <= exception_handle_en;  //Exception handler returns
+        5'b01001: perfc_resp_q[i] <= branch_event_en;      //Branch instructions
+        5'b01010: perfc_resp_q[i] <= branch_mispredicts_en;//Branch mispredicts
+        5'b01011: perfc_resp_q[i] <= branch_exceptions_en; //Branch exceptions
+        5'b01100: perfc_resp_q[i] <= call_event_en;        //Call
+        5'b01101: perfc_resp_q[i] <= return_event_en;      //Return
+        5'b01110: perfc_resp_q[i] <= msb_full_en;          //MSB Full
+        5'b01111: perfc_resp_q[i] <= inst_fetch_empty_en;  //Instruction fetch Empty
+        5'b10000: perfc_resp_q[i] <= l1_icache_access_en;  //L1 I-Cache accesses
+        5'b10001: perfc_resp_q[i] <= l1_dcache_access_en;  //L1 D-Cache accesses
+        5'b10010: perfc_resp_q[i] <= cache_eviction_en;    //eviction
+        5'b10011: perfc_resp_q[i] <= tlb_flush_en;         //I-TLB flush
+        5'b10100: perfc_resp_q[i] <= int_event_en;         //Integer instructions
+        5'b10101: perfc_resp_q[i] <= fp_event_en;          //Floating Point Instructions
+        5'b10110: perfc_resp_q[i] <= stall_issue_en;       //Pipeline bubbles
+        5'b10111: begin perfc_resp_q[i] <= 0; pc_track_enable[i] <= 1; end //Event ID = 23 indicates that PC_Milestones must be tracked.
+        5'b11000: perfc_resp_q[i] <= scontext_change_en;
+        5'b11001: perfc_resp_q[i] <= hcontext_change_en;
+        default:  perfc_resp_q[i] <= 0;
     endcase
   end
  end
 end
+// This MUX on perfc_resp gives every event the same latency of 2 cycles by selecting the matching register stage:
+//   generic events:   2 registers here (perfc_resp_q, perfc_resp_q1).
+//   PC milestones:    2 registers in the milestone tracker below (commit_pc_reg, combined_tracker).
+//   context changes:  1 register here (perfc_resp_q); the first stage is the CSR register in csr_regfile.
+always_comb begin 
+  for (int i = 0; i < ariane_pkg::NumPerfEvents; i++) begin
+    case (perfc_req[i * ariane_pkg::EventIDBits +: ariane_pkg::EventIDBits])
+      5'b10111: perfc_resp[i] = |pcmiles_resp;
+      5'b11000, 
+      5'b11001: perfc_resp[i] = perfc_resp_q[i];
+      default:  perfc_resp[i] = perfc_resp_q1[i];
+    endcase
+  end
+end
+
 
 //This block is used for comparing the commit_pc with the pc_milestones from software
 //If any of the PCs match what we have from the test, A Milestone is Hit!
