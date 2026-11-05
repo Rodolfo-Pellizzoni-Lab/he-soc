@@ -114,24 +114,17 @@ per read. Each wrap adds 105 per read, so one wrap would mean 106.6, while these
 more (`LAT_RD` less the 76 cycles after which their first beats came at the 1 GHz values): it had wrapped at least
 twice, every 4.7 minutes or less. At the 1 GHz values that load wraps `RD_BEATS` and `HOLD_CYCLES` in about an hour.
 
-The model's own time base wraps as well, and that is not harmless: it counts 1/16 cycles in 48 bits from reset, so it
-wraps after 2^44 cycles (4.07 days at 50 MHz), and its time compares are not wrap-safe. A response whose release time
-is from before the wrap but that comes back after it, or is still in the buffer then, waits until the time base
-reaches that time again, up to 2^44 cycles, and the responses behind it wait with it. A read or write accepted near or
-after the wrap gets such a time while the modelled bus time is still from before the wrap (its now + latency, small
-once wrapped, loses the unsigned compare); if its response comes back before the wrap, it may leave early instead. So
-with the model enabled across the wrap, or enabled after it before any write has passed through it since (a write
-accepted while disabled resets the bus time), the memory path stops, and disabling the model does not free the
-responses it holds. A held response comes out at most 2^44 cycles later, but with the model still on and traffic
-running the next ones are held again, so in practice only a reset ends the stall; a release time in the last cycle
-before the wrap, possible when `OCC16` is not a multiple of 16 (the 1 GHz values use 20), is never reached at all.
-A unit simulation with the time base forced to 300 cycles before the wrap shows the stall (2026-10-31, `LAT_RD` =
-20): a read accepted 200 cycles before the wrap is unaffected, one accepted 10 cycles before it and one after it do
-not come out in 2000 cycles each. Every SoC reset clears the time base and switches the model off: programming the
-FPGA, the board's reset button, and the debug module's ndmreset (OpenOCD's `reset halt`), which
-host/alsaqr_clk_rst_gen.sv's FPGA branch ANDs into the SoC reset. Until the compares are fixed, do not keep the model
-enabled 4.07 days (or a multiple) after the last reset: in practice, do not leave it on in a session, a Linux run for
-example, that stays up for more than four days.
+The model's own time base counts 1/16 cycles in 64 bits from reset, so it wraps only after 2^60 cycles (about 731
+years at 50 MHz), and its time compares need not be wrap-safe. Every SoC reset clears it and switches the model off:
+programming the FPGA, the board's reset button, and the debug module's ndmreset (OpenOCD's `reset halt`), which
+host/alsaqr_clk_rst_gen.sv's FPGA branch ANDs into the SoC reset. `tests/run_dm_wrap.sh` forces the time base to 300
+cycles before 2^48 sixteenths and checks that reads and writes before, across and after that point come out on time.
+
+Bitstreams built before the 64-bit time base (up to the 2026-11-01 ones, alsaqr_main8n8_*_20261101.bit) count it in
+48 bits, which wrap after 2^44 cycles (4.07 days at 50 MHz). A response stamped before that wrap but due after it,
+and every response behind it, is then held, in practice until a reset (`run_dm_wrap.sh` with `CONTROL=1` shows the
+stall on the 48-bit model). On those bitstreams, do not leave the model on in a session that stays up for more than
+four days.
 
 The generated SoC control block decodes only the low 8 address bits; apb_soc_control routes offsets 0x100-0x1FF
 to the model's registers and everything else to the generated block.

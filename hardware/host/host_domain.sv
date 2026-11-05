@@ -871,6 +871,16 @@ module host_domain
    end
    // pragma translate_on
 
+   // The memory-port SPU's table (CAM_DEPTH) must hold every read and every write the LLC can have in flight on its
+   // memory port, or the SPU silently stops tracking. The LLC's input (axi_isolate, NumPending = MaxTrans) holds back
+   // a new read while MaxTrans reads wait for their last beat and a new write while MaxTrans writes wait for B, and the
+   // LLC adds at most RefillFifoDepth + 2 refills and EvictFifoDepth + 2 evictions of its own: 10 + 4 + 2 = 16 in each
+   // direction, at any core count; one more entry is spare. The path after the SPU (the slowdown's queue and delay,
+   // the DRAM timing model's tables and buffers) could hold more, but the LLC never sends more.
+   localparam int unsigned MemSpuCamDepth = axi_llc_pkg::MaxTrans + 2 + 1 +
+     ((axi_llc_pkg::RefillFifoDepth > axi_llc_pkg::EvictFifoDepth) ? axi_llc_pkg::RefillFifoDepth
+                                                                     : axi_llc_pkg::EvictFifoDepth);
+
 `ifndef XSIM_CUT_i_spu_llc_mem // xsim bisect
 axi_spu_top #(
      // Static configuration parameters of the cache.
@@ -889,7 +899,7 @@ axi_spu_top #(
      .N_ADDR_RULES       ( N_ADDR_RULES                ),
      .addr_rule_t        ( ariane_soc::addr_map_rule_t ),
      // FIFO and CAM Parameters
-     .CAM_DEPTH          ( 17                          ),
+     .CAM_DEPTH          ( MemSpuCamDepth              ),   // 17
      .FIFO_DEPTH         (  8                          )
    ) i_spu_llc_mem (
      .clk_i              ( s_soc_clk                   ),
