@@ -107,6 +107,9 @@ logic [7 - 1 : 0]                           initial_md_n, initial_md_q;
 
 // Helper signals
 logic has_md_n, has_md_q, last_md, get_next_md, reset_md, err_transaction;
+  logic reset_md_xc; // xsim: shadow of reset_md
+  logic get_next_md_xc; // xsim: shadow of get_next_md
+  logic last_md_xc; // xsim: shadow of last_md
 
 // Track prio entries
 assign is_prio_entry = (current_entry_q < nr_prio_entry_i) ? 1'b1: 1'b0;
@@ -150,8 +153,8 @@ always_comb begin
 
     err_transaction         = 0;
     first_iteration_n       = 0;
-    reset_md                = 0;
-    get_next_md             = 0;
+    reset_md_xc                = 0;
+    get_next_md_xc             = 0;
     allow_transaction_o     = 0;
     valid_o                 = 0;
 
@@ -195,7 +198,7 @@ always_comb begin
                     err_type_n = 3'h5;
                 end
 
-                reset_md = 1;
+                reset_md_xc = 1;
             end
 
             NORMAL_OP: begin
@@ -230,7 +233,7 @@ always_comb begin
                                 end
                                 else begin
                                     current_entry_n = mdcfg_table_i[next_md_q - 1];          // Use next_md value directly so we do not stop
-                                    get_next_md     = 1;
+                                    get_next_md_xc     = 1;
                                     new_md_n        = 1;
                                 end
                             end
@@ -264,7 +267,9 @@ always_comb begin
             default:;
         endcase
     end
-end
+      reset_md = reset_md_xc; // xsim: outputs assigned once
+          get_next_md = get_next_md_xc; // xsim: outputs assigned once
+    end
 
 // Sequential process
 always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -303,7 +308,7 @@ always_comb begin
     current_md_n = current_md_q;
     initial_md_n = initial_md_q;
     next_md_n    = next_md_q;
-    last_md      = 0;
+    last_md_xc      = 0;
     has_md_n     = has_md_q;
 
     case (state_q)
@@ -329,7 +334,7 @@ always_comb begin
                     break;
                 end
                 if( i == NUMBER_MDS - 1) begin // If we are here, we are on the last MD
-                    last_md = 1;
+                    last_md_xc = 1;
                     break;
                 end
             end
@@ -341,7 +346,8 @@ always_comb begin
                 current_md_n = next_md_q;
         end
     endcase
-end
+      last_md = last_md_xc; // xsim: outputs assigned once
+    end
 
 // Sequential process MD manipulation
 always_ff @(posedge clk_i or negedge rst_ni) begin
