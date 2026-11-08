@@ -213,9 +213,16 @@ assign entry_array_be[1]  = '1;
 
 // port0 -> regmap_wrapper
 // port1 -> matching_logic
-tc_sram_latch #(
+// tc_sram, not tc_sram_latch: the latch memory has no byte enables, so a write of one register cleared the entry's
+// other registers (dwidth_converter_bram writes 32 bits of the 128 and says which in be_i), and it selects its words
+// with clock gates, which are feedthroughs on the FPGA (tc_clk_xilinx.sv), so every entry would take every write.
+tc_sram #(
   .NumWords(NUMBER_ENTRIES), // Number of Words in data array
-  .DataWidth(32'd128) // Data signal width
+  .DataWidth(32'd128), // Data signal width
+  .ByteWidth(32'd8),
+  .NumPorts(32'd2),
+  .Latency(32'd1),
+  .SimInit("zeros")
 ) i_entry_ram (
     .clk_i(clk_i),      // Clock
     .rst_ni(rst_ni),     // Asynchronous reset active low

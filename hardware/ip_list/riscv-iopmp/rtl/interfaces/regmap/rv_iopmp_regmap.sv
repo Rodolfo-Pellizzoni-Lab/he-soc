@@ -1163,27 +1163,27 @@ module rv_iopmp_regmap #(
     assign wr_err_array[i] = (addr_hit[i] & (|(rv_iopmp_reg_pkg::IOPMP_PERMIT[i] & ~reg_be)));
   end
 
-  for (genvar i = 13; i < NUMBER_MDS; i++) begin
+  for (genvar i = 13; i < ADDR_HIT_SRCMD_EN_OFFSET; i++) begin
     assign wr_err_array[i] = (addr_hit[i] & (|(rv_iopmp_reg_pkg::IOPMP_PERMIT[13] & ~reg_be)));
   end
 
-  for (genvar i = ADDR_HIT_SRCMD_EN_OFFSET; i < NUMBER_MASTERS; i++) begin
+  for (genvar i = ADDR_HIT_SRCMD_EN_OFFSET; i < ADDR_HIT_SRCMD_ENH_OFFSET; i++) begin
     assign wr_err_array[i] = (addr_hit[i] & (|(rv_iopmp_reg_pkg::IOPMP_PERMIT[14] & ~reg_be)));
   end
 
-  for (genvar i = ADDR_HIT_SRCMD_ENH_OFFSET; i < NUMBER_MASTERS; i++) begin
+  for (genvar i = ADDR_HIT_SRCMD_ENH_OFFSET; i < ADDR_HIT_ENTRY_ADDR_OFFSET; i++) begin
     assign wr_err_array[i] = (addr_hit[i] & (|(rv_iopmp_reg_pkg::IOPMP_PERMIT[15] & ~reg_be)));
   end
 
-  for (genvar i = ADDR_HIT_ENTRY_ADDR_OFFSET; i < NUMBER_ENTRIES; i++) begin
+  for (genvar i = ADDR_HIT_ENTRY_ADDR_OFFSET; i < ADDR_HIT_ENTRY_ADDRH_OFFSET; i++) begin
     assign wr_err_array[i] = (addr_hit[i] & (|(rv_iopmp_reg_pkg::IOPMP_PERMIT[16] & ~reg_be)));
   end
 
-  for (genvar i = ADDR_HIT_ENTRY_ADDRH_OFFSET; i < NUMBER_ENTRIES; i++) begin
+  for (genvar i = ADDR_HIT_ENTRY_ADDRH_OFFSET; i < ADDR_HIT_ENTRY_CFG_OFFSET; i++) begin
     assign wr_err_array[i] = (addr_hit[i] & (|(rv_iopmp_reg_pkg::IOPMP_PERMIT[17] & ~reg_be)));
   end
 
-  for (genvar i = ADDR_HIT_ENTRY_CFG_OFFSET; i < NUMBER_ENTRIES; i++) begin
+  for (genvar i = ADDR_HIT_ENTRY_CFG_OFFSET; i < ADDR_HIT_SIZE; i++) begin
     assign wr_err_array[i] = (addr_hit[i] & (|(rv_iopmp_reg_pkg::IOPMP_PERMIT[18] & ~reg_be)));
   end
 
