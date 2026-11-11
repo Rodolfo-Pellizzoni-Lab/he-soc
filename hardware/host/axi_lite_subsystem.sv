@@ -44,6 +44,9 @@ module axi_lite_subsystem
     // Performance Counters EVU AXI Lite Master
     AXI_LITE.Master  perfc_cfg_master,
 
+    // Master to the per-core token bucket config region
+    AXI_LITE.Master token_bucket_cfg_master,
+
     output logic     h2c_irq_o,
     output logic     c2h_irq_o,
 
@@ -75,6 +78,9 @@ module axi_lite_subsystem
 
   ariane_axi_soc::req_lite_t  apmu_cfg_req;         // Connects to APMU-Slave device.
   ariane_axi_soc::resp_lite_t apmu_cfg_resp;
+
+  ariane_axi_soc::req_lite_t  token_bucket_cfg_req; // Per-core token bucket config region.
+  ariane_axi_soc::resp_lite_t token_bucket_cfg_resp;
 
   AXI_LITE #(
     .AXI_ADDR_WIDTH (AXI_LITE_ADDR_WIDTH),
@@ -175,6 +181,9 @@ module axi_lite_subsystem
   `AXI_LITE_ASSIGN_FROM_REQ ( apmu_cfg_master , apmu_cfg_req  )
   `AXI_LITE_ASSIGN_TO_RESP  ( apmu_cfg_resp , apmu_cfg_master )
 
+  `AXI_LITE_ASSIGN_FROM_REQ ( token_bucket_cfg_master , token_bucket_cfg_req  )
+  `AXI_LITE_ASSIGN_TO_RESP  ( token_bucket_cfg_resp , token_bucket_cfg_master )
+
 `ifdef APMU_IP
   typedef axi_pkg::xbar_rule_32_t tlb_cfg_xbar_rule_t;
 
@@ -186,7 +195,7 @@ module axi_lite_subsystem
 
   localparam axi_pkg::xbar_cfg_t FromHostTlbCfgXbarCfg = '{
     NoSlvPorts:  2,
-    NoMstPorts:  8,
+    NoMstPorts:  9,
     MaxMstTrans: 2,
     MaxSlvTrans: 5,
     FallThrough: 0,
@@ -197,12 +206,14 @@ module axi_lite_subsystem
     UniqueIds   : 0,
     AxiAddrWidth: AXI_LITE_ADDR_WIDTH,
     AxiDataWidth: AXI_LITE_DATA_WIDTH,
-    NoAddrRules: 8
+    NoAddrRules: 9
   };
 
   localparam tlb_cfg_xbar_rule_t [FromHostTlbCfgXbarCfg.NoAddrRules-1:0]
       FromHostTlbCfgXbarAddrMap = '{
-    // PerfCountersEVU, the cores' EVU registers: 0x1060_6000 up to 0x1060_6100 with four cores, 0x1060_6200 with eight
+    // Token Bucket, 0x1060_7000 up to 0x1060_8000
+    '{idx: 32'd8, start_addr: ariane_soc::TokenBucketBase, end_addr: ariane_soc::TokenBucketBase + ariane_soc::TokenBucketLength},
+    // PerfCountersEVU, the cores' EVU registers, 0x1060_6000 up to 0x1060_7000
     '{idx: 32'd7, start_addr: ariane_soc::PerfcEvuBase, end_addr: ariane_soc::PerfcEvuBase + ariane_soc::PerfcEvuLength},
     '{idx: 32'd6, start_addr: 32'h1060_5000, end_addr: 32'h1060_6000},  // Snooper
     '{idx: 32'd5, start_addr: 32'h1040_5000, end_addr: 32'h1060_5000},  // APMU IP
@@ -229,8 +240,8 @@ module axi_lite_subsystem
      .test_i                ( 1'b0                                                ),
      .slv_ports_req_i       ( {cluster_lite_req , host_lite_req }                 ),
      .slv_ports_resp_o      ( {cluster_lite_resp, host_lite_resp}                 ),
-     .mst_ports_req_o       ( { events_cfg_perfc_req, axi_lite_snoop_req_o, apmu_cfg_req,  axi_lite_mbox_req, c2hmailbox_lite_req,  h2cmailbox_lite_req,  llc_cfg_req,  c2h_tlb_cfg_req } ),
-     .mst_ports_resp_i      ( { events_cfg_perfc_resp, axi_lite_snoop_rsp_i, apmu_cfg_resp, axi_lite_mbox_rsp, c2hmailbox_lite_resp, h2cmailbox_lite_resp, llc_cfg_resp, c2h_tlb_cfg_resp } ),
+     .mst_ports_req_o       ( {token_bucket_cfg_req, events_cfg_perfc_req, axi_lite_snoop_req_o, apmu_cfg_req,  axi_lite_mbox_req, c2hmailbox_lite_req,  h2cmailbox_lite_req,  llc_cfg_req,  c2h_tlb_cfg_req } ),
+     .mst_ports_resp_i      ( {token_bucket_cfg_resp, events_cfg_perfc_resp, axi_lite_snoop_rsp_i, apmu_cfg_resp, axi_lite_mbox_rsp, c2hmailbox_lite_resp, h2cmailbox_lite_resp, llc_cfg_resp, c2h_tlb_cfg_resp } ),
      .addr_map_i            ( FromHostTlbCfgXbarAddrMap                           ),
      .en_default_mst_port_i ( {1'b0, 1'b0}                                        ),
      .default_mst_port_i    ( '0                                                  )
@@ -240,7 +251,7 @@ module axi_lite_subsystem
 
   localparam axi_pkg::xbar_cfg_t FromHostTlbCfgXbarCfg = '{
     NoSlvPorts:  2,
-    NoMstPorts:  6,
+    NoMstPorts:  7, 
     MaxMstTrans: 2,
     MaxSlvTrans: 6,
     FallThrough: 0,
@@ -251,11 +262,12 @@ module axi_lite_subsystem
     UniqueIds   : 0,
     AxiAddrWidth: AXI_LITE_ADDR_WIDTH,
     AxiDataWidth: AXI_LITE_DATA_WIDTH,
-    NoAddrRules: 6
+    NoAddrRules: 7
   };
 
   localparam tlb_cfg_xbar_rule_t [FromHostTlbCfgXbarCfg.NoAddrRules-1:0]
       FromHostTlbCfgXbarAddrMap = '{
+    '{idx: 32'd6, start_addr: ariane_soc::TokenBucketBase, end_addr: ariane_soc::TokenBucketBase + ariane_soc::TokenBucketLength}, // Token Bucket
     '{idx: 32'd5, start_addr: 32'h1060_5000, end_addr: 32'h1060_6000}, // Snooper
     '{idx: 32'd4, start_addr: 32'h1040_4000, end_addr: 32'h1040_5000},
     '{idx: 32'd3, start_addr: 32'h1040_3000, end_addr: 32'h1040_4000},
@@ -280,10 +292,10 @@ module axi_lite_subsystem
      .test_i                ( 1'b0                                                ),
      .slv_ports_req_i       ( {cluster_lite_req , host_lite_req }                 ),
      .slv_ports_resp_o      ( {cluster_lite_resp, host_lite_resp}                 ),
-     .mst_ports_req_o       ( { axi_lite_snoop_req_o, axi_lite_mbox_req,
+     .mst_ports_req_o       ( {token_bucket_cfg_req, axi_lite_snoop_req_o, axi_lite_mbox_req,
                                 c2hmailbox_lite_req,  h2cmailbox_lite_req,
                                 llc_cfg_req,  c2h_tlb_cfg_req              }      ),
-     .mst_ports_resp_i      ( { axi_lite_snoop_rsp_i, axi_lite_mbox_rsp,
+     .mst_ports_resp_i      ( {token_bucket_cfg_resp, axi_lite_snoop_rsp_i, axi_lite_mbox_rsp,
                                 c2hmailbox_lite_resp, h2cmailbox_lite_resp,
                                 llc_cfg_resp, c2h_tlb_cfg_resp             }      ),
      .addr_map_i            ( FromHostTlbCfgXbarAddrMap                           ),

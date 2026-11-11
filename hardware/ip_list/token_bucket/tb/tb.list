@@ -1,0 +1,9 @@
+../../axi/src/axi_pkg.sv
+../../ace/src/ace_pkg.sv
+../../ace/src/snoop_pkg.sv
+../../ace/src/ace_intf.sv
+../../ace/src/snoop_intf.sv
+../src/token_bucket_pkg.sv
+../src/token_bucket.sv
+hdl/tb_pkg.sv
+hdl/tb.sv

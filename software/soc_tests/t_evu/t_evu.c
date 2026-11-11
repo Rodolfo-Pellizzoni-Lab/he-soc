@@ -2,8 +2,8 @@
 // configuration registers (hardware/host/cva6_synth_wrap.sv, ariane_soc::PerfcEvu*) are 0x30 bytes at
 // EVU_BASE_ADDR + 0x30*c: four 32-bit event IDs in reverse slot order (EVU_EID_REG; the EVU uses bits [4:0]), then
 // four 64-bit PC milestones. All of them sit in one window, which the CPUs reach through the AXI-lite crossbar
-// (axi_lite_subsystem) and the APMU's processing element (PE) as its system memory (host_domain): 0x100 bytes with
-// four cores (0xC0 of registers), 0x200 with eight (0x180). Core c's EVU reports to APMU port c + 1, bit s of the
+// (axi_lite_subsystem) and the APMU's processing element (PE) as its system memory (host_domain): a fixed 4 KB
+// page (0xC0 of registers with four cores, 0x180 with eight). Core c's EVU reports to APMU port c + 1, bit s of the
 // event field set while slot s sees its event (EVU_SLOT_SEL).
 //   A. core 0 writes a pattern into every register word of every core (event IDs with bits [4:0] clear, so off) and
 //      reads them all back

@@ -191,6 +191,38 @@ module cva6_synth_wrap
   output logic [ASYNC_B_DATA_WIDTH_SLV-1:0]  snooper_slave_b_data_o,
   input logic [LOG_DEPTH:0]                  snooper_slave_b_rptr_i,
 
+  //***************************************
+  // Token Bucket Configuration Port
+  // AXI4 Slave
+  //***************************************
+
+  // WRITE ADDRESS CHANNEL
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_aw_wptr_i,
+  input  logic [ASYNC_32_AW_DATA_WIDTH-1:0]   token_bucket_cfg_aw_data_i,
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_aw_rptr_o,
+
+  // READ ADDRESS CHANNEL
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_ar_wptr_i,
+  input  logic [ASYNC_32_AR_DATA_WIDTH-1:0]   token_bucket_cfg_ar_data_i,
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_ar_rptr_o,
+
+  // WRITE DATA CHANNEL
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_w_wptr_i,
+  input  logic [ASYNC_32_W_DATA_WIDTH-1:0]    token_bucket_cfg_w_data_i,
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_w_rptr_o,
+
+  // READ DATA CHANNEL
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_r_wptr_o,
+  output logic [ASYNC_32_R_DATA_WIDTH-1:0]    token_bucket_cfg_r_data_o,
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_r_rptr_i,
+
+  // WRITE RESPONSE CHANNEL
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_b_wptr_o,
+  output logic [ASYNC_32_B_DATA_WIDTH-1:0]    token_bucket_cfg_b_data_o,
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_b_rptr_i,
+
+  //***************************************
+
   // APMU
   output logic [ariane_soc::NumCVA6-1:0] [LOG_DEPTH_SPU:0]          spu_core_cdc_wptr_o,
   output logic [ariane_soc::NumCVA6-1:0] [ASYNC_SPU_CORE_WIDTH-1:0] spu_core_cdc_data_o,
@@ -234,13 +266,22 @@ module cva6_synth_wrap
   end
   // pragma translate_on
 
+
+  // Core -> token_bucket (throttle) -> ace_spu_top with the APMU, -> CCU without
+  ACE_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH ),
+    .AXI_ID_WIDTH   ( CVA6AXiIdWidth ),
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH )
+  ) core_to_TB[ariane_soc::NumCVA6-1:0]();
+
 `ifdef APMU_IP
   ACE_BUS #(
     .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH ),
     .AXI_DATA_WIDTH ( AXI_DATA_WIDTH ),
     .AXI_ID_WIDTH   ( CVA6AXiIdWidth ),
     .AXI_USER_WIDTH ( AXI_USER_WIDTH )
-  ) core_to_SPU[ariane_soc::NumCVA6-1:0]();
+  ) TB_to_SPU[ariane_soc::NumCVA6-1:0]();
 
   ACE_BUS #(
     .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH ),
@@ -309,12 +350,14 @@ module cva6_synth_wrap
 
   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core;
 
+  token_bucket_pkg::token_bucket_cfg_t [ariane_soc::NumCVA6-1:0] token_bucket_cfg;
+
   //AXI_LITE_SLAVE_PERFORMANCE_COUNTERS_EVU_CONFIGURATION
   // The following AXI_LITE_SLAVE Regs module shall handshake with the axi_lite_subsystem and configure the registers
   // with appropriate Performance Counter Event IDs and PC Values that need to be tracked as Milestones.
   // Here is how it will be configured
-  // {start_addr: 32'h1060_6000, end_addr: 32'h1060_6100}  // PerfCountersEVU with four cores, end_addr 32'h1060_6200
-  // with eight: ariane_soc::PerfcEvuBase / PerfcEvuLength, the window of axi_lite_subsystem and of the APMU (host_domain)
+  // {start_addr: 32'h1060_6000, end_addr: 32'h1060_7000}  // PerfCountersEVU, whatever NumCVA6:
+  // ariane_soc::PerfcEvuBase / PerfcEvuLength, the window of axi_lite_subsystem and of the APMU (host_domain)
   /* 1. For Core-0:
         a. EventID slot 3 = 0x10606000
         b. EventID slot 2 = 0x10606004
@@ -651,13 +694,22 @@ module cva6_synth_wrap
     );
     `endif
 
+    // Core drives the token_bucket slave side; the bucket gates AW/AR and drives TB_to_SPU, which feeds
+    // ace_spu_top (core_to_CCU without the APMU).
+    `ACE_ASSIGN_FROM_REQ(core_to_TB[i], ace_ariane_req[i])
+    `ACE_ASSIGN_TO_RESP(ace_ariane_resp[i], core_to_TB[i])
+
+    token_bucket i_token_bucket (
+      .clk_i    ( clk_i               ),
+      .rst_ni   ( rst_ni              ),
+      .cfg_i    ( token_bucket_cfg[i] ),
+      .slv      ( core_to_TB[i]       ),
     `ifdef APMU_IP
-    `ACE_ASSIGN_FROM_REQ(core_to_SPU[i], ace_ariane_req[i])
-    `ACE_ASSIGN_TO_RESP(ace_ariane_resp[i], core_to_SPU[i])
-  `else
-    `ACE_ASSIGN_FROM_REQ(core_to_CCU[i], ace_ariane_req[i])
-    `ACE_ASSIGN_TO_RESP(ace_ariane_resp[i], core_to_CCU[i])
-  `endif
+      .mst      ( TB_to_SPU[i]        )
+    `else
+      .mst      ( core_to_CCU[i]      )
+    `endif
+    );
 
     `SNOOP_ASSIGN_FROM_RESP(CCU_to_core[i], ace_ariane_req[i])
     `SNOOP_ASSIGN_TO_REQ(ace_ariane_resp[i], CCU_to_core[i])
@@ -698,7 +750,7 @@ module cva6_synth_wrap
       .clk_i              ( clk_i                       ),
       .rst_ni             ( rst_ni                      ),
       .addr_map_i         ( spu_mem_addr_map            ),
-      .spu_slv            ( core_to_SPU[i]              ),
+      .spu_slv            ( TB_to_SPU[i]                ),
       .spu_mst            ( SPU_to_CCU[i]               ),
       .e_out              ( spu_core[i]                 )
     );
@@ -1056,6 +1108,110 @@ module cva6_synth_wrap
      .testmode_i ( '0                               ),
      .slv        ( cfi_snooper_32_cfg_slv_intf      ),
      .mst        ( cfi_snooper_32_lite_cfg_slv_intf )
+   );
+  
+   /// ---------------------------------------------------------------
+   // token bucket config: CDC into CVA6 domain, then shared regs
+   // ---------------------------------------------------------------
+
+   ariane_axi_soc::req_lite_t  token_bucket_cfg_req;
+   ariane_axi_soc::resp_lite_t token_bucket_cfg_resp;
+
+   AXI_BUS_ASYNC_GRAY #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH ),
+     .AXI_ID_WIDTH   ( AXI_ID_WIDTH_SLV    ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH      ),
+     .LOG_DEPTH      ( 1                   )
+   ) token_bucket_cfg_asynch();
+
+   AXI_BUS #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH ),
+     .AXI_ID_WIDTH   ( AXI_ID_WIDTH_SLV    ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH      )
+   ) token_bucket_cfg_sync_intf();
+
+   AXI_LITE #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH )
+   ) token_bucket_cfg_lite_intf();
+
+   // Wire the async port vectors onto the gray-code interface.
+   assign token_bucket_cfg_asynch.aw_wptr = token_bucket_cfg_aw_wptr_i;
+   assign token_bucket_cfg_asynch.aw_data = token_bucket_cfg_aw_data_i;
+   assign token_bucket_cfg_aw_rptr_o      = token_bucket_cfg_asynch.aw_rptr;
+
+   assign token_bucket_cfg_asynch.ar_wptr = token_bucket_cfg_ar_wptr_i;
+   assign token_bucket_cfg_asynch.ar_data = token_bucket_cfg_ar_data_i;
+   assign token_bucket_cfg_ar_rptr_o      = token_bucket_cfg_asynch.ar_rptr;
+
+   assign token_bucket_cfg_asynch.w_wptr  = token_bucket_cfg_w_wptr_i;
+   assign token_bucket_cfg_asynch.w_data  = token_bucket_cfg_w_data_i;
+   assign token_bucket_cfg_w_rptr_o       = token_bucket_cfg_asynch.w_rptr;
+
+   assign token_bucket_cfg_r_wptr_o       = token_bucket_cfg_asynch.r_wptr;
+   assign token_bucket_cfg_r_data_o       = token_bucket_cfg_asynch.r_data;
+   assign token_bucket_cfg_asynch.r_rptr  = token_bucket_cfg_r_rptr_i;
+
+   assign token_bucket_cfg_b_wptr_o       = token_bucket_cfg_asynch.b_wptr;
+   assign token_bucket_cfg_b_data_o       = token_bucket_cfg_asynch.b_data;
+   assign token_bucket_cfg_asynch.b_rptr  = token_bucket_cfg_b_rptr_i;
+
+   // CDC: SoC clock -> CVA6 clock.
+   axi_cdc_dst_intf #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH ),
+     .AXI_ID_WIDTH   ( AXI_ID_WIDTH_SLV    ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH      ),
+     .LOG_DEPTH      ( 1                   )
+   ) i_token_bucket_cfg_cdc_dst (
+     .dst_clk_i  ( clk_i             ),
+     .dst_rst_ni ( rst_ni            ),
+     .src        ( token_bucket_cfg_asynch    ),
+     .dst        ( token_bucket_cfg_sync_intf )
+   );
+
+   axi_to_axi_lite_intf #(
+     .AXI_ID_WIDTH       ( AXI_ID_WIDTH_SLV    ),
+     .AXI_ADDR_WIDTH     ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_USER_WIDTH     ( AXI_USER_WIDTH      ),
+     .AXI_DATA_WIDTH     ( AXI_LITE_DATA_WIDTH ),
+     .AXI_MAX_WRITE_TXNS ( 1                   ),
+     .AXI_MAX_READ_TXNS  ( 1                   ),
+     .FALL_THROUGH       ( 1'b0                )
+   ) i_token_bucket_cfg_axi_to_lite (
+     .clk_i      ( clk_i             ),
+     .rst_ni     ( rst_ni            ),
+     .testmode_i ( '0                ),
+     .slv        ( token_bucket_cfg_sync_intf ),
+     .mst        ( token_bucket_cfg_lite_intf )
+   );
+
+   // Flatten to req/resp structs for the register block.
+   `AXI_LITE_ASSIGN_TO_REQ    ( token_bucket_cfg_req, token_bucket_cfg_lite_intf )
+   `AXI_LITE_ASSIGN_FROM_RESP ( token_bucket_cfg_lite_intf, token_bucket_cfg_resp )
+
+   // pragma translate_off
+   initial begin : p_token_bucket_assert
+     // the CPUs and the APMU reach these registers through one window of ariane_soc::TokenBucketLength bytes at
+     // TokenBucketBase (axi_lite_subsystem, host_domain)
+     assert (ariane_soc::NumCVA6 * ariane_soc::TokenBucketBytesPerCore <= ariane_soc::TokenBucketLength)
+       else $fatal(1, "Token bucket registers: %0d cores x %0d bytes behind a window of %0d bytes",
+                   ariane_soc::NumCVA6, ariane_soc::TokenBucketBytesPerCore, ariane_soc::TokenBucketLength);
+   end
+   // pragma translate_on
+
+   // Shared register block: one axi_lite_regs sized for all cores, sliced out.
+   token_bucket_cfg_regs #(
+     .NumCores  ( ariane_soc::NumCVA6 ),
+     .CoreBytes ( ariane_soc::TokenBucketBytesPerCore )
+   ) i_token_bucket_cfg_regs (
+     .clk_i                   ( clk_i                 ),
+     .rst_ni                  ( rst_ni                ),
+     .token_bucket_cfg_req_i  ( token_bucket_cfg_req  ),
+     .token_bucket_cfg_resp_o ( token_bucket_cfg_resp ),
+     .token_bucket_cfg_o      ( token_bucket_cfg      )
    );
 
   //------------------

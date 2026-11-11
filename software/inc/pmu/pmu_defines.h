@@ -99,7 +99,8 @@
 #define COUNT_MASK              0x3FFFFFFFu
 
 // Ibex scratchpads (sizes from host_domain.sv)
-// The PE's data port reaches only the DSPM, the APMU registers and the EVU registers: any other load or store stalls it.
+// The PE's data port reaches only the DSPM, the APMU registers, the EVU registers and the token bucket registers: any
+// other load or store stalls it.
 // Load the SPMs with aligned 32-bit stores: a byte store lands in a lane the PE does not read.
 #define ISPM_BASE_ADDR  0x10427000
 #define DSPM_BASE_ADDR  0x10429000

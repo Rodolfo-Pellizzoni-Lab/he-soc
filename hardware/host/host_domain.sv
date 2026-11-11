@@ -193,6 +193,9 @@ module host_domain
    ariane_axi_soc::req_lite_t  axi_lite_snooper_req;
    ariane_axi_soc::resp_lite_t axi_lite_snooper_rsp;
 
+   ariane_axi_soc::req_lite_t  token_bucket_cfg_req;
+   ariane_axi_soc::resp_lite_t token_bucket_cfg_resp;
+
    // rule definitions
    typedef struct packed {
      int unsigned             idx;
@@ -747,6 +750,11 @@ module host_domain
    .AXI_DATA_WIDTH (AXI_LITE_DW)
   ) perfc_cfg_lite_bus();
 
+   AXI_LITE #(
+     .AXI_ADDR_WIDTH (AXI_LITE_AW),
+     .AXI_DATA_WIDTH (AXI_LITE_DW)
+    ) token_bucket_cfg_bus();
+
    // AXI Bus: XBAR <=> AXI Cut (IOPMP Configuration Port)
    AXI_BUS #(
      .AXI_ADDR_WIDTH ( AXI_ADDRESS_WIDTH        ),
@@ -1036,9 +1044,10 @@ axi_spu_top #(
     //  .MEMORY_BASE_ADDR ( ariane_soc::L2SPMBase          ),
     //  .MEMORY_LENGTH    ( ariane_soc::L2SPMBase + ariane_soc::L2SPMLength        ),
     // // APMU Addresses and SPM configuration
-     // the cores' EVU registers, the window the CPUs use too (ariane_soc: 0x100 bytes with four cores, 0x200 with eight)
-     .MEMORY_BASE_ADDR ( ariane_soc::PerfcEvuBase     ),
-     .MEMORY_LENGTH    ( ariane_soc::PerfcEvuLength   ),
+     // the cores' EVU registers, then their token bucket registers (ariane_soc: two 4 KB pages, 0x1060_6000 up to
+     // 0x1060_8000)
+     .MEMORY_BASE_ADDR ( ariane_soc::PerfcEvuBase                                    ),
+     .MEMORY_LENGTH    ( ariane_soc::PerfcEvuLength + ariane_soc::TokenBucketLength ),
      .req_lite_t       ( ariane_axi_soc::req_lite_t     ),
      .resp_lite_t      ( ariane_axi_soc::resp_lite_t    ),
      .aw_chan_lite_t   ( ariane_axi_soc::aw_chan_lite_t ),
@@ -1064,6 +1073,10 @@ axi_spu_top #(
   `AXI_LITE_ASSIGN_TO_REQ( axi_lite_perfc_cfg_req, perfc_cfg_lite_bus    )
   `AXI_LITE_ASSIGN_FROM_RESP( perfc_cfg_lite_bus, axi_lite_perfc_cfg_resp)
   `endif
+
+  // The cores' token buckets exist with or without the APMU
+  `AXI_LITE_ASSIGN_TO_REQ   ( token_bucket_cfg_req, token_bucket_cfg_bus )
+  `AXI_LITE_ASSIGN_FROM_RESP( token_bucket_cfg_bus, token_bucket_cfg_resp )
 
 `ifndef XSIM_CUT_i_cva6_subsystem // xsim bisect
  `ifdef XSIM_V_CLK
@@ -1203,7 +1216,11 @@ axi_spu_top #(
 `endif
         .perfc_cfg_req_i       ( axi_lite_perfc_cfg_req  ),
         .perfc_cfg_resp_o       ( axi_lite_perfc_cfg_resp ),
-        .perfc_evu_status_resp_o( spu_o[ariane_soc::ApmuEvuIdx +: ariane_soc::NumCVA6]) 
+        .perfc_evu_status_resp_o( spu_o[ariane_soc::ApmuEvuIdx +: ariane_soc::NumCVA6]),
+
+        // Per-core token bucket config region
+        .token_bucket_cfg_req_i  ( token_bucket_cfg_req  ),
+        .token_bucket_cfg_resp_o ( token_bucket_cfg_resp )
     );
 `endif // XSIM_CUT_i_cva6_subsystem
 
@@ -1360,7 +1377,8 @@ axi_spu_top #(
        .axi_lite_snoop_rsp_i   ( axi_lite_snooper_rsp    ),
        .doorbell_irq_o,
        .completion_irq_o,
-       .perfc_cfg_master      ( perfc_cfg_lite_bus     )
+       .perfc_cfg_master        ( perfc_cfg_lite_bus   ),
+       .token_bucket_cfg_master ( token_bucket_cfg_bus )
    );
 `endif // XSIM_CUT_i_axi_lite_subsystem
 
