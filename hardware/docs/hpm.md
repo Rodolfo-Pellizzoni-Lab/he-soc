@@ -14,6 +14,25 @@ First bitstream with the series: the OpenDRAM 16x build of merged main 15cca8d8 
 `alsaqr-software/bitstreams/alsaqr_opendram_ethernet_16x_hpm.bit`): t_hpm and t_sscofpmf pass on the board along
 with the rest of the suite.
 
+## The overflow interrupt of every counter: t_hpm_irq
+
+`software/soc_tests/t_hpm_irq` checks local interrupt 13 for all six counters on every hart: each counter alone (its
+own bit in `scountovf`), all six wrapping together (one interrupt, all six bits), a counter loaded with 2^64-K that
+wraps on exactly the K-th event of a fixed code region (instructions, loads, stores, control flow, calls, returns,
+integer instructions), the other events on a workload that makes many of them, sampling of user code (period 500,
+every sample's `mepc` inside the user loop), delegation to S-mode, the enables (`mie.LCOFIE`, `mcountinhibit`, MINH),
+and every hart taking its own six interrupts at the same time. `mcycle` and `minstret` have no overflow bit: Sscofpmf
+covers only the programmable counters. On the VCU118 on 2026-11-10, with `alsaqr_main_8core_20261107.bit` and
+`alsaqr_main_4core_20261107.bit`, it passed (152 checks on 8 cores, 124 on 4), and so did t_hpm and t_sscofpmf.
+
+Linux samples only with a device tree that describes the counters and advertises `sscofpmf`: alsaqr-software's
+`linux/cva6-sdk/alsaqr-pmu.dts` (4 harts) and `alsaqr-pmu8.dts` (8 harts, compiled in
+`linux/prebuilt/8core/alsaqr-pmu8.dtb`). With them, on the same two bitstreams and Linux 6.1 from `linux/cva6-sdk`,
+every CPU counted a user loop of 1,000,000 iterations to within 30 events (instructions, loads, stores, control
+flow), sampled six events at once through the riscv-pmu interrupt (100 samples each, every PC inside the loop, none
+lost), and `perf stat` and `perf record` worked. With the plain socket device trees perf counts only cycles and
+instructions, in all modes, and cannot sample.
+
 ## rdcycle stands still under Linux on these bitstreams
 
 With the SBI PMU driver the kernel stops every counter when a CPU comes up, so that perf owns them, and OpenSBI 1.3
