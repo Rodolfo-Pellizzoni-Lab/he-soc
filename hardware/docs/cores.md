@@ -54,8 +54,8 @@ The cores' EVU registers (`0x1060_6000 + 0x30*c`, 48 bytes per core) sit in a fi
 APMU's processing element (`pmu_top`'s `MEMORY_LENGTH`, both pages) reach them through these windows.
 
 A simulation stops at time 0 when the ports or the memory-port sources do not fit the fields (`host_domain.sv`,
-`pmu_top.sv`), when CVA6's and the APMU's event types differ, or when the EVU window does not cover every core's
-registers (`cva6_synth_wrap.sv`). The 5-bit fields hold up to 14 cores.
+`pmu_top.sv`), when CVA6's and the APMU's event types differ (`cva6_synth_wrap.sv`), or when the EVU window does not
+cover every core's registers (`perfc_evu_cfg_regs.sv`). The 5-bit fields hold up to 14 cores.
 
 ## The PLIC was the limit
 
