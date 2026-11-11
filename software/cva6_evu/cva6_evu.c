@@ -19,10 +19,12 @@ The test depends on the new version of pmu_defines.h and evu_defines.h, which ca
 #define read_32b(addr)       (*(volatile uint32_t *)(uintptr_t)(addr))
 #define write_32b(addr, val) (*(volatile uint32_t *)(uintptr_t)(addr) = (val))
 
-#define CORE1_START_FLAG  (DSPM_BASE_ADDR + 0x10UL)
-#define CORE1_STAGE_FLAG  (DSPM_BASE_ADDR + 0x20UL)
+// Handshake flags live in .bss, which crt.S zeroes on hart 0 before hart 1 is woken
+static volatile uint32_t core1_start_flag;
+static volatile uint32_t core1_stage_flag;
+static volatile uint32_t core1_store_delta;
+
 #define CORE1_DUMMY_STORE_ADDR  (DSPM_BASE_ADDR + 0x30UL)
-#define CORE1_STORE_DELTA  (DSPM_BASE_ADDR + 0x40UL)
 
 #define ITER 5
 #define NUM_CONTEXT_EVENTS 8
@@ -152,10 +154,10 @@ int main(void){
 
         // Start Core 1
         printf("[CORE0] Signalling Core 1 to start...\n");
-        write_32b(CORE1_STAGE_FLAG, 0);
+        core1_stage_flag = 0;
         asm volatile("fence iorw, iorw" ::: "memory");
 
-        write_32b(CORE1_START_FLAG, 1);
+        core1_start_flag = 1;
         asm volatile("fence iorw, iorw" ::: "memory");
 
 
@@ -175,11 +177,12 @@ int main(void){
         // printf("[CORE0] Stage 3. PCM Events End: c3=0x%08x c4=0x%08x c5=0x%08x c6=0x%08x\n",
         //        cntr_read(3), cntr_read(4), cntr_read(5), cntr_read(6));
 
-        while (read_32b(CORE1_STAGE_FLAG) != 4);
-               
+        while (core1_stage_flag != 4);
+        asm volatile("fence iorw, iorw" ::: "memory");
+
         // Scoreboard
         uint32_t err = 0;
-        uint32_t delta = read_32b(CORE1_STORE_DELTA);
+        uint32_t delta = core1_store_delta;
         uint32_t cnt1 = cntr_read(1) & COUNT_MASK;
         uint32_t cnt2 = cntr_read(2) & COUNT_MASK;
         uint32_t cnt7 = cntr_read(7) & COUNT_MASK; // M-mode
@@ -223,10 +226,11 @@ int main(void){
             printf("[CORE0] PASS\n");
 
     } else if (mhartid == 1) {
-        while (read_32b(CORE1_START_FLAG) == 0)
+        while (core1_start_flag == 0)
             asm volatile("" ::: "memory");
+        asm volatile("fence iorw, iorw" ::: "memory");
         // Stage 1.
-        write_32b(CORE1_STAGE_FLAG, 1);
+        core1_stage_flag = 1;
         asm volatile("fence iorw, iorw" ::: "memory");
         // Core 1 snapshots counter 0 itself to get an accurate store count
         uint32_t cnt0_before = cntr_read(0) & COUNT_MASK;
@@ -234,10 +238,10 @@ int main(void){
         asm volatile("fence iorw, iorw" ::: "memory");
         uint32_t cnt0_after = cntr_read(0) & COUNT_MASK;
         uint32_t delta = cnt0_after - cnt0_before;
-        write_32b(CORE1_STORE_DELTA, delta);
+        core1_store_delta = delta;
 
         // Stage 2. SCONTEXT change events.
-        write_32b(CORE1_STAGE_FLAG, 2);
+        core1_stage_flag = 2;
         scontext_write(3);
         scontext_write(4);
         scontext_write(5);
@@ -248,14 +252,14 @@ int main(void){
         scontext_write(1200);
         scontext_write(1200);  // Same value: no scontext change, no event
 
-        write_32b(CORE1_STAGE_FLAG, 3);
+        core1_stage_flag = 3;
         // Stage 3. PCM Events
         for(int i = 0; i < ITER; i++) {
             func_A();
             func_B();
         }
         asm volatile("fence iorw, iorw" ::: "memory");
-        write_32b(CORE1_STAGE_FLAG, 4);
+        core1_stage_flag = 4;
         asm volatile("fence iorw, iorw" ::: "memory");
         while (1) asm volatile("wfi");
 
