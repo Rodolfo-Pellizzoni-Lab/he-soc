@@ -50,11 +50,13 @@ typedef enum logic [6:0] {
   OPCODE_SYSTEM   = 7'h73
 } opcode_e;
 
-typedef enum logic [1:0] {
+typedef enum logic [2:0] {
   PMC_IDLE,
   PMC_REQ,
   PMC_WFP,
-  PMC_WFO  
+  PMC_WFO,
+  PMC_RDS,
+  PMC_SNAP  
 } pmc_op_e;
 
 ////////////////////

@@ -349,8 +349,17 @@ module apmu_ibex_decoder #(
           unique case (instr[14:12])
             // Counter Read
             3'b000: begin
-              counter_op_o  = PMC_REQ;
               counter_we_o  = 1'b0;
+              unique case (instr[31:25])
+                7'b0000_0000: begin
+                  counter_op_o  = PMC_REQ;
+                end
+                7'b0000_0001: begin
+                  counter_op_o  = PMC_RDS;
+                end
+                default: illegal_insn = 1'b1;
+              endcase
+
             end
             // Counter Write
             3'b001: begin
@@ -365,8 +374,13 @@ module apmu_ibex_decoder #(
                 7'b000_0001: begin
                   counter_op_o  = PMC_WFO;
                 end
+                default: illegal_insn = 1'b1;
               endcase
             end
+            3'b011: begin
+              counter_op_o = PMC_SNAP;
+            end
+
             default: begin
               illegal_insn  = 1'b1;
             end
@@ -832,9 +846,14 @@ module apmu_ibex_decoder #(
         unique case (instr[14:12])
           // Counter Read / Write
           3'b000: begin
-            alu_op_a_mux_sel_o  = OP_A_REG_A;
-            alu_op_b_mux_sel_o  = OP_B_REG_B;
-            alu_operator_o      = ALU_ADD;              
+              unique case (instr[31:25]) 
+                7'b000_0000, 7'b000_0001: begin
+                  alu_op_a_mux_sel_o  = OP_A_REG_A;
+                  alu_op_b_mux_sel_o  = OP_B_REG_B;
+                  alu_operator_o      = ALU_ADD;
+                end
+                default: ;
+              endcase             
           end 
           3'b001: begin
             alu_op_a_mux_sel_o  = OP_A_REG_A;
@@ -849,8 +868,14 @@ module apmu_ibex_decoder #(
                   alu_op_b_mux_sel_o  = OP_B_REG_B;
                   alu_operator_o      = ALU_ADD;
                 end
+                default: ;
               endcase
             end
+          3'b011: begin
+            alu_op_a_mux_sel_o  = OP_A_REG_A;
+            alu_op_b_mux_sel_o  = OP_B_REG_B;
+            alu_operator_o      = ALU_ADD;
+          end
           default: ;
         endcase
       end

@@ -398,6 +398,8 @@ module pmu_top import pmu_pkg::*; #(
     logic [NUM_COUNTER-1:0] pending;
     logic [NUM_COUNTER-1:0] overflow;
 
+    counter_t [NUM_COUNTER-1:0] snapshot_q;
+
     genvar i;
 
     // ************************************************************************
@@ -604,6 +606,24 @@ module pmu_top import pmu_pkg::*; #(
     );
 
     // ************************************************************************
+    // Snapshot Registers Bank
+    // ************************************************************************
+    always_ff @(posedge clk_i or negedge rst_ni) begin : snapshot_bank
+        if(!rst_ni) begin
+            for(integer j = 0; j<NUM_COUNTER; j=j+1)
+                snapshot_q[j] <= '0;
+
+        end else begin
+            // Similar style to Counter Update Logic but with procedural block instead of gen loop.  
+            if(core_counter_op == apmu_ibex_pkg::PMC_SNAP) begin
+                for (integer j=0; j<NUM_COUNTER; j=j+1) 
+                    if(core_counter_addr[j]) // Matched on bitmask
+                        snapshot_q[j].counter <= counter_q[j].counter;
+            end
+        end
+    end
+
+    // ************************************************************************
     // Counter Interface Output Logic
     // ************************************************************************
     always_comb begin
@@ -625,10 +645,20 @@ module pmu_top import pmu_pkg::*; #(
                 end
             end
 
+            apmu_ibex_pkg::PMC_RDS: begin
+                core_counter_rvalid_d = 1'b1;
+                if (core_counter_addr < NUM_COUNTER) begin
+                    core_counter_rdata_d = snapshot_q[core_counter_addr].counter;
+                    core_counter_gnt_d   = 1'b0;
+                end else begin
+                    core_counter_err_d   = 1'b1;
+                end
+            end
+
             apmu_ibex_pkg::PMC_WFP: begin
                 for (integer j=0; j < NUM_COUNTER; j++) begin
                     if ((pending[j] && core_counter_addr[j])) begin
-                        core_counter_rdata_d[j] = (pending[j] && core_counter_addr[j]);
+                        core_counter_rdata_d[j] = (pending[j] && core_counter_addr[j]); //Bitmask of counters that woke the core
                     end
                 end
                 core_counter_rvalid_d   = (|core_counter_rdata_d);
@@ -643,6 +673,9 @@ module pmu_top import pmu_pkg::*; #(
                 core_counter_rvalid_d   = (|core_counter_rdata_d);
             end
             
+            apmu_ibex_pkg::PMC_SNAP: begin
+                core_counter_rvalid_d = 1'b1;
+            end
             default: ;
         endcase
     end
