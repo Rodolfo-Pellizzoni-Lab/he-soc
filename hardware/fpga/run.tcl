@@ -21,6 +21,12 @@ if {[info exists ::env(XILINX_ETH)] && $::env(XILINX_ETH)=="1"} {
     read_ip ./alsaqr/tcl/ips/eth/ip/eth_sgmii.xci
     read_ip ./alsaqr/tcl/ips/eth_dma/ip/eth_dma.xci
     add_files -fileset constrs_1 -norecurse "alsaqr/tcl/eth_$::env(BOARD).xdc"
+    set eth_pblock "alsaqr/tcl/eth_pblock_$::env(BOARD).xdc"
+    if {[file exists $eth_pblock]} {
+        add_files -fileset constrs_1 -norecurse $eth_pblock
+        # placement only: its cells are inside the OOC eth IP
+        set_property used_in_synthesis false [get_files $eth_pblock]
+    }
 }
 add_files -fileset constrs_1 -norecurse "alsaqr/tcl/fmc_board_$::env(BOARD).xdc"
 if {$::env(MAIN_MEM)=="HYPER"} {
