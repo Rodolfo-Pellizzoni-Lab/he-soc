@@ -840,6 +840,31 @@ module apb_subsystem
    logic [apb_soc_pkg::NUM_ADV_TIMER-1:0][3:0]   pwm_ch1_o;
    logic [apb_soc_pkg::NUM_ADV_TIMER-1:0][3:0]   pwm_evt_o;
 
+   logic s_adv_timer_ls_clk;
+
+`ifdef TARGET_FPGA
+   // rtc_i is the SoC clock on FPGA; the timer samples this input as data,
+   // so feed it a flop-made ~32.768 kHz tick (50 MHz / (2*763)).
+   localparam int unsigned AdvTimerLsHalfPeriod = 763;
+   logic [9:0] r_adv_timer_ls_cnt;
+   logic       r_adv_timer_ls_clk;
+
+   always_ff @(posedge s_clk_per_o or negedge s_rstn_soc_sync) begin
+      if (!s_rstn_soc_sync) begin
+         r_adv_timer_ls_cnt <= '0;
+         r_adv_timer_ls_clk <= 1'b0;
+      end else if (r_adv_timer_ls_cnt == 10'(AdvTimerLsHalfPeriod - 1)) begin
+         r_adv_timer_ls_cnt <= '0;
+         r_adv_timer_ls_clk <= ~r_adv_timer_ls_clk;
+      end else begin
+         r_adv_timer_ls_cnt <= r_adv_timer_ls_cnt + 1;
+      end
+   end
+   assign s_adv_timer_ls_clk = r_adv_timer_ls_clk;
+`else
+   assign s_adv_timer_ls_clk = rtc_i;
+`endif
+
     generate
         for (genvar i=0; i< apb_soc_pkg::NUM_ADV_TIMER; i++) begin : adv_timer_gen
             apb_adv_timer #(
@@ -860,7 +885,7 @@ module apb_subsystem
                 .PREADY          ( apb_advtimer_master_bus[i].pready  ),
                 .PSLVERR         ( apb_advtimer_master_bus[i].pslverr ),
 
-                .low_speed_clk_i ( rtc_i                   ),
+                .low_speed_clk_i ( s_adv_timer_ls_clk      ),
                 .ext_sig_i       ( s_gpio_sync             ),
 
                 .events_o        ( pwm_evt_o[i]            ),
