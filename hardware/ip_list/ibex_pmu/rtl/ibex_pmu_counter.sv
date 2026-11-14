@@ -41,7 +41,7 @@ module apmu_ibex_pmu_counter (
     import apmu_ibex_pkg::*;
 
     typedef enum logic [2:0]  {
-        FSM_IDLE, FSM_RW_REQ, FSM_WFX
+        FSM_IDLE, FSM_RW_REQ, FSM_RDS, FSM_WFX, FSM_SNAP
     } pmc_fsm_e;
 
     pmc_fsm_e pmc_fsm_cs, pmc_fsm_ns;
@@ -82,10 +82,18 @@ module apmu_ibex_pmu_counter (
                             ctrl_update     = 1'b1;
                             pmc_fsm_ns      = FSM_RW_REQ;
                         end
+                        PMC_RDS: begin
+                            pmc_fsm_ns      = FSM_RDS;
+                        end
 
                         PMC_WFP, PMC_WFO: begin
                             pmc_fsm_ns      = FSM_WFX;
                         end
+
+                        PMC_SNAP: begin
+                            pmc_fsm_ns      = FSM_SNAP;
+                        end
+
                     endcase
                 end
             end
@@ -96,13 +104,26 @@ module apmu_ibex_pmu_counter (
                 end
             end
 
+            FSM_RDS: begin
+                if (counter_rvalid_i) begin
+                    pmc_fsm_ns              = FSM_IDLE;
+                end
+            end 
+
             FSM_WFX: begin
+                // Wait state for WFP/WFO. While waiting, it drives counter_op_o = pmc_op_i every cycle.
                 counter_op_o                = pmc_op_i;
                 if (counter_rvalid_i) begin
                     pmc_fsm_ns              = FSM_IDLE;
                     counter_op_o            = PMC_IDLE;
                 end
             end
+
+            FSM_SNAP: begin
+                if (counter_rvalid_i) begin
+                    pmc_fsm_ns              = FSM_IDLE; 
+                end
+            end 
 
             default: ;
         endcase
@@ -135,7 +156,7 @@ module apmu_ibex_pmu_counter (
     always_comb begin
         pmc_resp_valid_o    = 1'b0;
         unique case (pmc_fsm_cs)
-            FSM_RW_REQ, FSM_WFX: begin
+            FSM_RW_REQ, FSM_RDS, FSM_WFX, FSM_SNAP: begin
                 if (counter_rvalid_i) begin
                     pmc_resp_valid_o    = 1'b1;
                 end
@@ -153,12 +174,14 @@ module apmu_ibex_pmu_counter (
                     pmc_rdata_valid_o    = 1'b1;
                 end
             end
-            // WB to register file on WFP / WFO.
-            FSM_WFX: begin
+
+            // WB to register file on WFP / WFO or RDS.
+            FSM_RDS, FSM_WFX: begin
                 if (counter_rvalid_i) begin
                     pmc_rdata_valid_o    = 1'b1;
                 end
             end
+
             default: ;
         endcase
     end
