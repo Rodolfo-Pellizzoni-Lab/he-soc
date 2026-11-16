@@ -126,16 +126,21 @@ package ariane_soc;
   localparam int unsigned ApmuAccelSpuIdx = 2 * NumCVA6 + 1;
   localparam int unsigned ApmuNumPorts    = 2 * NumCVA6 + 2;
 
-  // ---- The cores' EVU configuration registers (cva6_synth_wrap, i_axi_lite_perfc): core c's at PerfcEvuBase +
+  // ---- The cores' EVU configuration registers (perfc_evu_cfg_regs, in cva6_synth_wrap): core c's at PerfcEvuBase +
   // PerfcEvuBytesPerCore * c, four 4-byte EventID registers, then four 8-byte PC_TRACK registers. The CPUs reach them
   // through the AXI-lite crossbar (axi_lite_subsystem) and the APMU's processing element as its system memory
-  // (host_domain, pmu_top MEMORY_BASE_ADDR / MEMORY_LENGTH), both through one window of PerfcEvuLength bytes: every
-  // core's registers rounded up to a power of two, at least 0x100. 0x100 with four cores (0xC0 of registers), 0x200
-  // with eight (0x180; cva6_synth_wrap checks that the window covers its registers).
+  // (host_domain, pmu_top MEMORY_BASE_ADDR / MEMORY_LENGTH), both through one fixed 4 KB page,
+  // 0x1060_6000 up to 0x1060_7000, whatever NumCVA6 (perfc_evu_cfg_regs checks that it covers the registers).
   localparam logic [31:0] PerfcEvuBase         = 32'h1060_6000;
   localparam int unsigned PerfcEvuBytesPerCore = 4 * ariane_pkg::NumPerfEvents + 8 * ariane_pkg::NumPCMilesRegs;
-  localparam int unsigned PerfcEvuLength       = (NumCVA6 * PerfcEvuBytesPerCore <= 32'h100) ? 32'h100
-                                                 : 2**$clog2(NumCVA6 * PerfcEvuBytesPerCore);
+  localparam int unsigned PerfcEvuLength       = 32'h1000;
+
+  // ---- The cores' token bucket configuration registers (cva6_synth_wrap, i_token_bucket_cfg_regs): core c's at
+  // TokenBucketBase + TokenBucketBytesPerCore * c, in a fixed 4 KB page right after the EVU one,
+  // 0x1060_7000 up to 0x1060_8000. The CPUs and the APMU's processing element reach them.
+  localparam logic [31:0] TokenBucketBase         = 32'h1060_7000;
+  localparam int unsigned TokenBucketBytesPerCore = 32;
+  localparam int unsigned TokenBucketLength       = 32'h1000;
 
   /// Number of synchronization registers to insert on the async pointers
   localparam CdcSyncStages   = 3;

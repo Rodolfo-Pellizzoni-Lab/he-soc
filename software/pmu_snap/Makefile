@@ -5,12 +5,16 @@ export SW_HOME ?= $(shell cd .. && pwd)
 include $(shell pwd)/../common.mk
 RISCV_FLAGS += -I$(SW_HOME)/inc/pmu
 
+# pmu_defines.h sizes event selects and port numbers by SOC_NUM_CORES: the firmware needs the CVA6 side's value
+FW_DEFS := $(filter -DSOC_NUM_CORES=%,$(RISCV_GCC) $(RISCV_FLAGS))
+
 # Ibex firmware (pmu_firmware/), embedded into the CVA6 binary by the two .incbin wrappers
 SRC += pmu_text_wrapper.S pmu_data_wrapper.S
 
 .PHONY: pmu_firmware clean_fw
 pmu_firmware:
-	$(MAKE) -C pmu_firmware all generate-bin-files RISCV_PREFIX=$(RISCV_PREFIX) SW_HOME=$(SW_HOME)
+	$(MAKE) -C pmu_firmware all generate-bin-files RISCV_PREFIX=$(RISCV_PREFIX) SW_HOME=$(SW_HOME) \
+		FW_DEFS="$(FW_DEFS)"
 
 build: pmu_firmware
 clean: clean_fw

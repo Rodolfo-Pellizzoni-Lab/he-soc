@@ -48,13 +48,14 @@ socket's DMA), and the memory-port sources 0-7 (the cores), 8 (the accelerator s
 then 10-18 the other crossbar masters, from the debug module to the APMU's own master port
 (`hardware/ip_list/apmu/README.md` has the tables for both core counts).
 
-The cores' EVU registers (`0x1060_6000 + 0x30*c`, 48 bytes per core) take 0x180 bytes with eight cores. The window
-through which the CPUs (`axi_lite_subsystem`) and the APMU's processing element (`pmu_top`'s `MEMORY_LENGTH`) reach
-them is `ariane_soc::PerfcEvuLength`: 0x100 bytes with up to five cores, as before, and 0x200 with six to ten.
+The cores' EVU registers (`0x1060_6000 + 0x30*c`, 48 bytes per core) sit in a fixed 4 KB page, `0x1060_6000` up to
+`0x1060_7000` (`ariane_soc::PerfcEvuLength`), whatever the core count. The token bucket registers
+(`0x1060_7000 + 0x20*c`) have the next page (`ariane_soc::TokenBucketLength`). The CPUs (`axi_lite_subsystem`) and the
+APMU's processing element (`pmu_top`'s `MEMORY_LENGTH`, both pages) reach them through these windows.
 
 A simulation stops at time 0 when the ports or the memory-port sources do not fit the fields (`host_domain.sv`,
-`pmu_top.sv`), when CVA6's and the APMU's event types differ, or when the EVU window does not cover every core's
-registers (`cva6_synth_wrap.sv`). The 5-bit fields hold up to 14 cores.
+`pmu_top.sv`), when CVA6's and the APMU's event types differ (`cva6_synth_wrap.sv`), or when the EVU window does not
+cover every core's registers (`perfc_evu_cfg_regs.sv`). The 5-bit fields hold up to 14 cores.
 
 ## The PLIC was the limit
 

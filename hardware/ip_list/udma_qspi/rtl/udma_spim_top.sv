@@ -164,6 +164,21 @@ module udma_spim_top
     logic [3:0] s_events;
 
     logic       s_clk_spi;
+    logic       s_rstn_spi;
+
+`ifdef PULP_FPGA_EMUL
+    // On FPGA the uDMA clock gate is a wire, so s_clk_spi runs while reset
+    // releases; release it synchronously to s_clk_spi.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] r_rstn_sync;
+
+    always_ff @(posedge s_clk_spi or negedge rstn_i) begin
+        if (!rstn_i) r_rstn_sync <= 2'b00;
+        else         r_rstn_sync <= {r_rstn_sync[0], 1'b1};
+    end
+    assign s_rstn_spi = r_rstn_sync[1];
+`else
+    assign s_rstn_spi = rstn_i;
+`endif
     logic       s_spi_eot;
     logic       s_cfg_cpol;
     logic       s_cfg_cpha;
@@ -191,7 +206,7 @@ module udma_spim_top
                 .rstn_tx_i( rstn_i         ),
                 .edge_i   ( spi_event_i[i] ),
                 .clk_rx_i ( s_clk_spi      ),
-                .rstn_rx_i( rstn_i         ),
+                .rstn_rx_i( s_rstn_spi         ),
                 .edge_o   ( s_events[i]    )
             );
         end
@@ -271,7 +286,7 @@ module udma_spim_top
     udma_dc_fifo #(32,BUFFER_WIDTH) u_dc_cmd
     (
         .dst_clk_i          ( s_clk_spi         ),   
-        .dst_rstn_i         ( rstn_i            ),  
+        .dst_rstn_i         ( s_rstn_spi            ),  
         .dst_data_o         ( s_udma_cmd        ),
         .dst_valid_o        ( s_udma_cmd_valid  ),
         .dst_ready_i        ( s_udma_cmd_ready  ),
@@ -303,7 +318,7 @@ module udma_spim_top
     udma_dc_fifo #(32,BUFFER_WIDTH) u_dc_tx
     (
         .dst_clk_i          ( s_clk_spi            ),   
-        .dst_rstn_i         ( rstn_i               ),  
+        .dst_rstn_i         ( s_rstn_spi               ),  
         .dst_data_o         ( s_udma_tx_data       ),
         .dst_valid_o        ( s_udma_tx_data_valid ),
         .dst_ready_i        ( s_udma_tx_data_ready ),
@@ -341,7 +356,7 @@ module udma_spim_top
         .dst_valid_o        ( data_rx_valid_o      ),
         .dst_ready_i        ( data_rx_ready_i      ),
         .src_clk_i          ( s_clk_spi            ),  
-        .src_rstn_i         ( rstn_i               ),  
+        .src_rstn_i         ( s_rstn_spi               ),  
         .src_data_i         ( s_udma_rx_data       ),
         .src_valid_i        ( s_udma_rx_data_valid ),
         .src_ready_o        ( s_udma_rx_data_ready )
@@ -351,7 +366,7 @@ module udma_spim_top
         .REPLAY_BUFFER_DEPTH(REPLAY_BUFFER_DEPTH)
     ) u_spictrl (
         .clk_i(s_clk_spi),
-        .rstn_i(rstn_i),
+        .rstn_i(s_rstn_spi),
 
         .eot_o(s_spi_eot),
 
@@ -408,7 +423,7 @@ module udma_spim_top
     udma_spim_txrx u_txrx
     (
         .clk_i(s_clk_spi),
-        .rstn_i(rstn_i),
+        .rstn_i(s_rstn_spi),
 
         .cfg_cpol_i(s_cfg_cpol),
         .cfg_cpha_i(s_cfg_cpha),
@@ -453,7 +468,7 @@ module udma_spim_top
     edge_propagator u_eot_ep
     (
         .clk_tx_i ( s_clk_spi ),
-        .rstn_tx_i( rstn_i    ),
+        .rstn_tx_i( s_rstn_spi    ),
         .edge_i   ( s_spi_eot ),
         .clk_rx_i ( sys_clk_i ),
         .rstn_rx_i( rstn_i    ),

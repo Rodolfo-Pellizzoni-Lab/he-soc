@@ -2,11 +2,11 @@
 // configuration registers (hardware/host/cva6_synth_wrap.sv, ariane_soc::PerfcEvu*) are 0x30 bytes at
 // EVU_BASE_ADDR + 0x30*c: four 32-bit event IDs in reverse slot order (EVU_EID_REG; the EVU uses bits [4:0]), then
 // four 64-bit PC milestones. All of them sit in one window, which the CPUs reach through the AXI-lite crossbar
-// (axi_lite_subsystem) and the APMU's processing element (PE) as its system memory (host_domain): 0x100 bytes with
-// four cores (0xC0 of registers), 0x200 with eight (0x180). Core c's EVU reports to APMU port c + 1, bit s of the
+// (axi_lite_subsystem) and the APMU's processing element (PE) as its system memory (host_domain): a fixed 4 KB
+// page (0xC0 of registers with four cores, 0x180 with eight). Core c's EVU reports to APMU port c + 1, bit s of the
 // event field set while slot s sees its event (EVU_SLOT_SEL).
-//   A. core 0 writes a pattern into every register word of every core (event IDs with bits [4:0] clear, so off) and
-//      reads them all back
+//   A. core 0 writes a pattern into every register word of every core (event IDs with bits [4:0] clear, so off, and
+//      only bits [7:5] set: bits [31:8] of an event ID always read 0) and reads them all back
 //   B. the PE copies all of them into its DSPM (a 12-instruction loop in its ISPM; its loads of anything outside its
 //      window are never granted, so a window that is too small stalls it): every word equals the pattern
 //   C. one core at a time counts its own committed loads (event ID 0x05) in slot c % 4 of its EVU, enabled only around
@@ -49,9 +49,10 @@ _Static_assert(EVU_BASE_ADDR == 0x10606000 && DSPM_BASE_ADDR == 0x10429000 && PE
 SOC_SRAM static volatile uint32_t cnt[NC][NC];   // C: [phase c][counter j]
 static uint64_t load_buf[NC][8];
 
-// A: word w of core c: event IDs (w < 4) with bits [4:0] clear, milestones at addresses no code has
+// A: word w of core c: event IDs (w < 4) in bits [7:5] only, never 0 (bits [4:0] clear: off; bits [31:8] read as 0
+// since the registers moved to perfc_evu_cfg_regs), milestones at addresses no code has
 static uint32_t pattern(int c, int w) {
-  if (w < 4) return 0xE0000000u | (uint32_t)c << 16 | (uint32_t)w << 8 | 0x20u;
+  if (w < 4) return (uint32_t)(1 + (4 * c + w) % 7) << 5;
   return (w % 2 ? 0xFFFF0000u : 0x5A000000u) | (uint32_t)c << 8 | (uint32_t)w;
 }
 

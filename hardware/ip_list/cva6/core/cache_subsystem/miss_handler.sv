@@ -53,6 +53,7 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
 
     // Miss handling (~> cacheline refill)
     output logic [NR_PORTS-1:0]                         miss_gnt_o,
+    output logic [NR_PORTS-1:0]                         clean_done_o, // CleanUnique response
     output logic [NR_PORTS-1:0]                         active_serving_o,
 
     output logic [63:0]                                 critical_word_o,
@@ -217,6 +218,7 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
         we_o   = '0;
         // Cache controller
         miss_gnt_o = '0;
+        clean_done_o = '0;
         active_serving_o = '0;
         flushing_o = 1'b0;
         updating_cache_o = 1'b0;
@@ -533,6 +535,7 @@ module miss_handler import ariane_pkg::*; import std_cache_pkg::*; #(
                   state_d = IDLE;
                   mshr_d.valid = 1'b0;
                   miss_gnt_o[mshr_q.id] = 1'b1;
+                  clean_done_o[mshr_q.id] = 1'b1;
                 end
               end
             end

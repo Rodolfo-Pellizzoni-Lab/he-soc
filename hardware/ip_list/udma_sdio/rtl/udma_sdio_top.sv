@@ -114,6 +114,21 @@ module udma_sdio_top #(
     logic         s_clkdiv_valid;
     logic         s_clkdiv_ack;
     logic         s_clk_sdio;
+    logic       s_rstn_sdio;
+
+`ifdef PULP_FPGA_EMUL
+    // On FPGA the uDMA clock gate is a wire, so s_clk_sdio runs while reset
+    // releases; release it synchronously to s_clk_sdio.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] r_rstn_sync;
+
+    always_ff @(posedge s_clk_sdio or negedge rstn_i) begin
+        if (!rstn_i) r_rstn_sync <= 2'b00;
+        else         r_rstn_sync <= {r_rstn_sync[0], 1'b1};
+    end
+    assign s_rstn_sdio = r_rstn_sync[1];
+`else
+    assign s_rstn_sdio = rstn_i;
+`endif
 
     logic         s_eot;
     logic         s_err;
@@ -210,14 +225,14 @@ module udma_sdio_top #(
         .rstn_tx_i       ( rstn_i       ),
         .edge_i          ( s_start      ),
         .clk_rx_i        ( s_clk_sdio   ),
-        .rstn_rx_i       ( rstn_i       ),
+        .rstn_rx_i       ( s_rstn_sdio       ),
         .edge_o          ( s_start_sync )
     );
 
     edge_propagator i_eot_sync
     (
         .clk_tx_i        ( s_clk_sdio   ),
-        .rstn_tx_i       ( rstn_i       ),
+        .rstn_tx_i       ( s_rstn_sdio       ),
         .edge_i          ( s_eot        ),
         .clk_rx_i        ( sys_clk_i    ),
         .rstn_rx_i       ( rstn_i       ),
@@ -226,7 +241,7 @@ module udma_sdio_top #(
 
     sdio_txrx i_sdio_txrx (
         .clk_i              ( s_clk_sdio          ),
-        .rstn_i             ( rstn_i              ),
+        .rstn_i             ( s_rstn_sdio              ),
 
         .clr_stat_i         ( 1'b0                ),
         .cmd_start_i        ( s_start_sync        ),
@@ -285,7 +300,7 @@ module udma_sdio_top #(
         .src_valid_i  ( s_data_tx_valid    ),
         .src_ready_o  ( s_data_tx_ready    ),
         .dst_clk_i    ( s_clk_sdio         ),
-        .dst_rstn_i   ( rstn_i             ),
+        .dst_rstn_i   ( s_rstn_sdio             ),
         .dst_data_o   ( s_data_tx_dc       ),
         .dst_valid_o  ( s_data_tx_dc_valid ),
         .dst_ready_i  ( s_data_tx_dc_ready )
@@ -294,7 +309,7 @@ module udma_sdio_top #(
     udma_dc_fifo #(32,4) u_dc_fifo_rx
     (
         .src_clk_i    ( s_clk_sdio         ),
-        .src_rstn_i   ( rstn_i             ),
+        .src_rstn_i   ( s_rstn_sdio             ),
         .src_data_i   ( s_data_rx_dc       ),
         .src_valid_i  ( s_data_rx_dc_valid ),
         .src_ready_o  ( s_data_rx_dc_ready ),

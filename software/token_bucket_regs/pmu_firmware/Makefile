@@ -1,0 +1,63 @@
+# Makefile for PMU Firmware - Token bucket register test (RV32IM, Ibex core)
+
+RISCV_PREFIX ?= riscv64-unknown-elf-
+CC      = $(RISCV_PREFIX)gcc
+OBJDUMP = $(RISCV_PREFIX)objdump
+OBJCOPY = $(RISCV_PREFIX)objcopy
+
+SW_HOME ?= $(shell cd ../.. && pwd)
+
+# GCC 12 and later need _zicsr for crt0.s's CSR instructions; add it when the toolchain takes it
+ZICSR := $(shell echo 'csrr a0, mcycle' | $(CC) -march=rv32im_zicsr -mabi=ilp32 -x assembler -c -o /dev/null - \
+                   2>/dev/null && echo _zicsr)
+# pmu_defines.h and tb_defines.h: inc/pmu. FW_DEFS carries -DSOC_NUM_CORES from ../Makefile
+CFLAGS = -march=rv32im$(ZICSR) -mabi=ilp32 -mcmodel=medlow \
+         -Wall -ffreestanding -O2 -nostdlib \
+         -I $(SW_HOME)/inc/pmu $(FW_DEFS)
+
+LDSCRIPT = linker.ld
+LDFLAGS  = -T $(LDSCRIPT) -nostdlib
+
+BUILD_DIR = build
+
+TARGET        = $(BUILD_DIR)/pmu_firmware.elf
+ASM_FILE      = $(BUILD_DIR)/pmu_firmware.asm
+BIN_FILE      = $(BUILD_DIR)/pmu_firmware.bin
+TEXT_BIN      = $(BUILD_DIR)/text_section.bin
+DATA_BIN      = $(BUILD_DIR)/data_rodata_bss.bin
+
+OBJ_FILES = $(BUILD_DIR)/crt0.o \
+            $(BUILD_DIR)/main.o
+
+.PHONY: all clean dump generate-bin-files
+
+all: $(TARGET) dump generate-bin-files
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/crt0.o: crt0.s | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/main.o: main.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(TARGET): $(OBJ_FILES) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJ_FILES) -o $@
+
+dump: $(TARGET)
+	$(OBJDUMP) -D $(TARGET) > $(ASM_FILE)
+	$(OBJCOPY) -O binary $(TARGET) $(BIN_FILE)
+
+generate-bin-files: $(TARGET)
+	$(OBJCOPY) -O binary --only-section=.text $(TARGET) $(TEXT_BIN)
+	$(OBJCOPY) -O binary \
+	    --only-section=.data --only-section=.rodata --only-section=.bss \
+	    $(TARGET) $(DATA_BIN)
+	@echo ""
+	@echo "=== PMU Firmware Binary Sizes ==="
+	@ls -lh $(TEXT_BIN) $(DATA_BIN)
+	@echo ""
+
+clean:
+	rm -rf $(BUILD_DIR)

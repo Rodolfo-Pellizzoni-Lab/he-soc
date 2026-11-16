@@ -64,8 +64,8 @@ Each counter and its configuration registers occupy a separate 4 KiB page:
 
 The scratchpads are those of `pmu_top` in `hardware/host/host_domain.sv` (the DSPM moved from `0x10428000` when the
 ISPM grew to 8 KiB in 05eee786). The PE fetches from the ISPM; its data port reaches only the DSPM, the registers
-above (`0x10405000`-`0x10426FFF`) and the cores' EVU registers (`0x10606000`-`0x106060FF`; `0x106061FF` with eight
-cores, the window `ariane_soc::PerfcEvuLength` that the cores use too). A PE load or store to any other address is
+above (`0x10405000`-`0x10426FFF`) and the cores' EVU registers (`0x10606000`-`0x10606FFF`, the window `ariane_soc::PerfcEvuLength` that the cores use too)
+and their token bucket registers (`0x10607000`-`0x10607FFF`). A PE load or store to any other address is
 never granted: the PE stalls instead of trapping (`pmu_core.sv`). The cores reach both scratchpads
 over AXI4-Lite. Load them with aligned 32-bit stores: the scratchpads index their SRAM by byte address, so a byte or
 halfword store lands in a lane the PE does not read (the bare-metal `memcpy`, `software/common/syscalls.c`, stores
@@ -130,7 +130,7 @@ order: `+0x0` programs slot 3, `+0xC` slot 0 (`EVU_EID_REG(core, slot)` in `soft
 four 64-bit PC milestones follow in order, milestone *m* at `+0x10 + 8*m`. A slot with event ID 0x17 fires when the
 core commits one of the milestone PCs, and bit *m* of the event's info field says which; an Event Info configuration
 that adds that bit counts one milestone (`software/c1_v2`). With eight cores, core 7's registers start at `0x10606150`
-and end at `0x1060617F`, inside the window of 0x200 bytes (0x100 with four cores). `software/soc_tests/t_evu` writes
+and end at `0x1060617F`, inside the fixed 4 KB window (`PerfcEvuLength`). `software/soc_tests/t_evu` writes
 and reads back every core's registers, has the PE copy them all, and checks that each core's events reach its own port
 and slot and no other.
 

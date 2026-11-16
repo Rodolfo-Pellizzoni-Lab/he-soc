@@ -49,6 +49,7 @@ module cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
     output miss_req_t                            miss_req_o,
     // return
     input  logic                                 miss_gnt_i,
+    input  logic                                 clean_done_i, // CleanUnique response
     input  logic                                 active_serving_i, // the miss unit is currently active for this unit, serving the miss
     input  logic [63:0]                          critical_word_i,
     input  logic                                 critical_word_valid_i,
@@ -108,9 +109,9 @@ module cache_ctrl import ariane_pkg::*; import std_cache_pkg::*; #(
 
 
     assign busy_o = (state_q != IDLE);
-    // STORE_REQ, and the cycle MAKE_UNIQUE receives the CleanUnique response (the snoop that would otherwise be
-    // accepted in that cycle is the first one after the CleanUnique)
-    assign store_hold_o      = (state_q == STORE_REQ) || (state_q == MAKE_UNIQUE && miss_gnt_i);
+    // STORE_REQ, and the cycle MAKE_UNIQUE receives the CleanUnique response. Uses the CleanUnique response only,
+    // not the ReadUnique AR grant, to keep the I$/AR arbiter off this path.
+    assign store_hold_o      = (state_q == STORE_REQ) || (state_q == MAKE_UNIQUE && clean_done_i);
     assign store_hold_addr_o = {{(64-DCACHE_TAG_WIDTH-DCACHE_INDEX_WIDTH){1'b0}}, mem_req_q.tag, mem_req_q.index};
     assign tag_o  = mem_req_d.tag;
 

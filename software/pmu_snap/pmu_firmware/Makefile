@@ -13,11 +13,11 @@ SW_HOME ?= $(shell cd ../.. && pwd)
 # alsaqr-software toolchain is 15.1) need it for crt0.s, so add it when the toolchain takes it
 ZICSR := $(shell echo 'csrr a0, mcycle' | $(CC) -march=rv32im_zicsr -mabi=ilp32 -x assembler -c -o /dev/null - \
                    2>/dev/null && echo _zicsr)
-# pmu_defines.h and pmu_hw_desc.h: inc/pmu
+# pmu_defines.h and pmu_hw_desc.h: inc/pmu. FW_DEFS carries -DSOC_NUM_CORES from ../Makefile
 CFLAGS = -march=rv32im$(ZICSR) -mabi=ilp32 -mcmodel=medlow \
          -Wall -fvisibility=hidden -ffreestanding \
          -O2 -nostdlib \
-         -I $(SW_HOME)/inc/pmu
+         -I $(SW_HOME)/inc/pmu $(FW_DEFS)
 
 # Linker script
 LDSCRIPT = linker.ld

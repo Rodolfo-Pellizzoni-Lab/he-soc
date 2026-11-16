@@ -191,6 +191,38 @@ module cva6_synth_wrap
   output logic [ASYNC_B_DATA_WIDTH_SLV-1:0]  snooper_slave_b_data_o,
   input logic [LOG_DEPTH:0]                  snooper_slave_b_rptr_i,
 
+  //***************************************
+  // Token Bucket Configuration Port
+  // AXI4 Slave
+  //***************************************
+
+  // WRITE ADDRESS CHANNEL
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_aw_wptr_i,
+  input  logic [ASYNC_32_AW_DATA_WIDTH-1:0]   token_bucket_cfg_aw_data_i,
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_aw_rptr_o,
+
+  // READ ADDRESS CHANNEL
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_ar_wptr_i,
+  input  logic [ASYNC_32_AR_DATA_WIDTH-1:0]   token_bucket_cfg_ar_data_i,
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_ar_rptr_o,
+
+  // WRITE DATA CHANNEL
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_w_wptr_i,
+  input  logic [ASYNC_32_W_DATA_WIDTH-1:0]    token_bucket_cfg_w_data_i,
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_w_rptr_o,
+
+  // READ DATA CHANNEL
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_r_wptr_o,
+  output logic [ASYNC_32_R_DATA_WIDTH-1:0]    token_bucket_cfg_r_data_o,
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_r_rptr_i,
+
+  // WRITE RESPONSE CHANNEL
+  output logic [LOG_DEPTH:0]                  token_bucket_cfg_b_wptr_o,
+  output logic [ASYNC_32_B_DATA_WIDTH-1:0]    token_bucket_cfg_b_data_o,
+  input  logic [LOG_DEPTH:0]                  token_bucket_cfg_b_rptr_i,
+
+  //***************************************
+
   // APMU
   output logic [ariane_soc::NumCVA6-1:0] [LOG_DEPTH_SPU:0]          spu_core_cdc_wptr_o,
   output logic [ariane_soc::NumCVA6-1:0] [ASYNC_SPU_CORE_WIDTH-1:0] spu_core_cdc_data_o,
@@ -234,13 +266,22 @@ module cva6_synth_wrap
   end
   // pragma translate_on
 
+
+  // Core -> token_bucket (throttle) -> ace_spu_top with the APMU, -> CCU without
+  ACE_BUS #(
+    .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH ),
+    .AXI_DATA_WIDTH ( AXI_DATA_WIDTH ),
+    .AXI_ID_WIDTH   ( CVA6AXiIdWidth ),
+    .AXI_USER_WIDTH ( AXI_USER_WIDTH )
+  ) core_to_TB[ariane_soc::NumCVA6-1:0]();
+
 `ifdef APMU_IP
   ACE_BUS #(
     .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH ),
     .AXI_DATA_WIDTH ( AXI_DATA_WIDTH ),
     .AXI_ID_WIDTH   ( CVA6AXiIdWidth ),
     .AXI_USER_WIDTH ( AXI_USER_WIDTH )
-  ) core_to_SPU[ariane_soc::NumCVA6-1:0]();
+  ) TB_to_SPU[ariane_soc::NumCVA6-1:0]();
 
   ACE_BUS #(
     .AXI_ADDR_WIDTH ( AXI_ADDR_WIDTH ),
@@ -309,158 +350,25 @@ module cva6_synth_wrap
 
   pmu_pkg::pmu_event_t [ariane_soc::NumCVA6-1:0] spu_core;
 
-  //AXI_LITE_SLAVE_PERFORMANCE_COUNTERS_EVU_CONFIGURATION
-  // The following AXI_LITE_SLAVE Regs module shall handshake with the axi_lite_subsystem and configure the registers
-  // with appropriate Performance Counter Event IDs and PC Values that need to be tracked as Milestones.
-  // Here is how it will be configured
-  // {start_addr: 32'h1060_6000, end_addr: 32'h1060_6100}  // PerfCountersEVU with four cores, end_addr 32'h1060_6200
-  // with eight: ariane_soc::PerfcEvuBase / PerfcEvuLength, the window of axi_lite_subsystem and of the APMU (host_domain)
-  /* 1. For Core-0:
-        a. EventID slot 3 = 0x10606000
-        b. EventID slot 2 = 0x10606004
-        c. EventID slot 1 = 0x10606008
-        d. EventID slot 0 = 0x1060600C
-        e. PC_TRACK0 = 0x10606010
-        f. PC_TRACK1 = 0x10606018
-        g. PC_TRACK2 = 0x10606020
-        h. PC_TRACK3 = 0x10606028
-    2. For Core-1:
-        a. EventID slot 3 = 0x10606030
-        b. EventID slot 2 = 0x10606034
-        c. EventID slot 1 = 0x10606038
-        d. EventID slot 0 = 0x1060603C
-        e. PC_TRACK0 = 0x10606040
-        f. PC_TRACK1 = 0x10606048
-        g. PC_TRACK2 = 0x10606050
-        h. PC_TRACK3 = 0x10606058
-    3. For Core-2:
-        a. EventID slot 3 = 0x10606060
-        b. EventID slot 2 = 0x10606064
-        c. EventID slot 1 = 0x10606068
-        d. EventID slot 0 = 0x1060606C
-        e. PC_TRACK0 = 0x10606070
-        f. PC_TRACK1 = 0x10606078
-        g. PC_TRACK2 = 0x10606080
-        h. PC_TRACK3 = 0x10606088
-    4. For Core-3:
-        a. EventID slot 3 = 0x10606090
-        b. EventID slot 2 = 0x10606094
-        c. EventID slot 1 = 0x10606098
-        d. EventID slot 0 = 0x1060609C
-        e. PC_TRACK0 = 0x106060A0
-        f. PC_TRACK1 = 0x106060A8
-        g. PC_TRACK2 = 0x106060B0
-        h. PC_TRACK3 = 0x106060B8
-    5. For Core-4 (cores 4-7 with NUM_CVA6 = 8; core c's registers start at 0x10606000 + 0x30*c):
-        a. EventID slot 3 = 0x106060C0
-        b. EventID slot 2 = 0x106060C4
-        c. EventID slot 1 = 0x106060C8
-        d. EventID slot 0 = 0x106060CC
-        e. PC_TRACK0 = 0x106060D0
-        f. PC_TRACK1 = 0x106060D8
-        g. PC_TRACK2 = 0x106060E0
-        h. PC_TRACK3 = 0x106060E8
-    6. For Core-5:
-        a. EventID slot 3 = 0x106060F0
-        b. EventID slot 2 = 0x106060F4
-        c. EventID slot 1 = 0x106060F8
-        d. EventID slot 0 = 0x106060FC
-        e. PC_TRACK0 = 0x10606100
-        f. PC_TRACK1 = 0x10606108
-        g. PC_TRACK2 = 0x10606110
-        h. PC_TRACK3 = 0x10606118
-    7. For Core-6:
-        a. EventID slot 3 = 0x10606120
-        b. EventID slot 2 = 0x10606124
-        c. EventID slot 1 = 0x10606128
-        d. EventID slot 0 = 0x1060612C
-        e. PC_TRACK0 = 0x10606130
-        f. PC_TRACK1 = 0x10606138
-        g. PC_TRACK2 = 0x10606140
-        h. PC_TRACK3 = 0x10606148
-    8. For Core-7:
-        a. EventID slot 3 = 0x10606150
-        b. EventID slot 2 = 0x10606154
-        c. EventID slot 1 = 0x10606158
-        d. EventID slot 0 = 0x1060615C
-        e. PC_TRACK0 = 0x10606160
-        f. PC_TRACK1 = 0x10606168
-        g. PC_TRACK2 = 0x10606170
-        h. PC_TRACK3 = 0x10606178
-        
-  Each EVENTID just needs 5 bits but we write to a 32-bit register. Hence 4 bytes allocated for each EventID Register.
-  For PC, as per the current configuration, its 64 bits so we take 8 bytes for each PC Value Stored.
-  The EventID registers are in reverse slot order: event_bundle_t lists event_id0 first, so the register at +0x0
-  is event_id3, which drives ev_id0, the top field of perfc_req; perf_counters_evu.sv takes slot i from
-  perfc_req[5i+:5], and slot i drives bit i of the APMU event (e_id; event value/mask 1 << i on port core+1).
-  The PC_TRACK registers are not reversed: PC_TRACKm (struct field pc(3-m)) is milestone m, e_info bit m.
-  Software: EVU_EID_REG(core, slot) in software/quad_boot/pmu_defines.h.
-  */
-  typedef logic [7:0] byte_t;
-  //Number of Bytes for holding a PERFCOUNTER EventID
-  localparam int NumBytesPerfCfgReg           = 4;
-  //Number of Bytes for holding a single PC Value as per latest configuration
-  localparam int NumBytesPCMilesReg           = 8;
-  //Total Number of Bytes Needed Per Core : 4*4 + 8*4 = 48 Bytes needed per core as per latest configuration.
-  localparam int NumBytesPerfCfgPerCore       = (NumBytesPerfCfgReg * ariane_pkg::NumPerfEvents) + (NumBytesPCMilesReg * ariane_pkg::NumPCMilesRegs);
-  //Total Bytes of Configuration Registers
-  localparam int TotalNumBytesCfgRegs         = ariane_soc::NumCVA6 * NumBytesPerfCfgPerCore;
+  token_bucket_pkg::token_bucket_cfg_t [ariane_soc::NumCVA6-1:0] token_bucket_cfg;
 
-  typedef struct packed {
-    byte_t [NumBytesPerfCfgReg-1:0] event_id0;
-    byte_t [NumBytesPerfCfgReg-1:0] event_id1;
-    byte_t [NumBytesPerfCfgReg-1:0] event_id2;
-    byte_t [NumBytesPerfCfgReg-1:0] event_id3;
-  } event_bundle_t;
+  // The cores' EVU configuration registers (event IDs and PC milestones), at ariane_soc::PerfcEvuBase
+  logic [ariane_soc::NumCVA6-1:0][ariane_pkg::NumPerfEvents*ariane_pkg::EventIDBits-1:0] perfc_evu_req;
+  logic [ariane_soc::NumCVA6-1:0][ariane_pkg::NumPCMilesRegs*riscv::VLEN-1:0]           pcmiles_evu_req;
 
-  typedef struct packed {
-    logic [NumBytesPerfCfgReg-1:0] event0;
-    logic [NumBytesPerfCfgReg-1:0] event1;
-    logic [NumBytesPerfCfgReg-1:0] event2;
-    logic [NumBytesPerfCfgReg-1:0] event3;
-  } event_strb_t;
-
-  typedef struct packed {
-    byte_t [NumBytesPCMilesReg-1:0] pc0;
-    byte_t [NumBytesPCMilesReg-1:0] pc1;
-    byte_t [NumBytesPCMilesReg-1:0] pc2;
-    byte_t [NumBytesPCMilesReg-1:0] pc3;
-  } pc_milestone_bundle_t;
-
-  typedef struct packed {
-    logic [NumBytesPCMilesReg-1:0] pc_s0;
-    logic [NumBytesPCMilesReg-1:0] pc_s1;
-    logic [NumBytesPCMilesReg-1:0] pc_s2;
-    logic [NumBytesPCMilesReg-1:0] pc_s3;
-  } pc_milestones_strb_t;
-
-  typedef struct packed {
-    pc_milestone_bundle_t   pc_milestones;
-    event_bundle_t          events;
-  } reg_map_t;
-
-  typedef struct packed {
-    pc_milestones_strb_t    pc_milestones_valids; 
-    event_strb_t            event_valids;
-  } strb_map_t;
-
-  typedef union packed {
-    byte_t          [TotalNumBytesCfgRegs-1:0]   ByteMap;
-    reg_map_t       [ariane_soc::NumCVA6-1:0]    StructMap;
-  } union_reg_data_t;
-
-  typedef union packed {
-    logic           [TotalNumBytesCfgRegs-1:0]   LogicMap;
-    strb_map_t      [ariane_soc::NumCVA6-1:0]    StrbMap;
-  } union_strb_data_t;
+  perfc_evu_cfg_regs #(
+    .NumCores ( ariane_soc::NumCVA6 )
+  ) i_perfc_evu_cfg_regs (
+    .clk_i             ( clk_i            ),
+    .rst_ni            ( rst_ni           ),
+    .perfc_cfg_req_i   ( perfc_axi_req_i  ),
+    .perfc_cfg_resp_o  ( perfc_axi_resp_o ),
+    .perfc_evu_req_o   ( perfc_evu_req    ),
+    .pcmiles_evu_req_o ( pcmiles_evu_req  )
+  );
 
   // pragma translate_off
   initial begin : p_perfc_evu_assert
-    // the CPUs and the APMU reach these registers through one window of ariane_soc::PerfcEvuLength bytes at
-    // PerfcEvuBase (axi_lite_subsystem, host_domain): it must cover every core's registers, at the package's stride
-    assert ($bits(reg_map_t) == 8 * ariane_soc::PerfcEvuBytesPerCore && TotalNumBytesCfgRegs <= ariane_soc::PerfcEvuLength)
-      else $fatal(1, "EVU registers: %0d cores x %0d bytes (ariane_soc stride %0d) behind a window of %0d bytes",
-                  ariane_soc::NumCVA6, $bits(reg_map_t) / 8, ariane_soc::PerfcEvuBytesPerCore, ariane_soc::PerfcEvuLength);
     // CVA6 sends its EVU events as its own copy of the APMU event (ariane_pkg::pmu_event_t) into perfc_evu_events_resp,
     // a pmu_pkg::pmu_event_t: the two must have the same fields (both follow NUM_CVA6), or the connection shifts them
     assert ($bits(ariane_pkg::pmu_event_t) == $bits(pmu_pkg::pmu_event_t)
@@ -471,103 +379,6 @@ module cva6_synth_wrap
                   $bits(pmu_pkg::pmu_event_t), $bits(pmu_pkg::event_id_t), $bits(pmu_pkg::source_id_t));
   end
   // pragma translate_on
-
-  union_reg_data_t    perfc_d, perfc_q;
-  union_strb_data_t   perfc_wr_o;
-  union_strb_data_t   perfc_load_i;
-
-  always_comb begin
-    for(int i=0; i<ariane_soc::NumCVA6; i++) begin
-      
-      // perfc_d.StructMap[i].events.event_id0[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id3;
-      // perfc_d.StructMap[i].events.event_id1[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id2;
-      // perfc_d.StructMap[i].events.event_id2[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id1;
-      // perfc_d.StructMap[i].events.event_id3[0][ariane_pkg::EventIDBits-1:0] = perfc_axi_event_ids[i].ev_id0;
-      
-      // perfc_d.StructMap[i].pc_milestones.pc3 = perfc_pc_milestones[i].pc3;
-      // perfc_d.StructMap[i].pc_milestones.pc2 = perfc_pc_milestones[i].pc2;
-      // perfc_d.StructMap[i].pc_milestones.pc1 = perfc_pc_milestones[i].pc1;
-      // perfc_d.StructMap[i].pc_milestones.pc0 = perfc_pc_milestones[i].pc0;
-
-      perfc_d.StructMap[i].events.event_id0[0][ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id0[0][ariane_pkg::EventIDBits-1:0];
-      perfc_d.StructMap[i].events.event_id1[0][ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id1[0][ariane_pkg::EventIDBits-1:0];
-      perfc_d.StructMap[i].events.event_id2[0][ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id2[0][ariane_pkg::EventIDBits-1:0];
-      perfc_d.StructMap[i].events.event_id3[0][ariane_pkg::EventIDBits-1:0] = perfc_q.StructMap[i].events.event_id3[0][ariane_pkg::EventIDBits-1:0];
-      
-      perfc_d.StructMap[i].pc_milestones.pc3 = perfc_q.StructMap[i].pc_milestones.pc3;
-      perfc_d.StructMap[i].pc_milestones.pc2 = perfc_q.StructMap[i].pc_milestones.pc2;
-      perfc_d.StructMap[i].pc_milestones.pc1 = perfc_q.StructMap[i].pc_milestones.pc1; 
-      perfc_d.StructMap[i].pc_milestones.pc0 = perfc_q.StructMap[i].pc_milestones.pc0;
-
-    end
-  end
-
-
-  axi_lite_regs#(
-          .RegNumBytes  ( TotalNumBytesCfgRegs),
-          .AxiAddrWidth ( AXI_LITE_ADDR_WIDTH ),
-          .PrivProtOnly ( 1'b0                ),
-          .AxiDataWidth ( AXI_LITE_DATA_WIDTH ),
-          .SecuProtOnly ( 1'b0                ),
-          .AxiReadOnly  ( /*Not Used*/        ),
-          .RegRstVal    ( 1'b0                ),
-          .resp_lite_t  ( resp_lite_t         ),
-          .req_lite_t   ( req_lite_t          )
-  ) i_axi_lite_perfc (
-          .rst_ni,
-          .clk_i,
-          .axi_req_i   ( perfc_axi_req_i      ),
-          .axi_resp_o  ( perfc_axi_resp_o     ),
-          .rd_active_o ( /*Not used*/         ),
-          .wr_active_o ( perfc_wr_o.LogicMap  ),
-          .reg_d_i     ( perfc_d.ByteMap      ),
-          .reg_load_i  ( '0                   ),
-          .reg_q_o     ( perfc_q.ByteMap      )
-  );
-  // Monitor perfc AXI-lite slave interface (cycle-aligned)
-  // always_ff @(posedge clk_i) begin
-  //   if (!rst_ni) begin
-  //     // reset
-  //   end else begin
-  //     if (perfc_axi_req_i.aw_valid || perfc_axi_req_i.w_valid || perfc_axi_resp_o.b_valid) begin
-  //       $display("TIME=%0t CVA6_WRAP perfc_if: AWV=%b AWADDR=0x%08h AWREADY=%b | WV=%b WDATA=0x%08h WREADY=%b | BV=%b BREADY=%b B_RESP=%0d",
-  //                $time,
-  //                perfc_axi_req_i.aw_valid,
-  //                perfc_axi_req_i.aw.addr,
-  //                perfc_axi_resp_o.aw_ready,
-  //                perfc_axi_req_i.w_valid,
-  //                perfc_axi_req_i.w.data,
-  //                perfc_axi_resp_o.w_ready,
-  //                perfc_axi_resp_o.b_valid,
-  //                perfc_axi_req_i.b_ready,
-  //                perfc_axi_resp_o.b.resp);
-  //     end
-  //   end
-  // end
-  typedef struct packed {
-    logic [ariane_pkg::EventIDBits-1:0] ev_id0;
-    logic [ariane_pkg::EventIDBits-1:0] ev_id1;
-    logic [ariane_pkg::EventIDBits-1:0] ev_id2;
-    logic [ariane_pkg::EventIDBits-1:0] ev_id3;
-  } event_id_t;
-
-  event_id_t [ariane_soc::NumCVA6-1:0]  perfc_axi_event_ids;
-  pc_milestone_bundle_t [ariane_soc::NumCVA6-1:0] perfc_pc_milestones;
-
-  always_comb begin
-    for(int i=0; i<ariane_soc::NumCVA6; i++) begin
-
-      perfc_axi_event_ids[i].ev_id3 = perfc_q.StructMap[i].events.event_id0[0][ariane_pkg::EventIDBits-1:0];
-      perfc_axi_event_ids[i].ev_id2 = perfc_q.StructMap[i].events.event_id1[0][ariane_pkg::EventIDBits-1:0];
-      perfc_axi_event_ids[i].ev_id1 = perfc_q.StructMap[i].events.event_id2[0][ariane_pkg::EventIDBits-1:0];
-      perfc_axi_event_ids[i].ev_id0 = perfc_q.StructMap[i].events.event_id3[0][ariane_pkg::EventIDBits-1:0];
-    
-      perfc_pc_milestones[i].pc3    = perfc_q.StructMap[i].pc_milestones.pc3;
-      perfc_pc_milestones[i].pc2    = perfc_q.StructMap[i].pc_milestones.pc2;
-      perfc_pc_milestones[i].pc1    = perfc_q.StructMap[i].pc_milestones.pc1;
-      perfc_pc_milestones[i].pc0    = perfc_q.StructMap[i].pc_milestones.pc0;
-    end
-  end
 
 
   for (genvar i = 0; i < ariane_soc::NumCVA6 ; i++ ) begin : gen_ariane
@@ -617,9 +428,9 @@ module cva6_synth_wrap
       .l15_rtrn_i           ( '0                    ),
       .axi_req_o            ( ace_core_req[i]       ),
       .axi_resp_i           ( ace_ariane_resp[i]    ),
-      .perfc_evu_req_i     ( perfc_axi_event_ids[i]),
-      .pcmiles_evu_req_i    ( perfc_pc_milestones[i]),
-      .perfc_evu_status_resp     ( perfc_evu_events_resp[i])
+      .perfc_evu_req_i      ( perfc_evu_req[i]      ),
+      .pcmiles_evu_req_i    ( pcmiles_evu_req[i]    ),
+      .perfc_evu_status_resp ( perfc_evu_events_resp[i])
     );
 
     // SoC user layout (ariane_axi_soc): the core's QoS tag sits above the source-port bits the CCU writes
@@ -651,13 +462,22 @@ module cva6_synth_wrap
     );
     `endif
 
+    // Core drives the token_bucket slave side; the bucket gates AW/AR and drives TB_to_SPU, which feeds
+    // ace_spu_top (core_to_CCU without the APMU).
+    `ACE_ASSIGN_FROM_REQ(core_to_TB[i], ace_ariane_req[i])
+    `ACE_ASSIGN_TO_RESP(ace_ariane_resp[i], core_to_TB[i])
+
+    token_bucket i_token_bucket (
+      .clk_i    ( clk_i               ),
+      .rst_ni   ( rst_ni              ),
+      .cfg_i    ( token_bucket_cfg[i] ),
+      .slv      ( core_to_TB[i]       ),
     `ifdef APMU_IP
-    `ACE_ASSIGN_FROM_REQ(core_to_SPU[i], ace_ariane_req[i])
-    `ACE_ASSIGN_TO_RESP(ace_ariane_resp[i], core_to_SPU[i])
-  `else
-    `ACE_ASSIGN_FROM_REQ(core_to_CCU[i], ace_ariane_req[i])
-    `ACE_ASSIGN_TO_RESP(ace_ariane_resp[i], core_to_CCU[i])
-  `endif
+      .mst      ( TB_to_SPU[i]        )
+    `else
+      .mst      ( core_to_CCU[i]      )
+    `endif
+    );
 
     `SNOOP_ASSIGN_FROM_RESP(CCU_to_core[i], ace_ariane_req[i])
     `SNOOP_ASSIGN_TO_REQ(ace_ariane_resp[i], CCU_to_core[i])
@@ -698,7 +518,7 @@ module cva6_synth_wrap
       .clk_i              ( clk_i                       ),
       .rst_ni             ( rst_ni                      ),
       .addr_map_i         ( spu_mem_addr_map            ),
-      .spu_slv            ( core_to_SPU[i]              ),
+      .spu_slv            ( TB_to_SPU[i]                ),
       .spu_mst            ( SPU_to_CCU[i]               ),
       .e_out              ( spu_core[i]                 )
     );
@@ -1056,6 +876,110 @@ module cva6_synth_wrap
      .testmode_i ( '0                               ),
      .slv        ( cfi_snooper_32_cfg_slv_intf      ),
      .mst        ( cfi_snooper_32_lite_cfg_slv_intf )
+   );
+  
+   /// ---------------------------------------------------------------
+   // token bucket config: CDC into CVA6 domain, then shared regs
+   // ---------------------------------------------------------------
+
+   ariane_axi_soc::req_lite_t  token_bucket_cfg_req;
+   ariane_axi_soc::resp_lite_t token_bucket_cfg_resp;
+
+   AXI_BUS_ASYNC_GRAY #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH ),
+     .AXI_ID_WIDTH   ( AXI_ID_WIDTH_SLV    ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH      ),
+     .LOG_DEPTH      ( 1                   )
+   ) token_bucket_cfg_asynch();
+
+   AXI_BUS #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH ),
+     .AXI_ID_WIDTH   ( AXI_ID_WIDTH_SLV    ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH      )
+   ) token_bucket_cfg_sync_intf();
+
+   AXI_LITE #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH )
+   ) token_bucket_cfg_lite_intf();
+
+   // Wire the async port vectors onto the gray-code interface.
+   assign token_bucket_cfg_asynch.aw_wptr = token_bucket_cfg_aw_wptr_i;
+   assign token_bucket_cfg_asynch.aw_data = token_bucket_cfg_aw_data_i;
+   assign token_bucket_cfg_aw_rptr_o      = token_bucket_cfg_asynch.aw_rptr;
+
+   assign token_bucket_cfg_asynch.ar_wptr = token_bucket_cfg_ar_wptr_i;
+   assign token_bucket_cfg_asynch.ar_data = token_bucket_cfg_ar_data_i;
+   assign token_bucket_cfg_ar_rptr_o      = token_bucket_cfg_asynch.ar_rptr;
+
+   assign token_bucket_cfg_asynch.w_wptr  = token_bucket_cfg_w_wptr_i;
+   assign token_bucket_cfg_asynch.w_data  = token_bucket_cfg_w_data_i;
+   assign token_bucket_cfg_w_rptr_o       = token_bucket_cfg_asynch.w_rptr;
+
+   assign token_bucket_cfg_r_wptr_o       = token_bucket_cfg_asynch.r_wptr;
+   assign token_bucket_cfg_r_data_o       = token_bucket_cfg_asynch.r_data;
+   assign token_bucket_cfg_asynch.r_rptr  = token_bucket_cfg_r_rptr_i;
+
+   assign token_bucket_cfg_b_wptr_o       = token_bucket_cfg_asynch.b_wptr;
+   assign token_bucket_cfg_b_data_o       = token_bucket_cfg_asynch.b_data;
+   assign token_bucket_cfg_asynch.b_rptr  = token_bucket_cfg_b_rptr_i;
+
+   // CDC: SoC clock -> CVA6 clock.
+   axi_cdc_dst_intf #(
+     .AXI_ADDR_WIDTH ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_DATA_WIDTH ( AXI_LITE_DATA_WIDTH ),
+     .AXI_ID_WIDTH   ( AXI_ID_WIDTH_SLV    ),
+     .AXI_USER_WIDTH ( AXI_USER_WIDTH      ),
+     .LOG_DEPTH      ( 1                   )
+   ) i_token_bucket_cfg_cdc_dst (
+     .dst_clk_i  ( clk_i             ),
+     .dst_rst_ni ( rst_ni            ),
+     .src        ( token_bucket_cfg_asynch    ),
+     .dst        ( token_bucket_cfg_sync_intf )
+   );
+
+   axi_to_axi_lite_intf #(
+     .AXI_ID_WIDTH       ( AXI_ID_WIDTH_SLV    ),
+     .AXI_ADDR_WIDTH     ( AXI_LITE_ADDR_WIDTH ),
+     .AXI_USER_WIDTH     ( AXI_USER_WIDTH      ),
+     .AXI_DATA_WIDTH     ( AXI_LITE_DATA_WIDTH ),
+     .AXI_MAX_WRITE_TXNS ( 1                   ),
+     .AXI_MAX_READ_TXNS  ( 1                   ),
+     .FALL_THROUGH       ( 1'b0                )
+   ) i_token_bucket_cfg_axi_to_lite (
+     .clk_i      ( clk_i             ),
+     .rst_ni     ( rst_ni            ),
+     .testmode_i ( '0                ),
+     .slv        ( token_bucket_cfg_sync_intf ),
+     .mst        ( token_bucket_cfg_lite_intf )
+   );
+
+   // Flatten to req/resp structs for the register block.
+   `AXI_LITE_ASSIGN_TO_REQ    ( token_bucket_cfg_req, token_bucket_cfg_lite_intf )
+   `AXI_LITE_ASSIGN_FROM_RESP ( token_bucket_cfg_lite_intf, token_bucket_cfg_resp )
+
+   // pragma translate_off
+   initial begin : p_token_bucket_assert
+     // the CPUs and the APMU reach these registers through one window of ariane_soc::TokenBucketLength bytes at
+     // TokenBucketBase (axi_lite_subsystem, host_domain)
+     assert (ariane_soc::NumCVA6 * ariane_soc::TokenBucketBytesPerCore <= ariane_soc::TokenBucketLength)
+       else $fatal(1, "Token bucket registers: %0d cores x %0d bytes behind a window of %0d bytes",
+                   ariane_soc::NumCVA6, ariane_soc::TokenBucketBytesPerCore, ariane_soc::TokenBucketLength);
+   end
+   // pragma translate_on
+
+   // Shared register block: one axi_lite_regs sized for all cores, sliced out.
+   token_bucket_cfg_regs #(
+     .NumCores  ( ariane_soc::NumCVA6 ),
+     .CoreBytes ( ariane_soc::TokenBucketBytesPerCore )
+   ) i_token_bucket_cfg_regs (
+     .clk_i                   ( clk_i                 ),
+     .rst_ni                  ( rst_ni                ),
+     .token_bucket_cfg_req_i  ( token_bucket_cfg_req  ),
+     .token_bucket_cfg_resp_o ( token_bucket_cfg_resp ),
+     .token_bucket_cfg_o      ( token_bucket_cfg      )
    );
 
   //------------------
