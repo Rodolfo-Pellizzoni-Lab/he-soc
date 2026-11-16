@@ -24,7 +24,8 @@
 ///   0x1060_60C0    unused up to 0x1060_6FFF
 /// NumCVA6 = 8: cores 4-7 follow at 0x1060_60C0 .. 0x1060_6150, unused up to 0x1060_6FFF
 /// (fixed 4 KB page, ariane_soc::PerfcEvuLength).
-/// Event ID register: bits [4:0] = event code (EVU_EVENT_*), bits [31:5] unused.
+/// Event ID register: bits [4:0] = event code (EVU_EVENT_*), bits [7:5] unused storage, bits [31:8] read as 0
+/// (read-only in hardware/host/perfc_evu_cfg_regs.sv).
 
 #ifndef EVU_DEFINES_H
 #define EVU_DEFINES_H
