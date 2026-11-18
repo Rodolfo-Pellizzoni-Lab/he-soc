@@ -16,24 +16,49 @@
 // (ariane_axi_soc user layout): a 32-bit read of +0x0 returns the AR user field of that read itself, +0x4 the AW
 // user field of the last write to the probe (a 64-bit read of +0x0 returns both). Writes are only recorded.
 //
-// QoS tags of the accelerators' DMA ("I/O on behalf of an RCID"): every register strobe hands the slot the SoC user
-// field of the access (reg_user_i: source port, RCID, MCID, AT of the requesting hart), and every memory request
-// of a slot carries the user field the slot asks for (mem_user_o; the template latches reg_user_i at START, so its
-// DMA is tagged with the hart that started the work). The socket is the trusted tagging point: per slot, the
-// policy register at 0x103F_0100 + 8*s can FORCE a tag the OS chose instead (the IOMMU device-context model):
-//   +0  TAG_POLICY  RW  bit 31 FORCE; [UserWidth-1:0] (ariane_axi_soc: [11:0] with four cores, [12:0] with eight)
-//                       the user field to stamp on the slot's DMA while FORCE is set
-//   +4  LAST_USER   R   the user field of the slot's most recent DMA request, after the policy
-// The CCU writes its port index into the low QosUserLsb bits of the user field, so those bits are cleared here.
+// QoS tags of the accelerators' DMA ("I/O on behalf of an RCID", hardware/docs/qos.md "Device DMA"): every register
+// strobe hands the slot the SoC user field of the access (reg_user_i: source port, RCID, MCID, AT of the requesting
+// hart), and every memory request of a slot carries the user field the slot asks for (mem_user_o; the template keeps
+// the tag of the write that submitted each job, so its DMA is tagged with whoever asked for that job). The socket is
+// the trusted tagging point and picks, per DMA request, one of three tags:
+//   1. FORCE set                                  -> the slot's default tag (the IOMMU device-context model, DC.ta)
+//   2. RANGE_EN set and the address hits a range  -> that range entry's tag (charged to the owner of the memory)
+//   3. the device tags per job (JobTagSlots[s], and DEV_OFF clear) -> the device's tag (Design 1: the device is
+//      trusted to carry the submitter's tag)
+//   otherwise                                     -> the slot's default tag
+// Per slot s:
+//   0x103F_0100 + 8*s  +0 TAG_POLICY RW  [31] FORCE, [30] RANGE_EN, [29] DEV_OFF (reads 1 and stays 1 when the
+//                                        device does not tag per job), [UserWidth-1:0] the default tag
+//                                        (ariane_axi_soc: [11:0] with four cores, [12:0] with eight)
+//                      +4 LAST_USER  R   the user field of the slot's most recent DMA request, after the policy
+//   0x103F_0200 + 8*s  +0 QOS_CAP    R   [0] JOB (the device tags per job), [15:8] number of range entries
+//                      +4 LAST_SRC   R   which rule tagged the slot's most recent DMA request: [1:0] 0 device,
+//                                        1 range (entry in [15:8]), 2 FORCE, 3 default (no rule applied)
+// Address ranges, shared by the slots (NumRanges entries, SOCK_QOS_RANGES; 0 removes the table), entry k:
+//   0x103F_1000 + 16*k +0 BASE  RW   first page (physical address >> 12)
+//                      +4 LIMIT RW   last page, inclusive (physical address >> 12)
+//                      +8 CFG   RW   [31] V, [16 + s] applies to slot s, [UserWidth-1:0] the tag
+// A request matches entry k when V, its slot's bit, address[63:44] == 0 and BASE <= address[43:12] <= LIMIT;
+// the lowest matching entry wins. The CCU writes its port index into the low QosUserLsb bits of the user field, so
+// those bits are cleared from every tag here.
 //
 // Register port protocol (see accel_slots.sv): reg_req is a one-cycle strobe; the slot answers with exactly one
 // reg_ack pulse in the same or a later cycle, with reg_rdata valid in the ack cycle.
+
+// build knob (define / make variable, see hardware/Makefile): number of address-range entries, 0 removes the table
+`ifndef SOCK_QOS_RANGES
+`define SOCK_QOS_RANGES 16
+`endif
 
 module accel_socket #(
   parameter type         axi_req_t     = ariane_axi_soc::req_slv_t,
   parameter type         axi_resp_t    = ariane_axi_soc::resp_slv_t,
   parameter int unsigned NumSlots      = 8,
-  parameter int unsigned TimeoutCycles = 4096
+  parameter int unsigned TimeoutCycles = 4096,
+  // address-range tag entries (0..255)
+  parameter int unsigned NumRanges     = `SOCK_QOS_RANGES,
+  // slots whose device tags its DMA per job (the template does: the tag of the write that submitted the job)
+  parameter logic [NumSlots-1:0] JobTagSlots = '1
 ) (
   input  logic      clk_i,
   input  logic      rst_ni,
@@ -74,13 +99,25 @@ module accel_socket #(
   // the user field TAG_POLICY can force: all of the SoC's (ariane_axi_soc::UserWidth bits, 12 with four cores and 13
   // with eight), under the FORCE bit; the socket's user fields are 16 bits
   localparam int unsigned PolUserW = ariane_axi_soc::UserWidth;
-  localparam logic [31:0] PolMask  = 32'h8000_0000 | 32'((1 << PolUserW) - 1);
+  localparam logic [31:0] TagMask  = 32'((1 << PolUserW) - 1);
+  // TAG_POLICY: [31] FORCE, [30] RANGE_EN, [29] DEV_OFF, the default tag
+  localparam logic [31:0] PolMask  = 32'hE000_0000 | TagMask;
+  // range entry CFG: [31] V, [16 + s] slot s, the tag
+  localparam logic [31:0] CfgMask  = 32'h8000_0000 | (32'((1 << NumSlots) - 1) << 16) | TagMask;
+  localparam int unsigned RangeDim = (NumRanges > 0) ? NumRanges : 1;
   // pragma translate_off
   initial begin : p_user_width_assert
     assert (PolUserW <= 16)
       else $fatal(1, "accel_socket: the %0d-bit SoC user field does not fit its 16-bit tags", PolUserW);
+    assert (NumSlots <= 8 && NumRanges <= 255)
+      else $fatal(1, "accel_socket: %0d slots (at most 8) / %0d range entries (at most 255)", NumSlots, NumRanges);
   end
   // pragma translate_on
+
+  // address-range tags (0x103F_1000 + 16*k) and which rule tagged each slot's last DMA request (LAST_SRC)
+  typedef enum logic [1:0] { SRC_DEV = 2'd0, SRC_RANGE = 2'd1, SRC_FORCE = 2'd2, SRC_DEFAULT = 2'd3 } tag_src_e;
+  logic [RangeDim-1:0][31:0] rg_base_q, rg_limit_q, rg_cfg_q;
+  logic [NumSlots-1:0][15:0] last_src_q;
 
   accel_slots #(.NumSlots(NumSlots)) i_slots (
     .clk_i, .rst_ni,
@@ -142,7 +179,26 @@ module accel_socket #(
   function automatic logic [31:0] policy_write(logic [31:0] old, logic [31:0] wd, logic [3:0] be);
     logic [31:0] v = old;
     for (int b = 0; b < 4; b++) if (be[b]) v[8*b +: 8] = wd[8*b +: 8];
-    return v & PolMask;   // bit 31 FORCE, [PolUserW-1:0] the user field; the rest reads as 0
+    return v & PolMask;   // FORCE, RANGE_EN, DEV_OFF, [PolUserW-1:0] the user field; the rest reads as 0
+  endfunction
+  // TAG_POLICY as read and as applied: DEV_OFF is fixed to 1 for a device that does not tag per job
+  function automatic logic [31:0] policy_rd(logic [SlotW-1:0] s);
+    return pol_q[s] | (JobTagSlots[s] ? 32'h0 : 32'h2000_0000);
+  endfunction
+  // QOS_CAP and LAST_SRC: 0x103F_0200 + 8*slot
+  function automatic logic is_cap(logic [63:0] a);
+    return a[21:16] == 6'h3F && a[15:8] == 8'h02 && a[7:3] < NumSlots;
+  endfunction
+  // range entries: 0x103F_1000 + 16*k (+0 BASE, +4 LIMIT, +8 CFG, +C reads 0)
+  function automatic logic is_range(logic [63:0] a);
+    return NumRanges > 0 && a[21:16] == 6'h3F && a[15:12] == 4'h1 && 32'(a[11:4]) < NumRanges;
+  endfunction
+  function automatic logic [7:0] range_idx(logic [63:0] a);
+    return (NumRanges > 1) ? a[11:4] : 8'd0;
+  endfunction
+  function automatic logic [31:0] wmask32(logic [31:0] old, logic [31:0] wd, logic [3:0] be);
+    for (int b = 0; b < 4; b++) if (be[b]) old[8*b +: 8] = wd[8*b +: 8];
+    return old;
   endfunction
   function automatic logic [63:0] next_addr(logic [63:0] a, logic [2:0] size, logic [1:0] burst);
     return (burst == axi_pkg::BURST_FIXED) ? a : ((a >> size) + 64'd1) << size;
@@ -195,7 +251,13 @@ module accel_socket #(
     if (is_probe(a)) begin
       rdata_q <= {probe_aw_user_q, user}; state_q <= S_RDATA;
     end else if (is_policy(a)) begin
-      rdata_q <= {16'b0, last_user_q[policy_slot(a)], pol_q[policy_slot(a)]}; state_q <= S_RDATA;
+      rdata_q <= {16'b0, last_user_q[policy_slot(a)], policy_rd(policy_slot(a))}; state_q <= S_RDATA;
+    end else if (is_cap(a)) begin
+      rdata_q <= {16'b0, last_src_q[policy_slot(a)], 16'b0, 8'(NumRanges), 7'b0, JobTagSlots[policy_slot(a)]};
+      state_q <= S_RDATA;
+    end else if (is_range(a)) begin
+      rdata_q <= a[3] ? {32'b0, rg_cfg_q[range_idx(a)]} : {rg_limit_q[range_idx(a)], rg_base_q[range_idx(a)]};
+      state_q <= S_RDATA;
     end else if (!slot_ok(a)) begin
       resp_q <= axi_pkg::RESP_DECERR; rdata_q <= 64'hdeadbeef_deadbeef; state_q <= S_RDATA;
     end else begin
@@ -211,6 +273,7 @@ module accel_socket #(
       id_q <= '0; addr_q <= '0; beats_q <= '0; size_q <= '0; burst_q <= '0;
       wdata_q <= '0; rdata_q <= '0; wstrb_q <= '0; resp_q <= '0; wait_q <= '0;
       user_q <= '0; probe_aw_user_q <= '0; pol_q <= '0;
+      rg_base_q <= '0; rg_limit_q <= '0; rg_cfg_q <= '0;
       reg_req_q <= 1'b0; reg_slot_q <= '0; reg_addr_q <= '0; reg_we_q <= 1'b0; reg_wdata_q <= '0; reg_wstrb_q <= '0;
       reg_user_q <= '0;
     end else begin
@@ -240,6 +303,17 @@ module accel_socket #(
               // TAG_POLICY is the low word; LAST_USER (high word) is read-only
               if (!addr_q[2] || size_q == 3'd3)
                 pol_q[policy_slot(addr_q)] <= policy_write(pol_q[policy_slot(addr_q)], slv_req_i.w.data[31:0], slv_req_i.w.strb[3:0]);
+            end
+            else if (is_cap(addr_q)) ;   // read-only
+            else if (is_range(addr_q)) begin
+              // the lanes the strobes select: BASE (low) and LIMIT (high) at +0, CFG (low) at +8
+              if (!addr_q[3]) begin
+                if (|slv_req_i.w.strb[3:0])
+                  rg_base_q[range_idx(addr_q)]  <= wmask32(rg_base_q[range_idx(addr_q)],  slv_req_i.w.data[31:0],  slv_req_i.w.strb[3:0]);
+                if (|slv_req_i.w.strb[7:4])
+                  rg_limit_q[range_idx(addr_q)] <= wmask32(rg_limit_q[range_idx(addr_q)], slv_req_i.w.data[63:32], slv_req_i.w.strb[7:4]);
+              end else if (|slv_req_i.w.strb[3:0])
+                rg_cfg_q[range_idx(addr_q)] <= wmask32(rg_cfg_q[range_idx(addr_q)], slv_req_i.w.data[31:0], slv_req_i.w.strb[3:0]) & CfgMask;
             end
             else if (!slot_ok(addr_q)) resp_q <= axi_pkg::RESP_DECERR;
             if (beats_q == 8'd0) state_q <= S_BRESP;
@@ -324,29 +398,63 @@ module accel_socket #(
   end
   assign m_rdata = dn_rdata;
 
-  // the tag of the request being served (req_user): the slot's own, or the one the policy register forces; the port
-  // bits are the CCU's to write. Taken in the first cycle the request is offered to axi_from_mem and kept until its
-  // grant: a TAG_POLICY write applies to the requests offered after it, and changes neither the AR or AW nor the W of
-  // a request already waiting. LAST_USER records the tag the request carried.
+  // the tag of the request being served (req_user), by the rules in the header: the slot's default (FORCE), a range
+  // entry's (RANGE_EN), the device's own (a slot that tags per job, DEV_OFF clear) or the default; the port bits are
+  // the CCU's to write. Taken in the first cycle the request is offered to axi_from_mem and kept until its grant: a
+  // TAG_POLICY or range write applies to the requests offered after it, and changes neither the AR or AW nor the W of
+  // a request already waiting. LAST_USER records the tag the request carried, LAST_SRC the rule.
+  typedef struct packed {
+    logic        hit;
+    logic [7:0]  idx;
+    logic [15:0] tag;
+  } range_hit_t;
+  // the lowest valid entry for slot s whose page range holds address a (the table is passed in: a continuous
+  // assignment re-evaluates a function call only when its arguments change)
+  function automatic range_hit_t range_lookup(logic [63:0] a, logic [SlotW-1:0] s,
+                                              logic [RangeDim-1:0][31:0] base, logic [RangeDim-1:0][31:0] limit,
+                                              logic [RangeDim-1:0][31:0] cfg);
+    range_hit_t r;
+    r = '0;
+    for (int k = int'(NumRanges) - 1; k >= 0; k--)
+      if (cfg[k][31] && cfg[k][16 + s] && a[63:44] == '0 && a[43:12] >= base[k] && a[43:12] <= limit[k])
+        r = '{hit: 1'b1, idx: 8'(k), tag: 16'(cfg[k] & TagMask)};
+    return r;
+  endfunction
+
+  logic [31:0] sel_pol;
+  range_hit_t  sel_rng;
+  tag_src_e    sel_src, req_src, hold_src_q;
+  logic [7:0]  req_idx, hold_idx_q;
   logic [15:0] sel_user, req_user, hold_user_q;
-  assign sel_user = (pol_q[sel][31] ? 16'(pol_q[sel][PolUserW-1:0]) : m_user[sel]) & ~PortBitsMask;
+  assign sel_pol  = pol_q[sel] | (JobTagSlots[sel] ? 32'h0 : 32'h2000_0000);
+  assign sel_rng  = range_lookup(m_addr[sel], sel, rg_base_q, rg_limit_q, rg_cfg_q);
+  assign sel_src  = sel_pol[31]                ? SRC_FORCE :
+                    (sel_pol[30] && sel_rng.hit) ? SRC_RANGE :
+                    !sel_pol[29]               ? SRC_DEV   : SRC_DEFAULT;
+  assign sel_user = ((sel_src == SRC_DEV)   ? m_user[sel] :
+                     (sel_src == SRC_RANGE) ? sel_rng.tag : 16'(sel_pol & TagMask)) & ~PortBitsMask;
   assign req_user = held ? hold_user_q : sel_user;
+  assign req_src  = held ? hold_src_q  : sel_src;
+  assign req_idx  = held ? hold_idx_q  : ((sel_src == SRC_RANGE) ? sel_rng.idx : 8'd0);
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
-      rr_q <= '0; ord_q <= '0; cnt_q <= '0; wp_q <= '0; rp_q <= '0; last_user_q <= '0;
-      hold_q <= 1'b0; hold_sel_q <= '0; hold_user_q <= '0;
+      rr_q <= '0; ord_q <= '0; cnt_q <= '0; wp_q <= '0; rp_q <= '0; last_user_q <= '0; last_src_q <= '0;
+      hold_q <= 1'b0; hold_sel_q <= '0; hold_user_q <= '0; hold_src_q <= SRC_DEV; hold_idx_q <= '0;
     end else begin
       if (dn_req && dn_gnt) begin
         ord_q[wp_q] <= sel; wp_q <= wp_q + 1'b1;
         rr_q <= SlotW'((sel + 1) % NumSlots);
         last_user_q[sel] <= req_user;
+        last_src_q[sel]  <= {req_idx, 6'b0, req_src};
       end
       // a request waits for its grant: keep its slot and its tag until then
       hold_q <= dn_req && !dn_gnt;
       if (dn_req && !dn_gnt) begin
         hold_sel_q  <= sel;
         hold_user_q <= req_user;
+        hold_src_q  <= req_src;
+        hold_idx_q  <= req_idx;
       end
       if (dn_rvalid) rp_q <= rp_q + 1'b1;
       cnt_q <= cnt_q + (dn_req && dn_gnt) - dn_rvalid;
