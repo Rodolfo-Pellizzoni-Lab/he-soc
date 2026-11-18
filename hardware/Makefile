@@ -214,8 +214,10 @@ endif
 # docs/qos.md): QOS_RCID_WIDTH / QOS_MCID_WIDTH (4), QOS_PRIV_ASSOC (1; 0 removes the privilege association
 # CSRs), QOS_NUM_VRCID (16; 0 removes vRCID translation), QOS_NUM_VMCID (16; 0 removes vMCID translation); device DMA tags (accel/accel_socket.sv,
 # accel/templates/accel_template.sv): SOCK_QOS_RANGES (16 address-range tag entries; 0 removes the table),
-# ACCEL_JOB_DEPTH (4-job queue in template accelerators; 0 removes it)
-QOS_KNOBS := QOS_RCID_WIDTH QOS_MCID_WIDTH QOS_PRIV_ASSOC QOS_NUM_VRCID QOS_NUM_VMCID SOCK_QOS_RANGES ACCEL_JOB_DEPTH
+# ACCEL_JOB_DEPTH (4-job queue in template accelerators; 0 removes it); the LLC's CBQRI bandwidth controller
+# (ip_list/axi_llc/src/axi_llc_cbqri_bc.sv): QOS_LLC_BC (1; 0 removes it), QOS_LLC_BC_POOL (16-descriptor pool)
+QOS_KNOBS := QOS_RCID_WIDTH QOS_MCID_WIDTH QOS_PRIV_ASSOC QOS_NUM_VRCID QOS_NUM_VMCID SOCK_QOS_RANGES ACCEL_JOB_DEPTH \
+             QOS_LLC_BC QOS_LLC_BC_POOL
 $(foreach k,$(QOS_KNOBS),$(if $($(k)),$(eval compile_flag += +define+$(k)=$($(k)))$(eval compile_fpga += $(k)=$($(k)))))
 
 ifdef exclude-cluster

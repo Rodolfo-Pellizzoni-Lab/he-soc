@@ -261,6 +261,73 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
 - **Parameters.** `axi_llc_top` takes `QosRcidWidth` (0 turns the controller off), `QosRcidLsb`, `QosAtBit`
   and `QosCcOffset`.
 
+## Memory bandwidth controller (CBQRI)
+
+`ip_list/axi_llc/src/axi_llc_cbqri_bc.sv`, inside the LLC (`axi_llc_top`, parameter `QosBc`; build knob `QOS_LLC_BC`,
+default 1, and `QOS_LLC_BC_POOL`, the pool size, default 16). It regulates the LLC's memory traffic per RCID with the
+CBQRI v1.0 bandwidth-controller interface: reserved bandwidth blocks (Rbwb) and weights (Mweight) per RCID, and
+per-MCID byte counters. Registers at `0x1040_1C00` (the LLC configuration space; the capacity controller is at
+`0x1040_1800`), 64-bit, read and written as two 32-bit words, low word last (the low word holding OP starts an
+operation, which completes in the cycle of the write: BUSY is always 0).
+
+**Where it sits.** Between the hit/miss unit and the eviction unit. A descriptor that needs the memory leaves the
+lookup there with its victim way chosen and its line locked: `refill` reads one 64-byte line, `evict` writes one (a
+dirty victim). Each such descriptor enters a parking pool, and an arbiter releases the pool into the eviction/refill
+pipeline, charging 64 bytes per line moved to the RCID in the descriptor's user field. The pipeline behind it is in
+order and short (eviction FIFO 4, miss buffer 2, refill FIFO 4, every refill on one AXI ID), so a throttle after the
+memory port would stall every RCID's misses and, once those FIFOs fill, the lookup and every hit too. The pool takes
+the waiting off the lookup: while an RCID waits for bandwidth, the others' hits and misses go on.
+
+**What it hands out.** `NBWBLKS = 1024` blocks stand for `BC_CAPACITY` bytes per accounting period of `BC_PERIOD`
+cycles, so an RCID's reservation is `Rbwb * BC_CAPACITY / 1024` bytes per period. With `BC_CTRL.PACE` (the reset value)
+a token bucket paces all releases to `BC_CAPACITY / BC_PERIOD` bytes per cycle (bursts of two lines): the controller is
+then the bottleneck by construction and the waiting happens in its pool, where the arbiter orders it. Without pacing
+the queues behind it (the refill path and the memory's own FIFOs) decide the order whenever memory is the bottleneck,
+because each core has only one or two misses in flight and the pool would hold no choice. Set `BC_CAPACITY` at or a
+little below what the memory sustains per period (`t_bc` hands out 90 %).
+
+**Release order** among descriptors the ordering rules allow:
+1. descriptors that cost nothing (hits the LLC routes through the miss pipeline to keep AXI order, flushes), and
+   descriptors that a waiting descriptor of an RCID still inside its reservation depends on (priority inheritance, two
+   levels), oldest first;
+2. descriptors of RCIDs inside their reservation this period, oldest first (the floor: CBQRI's "bandwidth made
+   available to an RCID ... even when all other RCID are using their full allocation");
+3. descriptors of RCIDs past their reservation with Mweight > 0, sharing what is left in proportion to Mweight (stride
+   scheduling: each release adds `4096 / Mweight` per line to the RCID's pass, lowest pass first; reset every period);
+RCIDs past their reservation with Mweight = 0 wait for the next period: a hard limit, as CBQRI defines Mweight 0.
+Within the paced rate the arbiter is work-conserving.
+
+**Ordering rules** (the LLC's own, kept by the pool): descriptors of one AXI ID leave in order; all writes leave in
+order (the LLC's write unit takes W beats in arrival order, and AXI4 W beats carry no ID); a flush leaves in order with
+everything. So a write miss of a throttled RCID can hold later writes of other RCIDs; priority inheritance releases it
+(charged to its owner) when a write of an RCID inside its reservation waits behind it.
+
+| Offset | Register | |
+|---|---|---|
+| 0x00 | `bc_capabilities` | RO: VER 0x10, NBWBLKS 1024, RPFX 0, P 0, MRBWB 819 (80 %) |
+| 0x08 | `bc_mon_ctl` | OP [4:0] (1 CONFIG_EVENT, 2 READ_COUNTER), AT [7:5] RO 0, MCID [19:8], EVT_ID [27:20] (0 none, 1 read+write bytes, 2 read bytes, 3 write bytes; configuring resets the counter), ATV [28] RO 0, STATUS [38:32] (1 ok, 2 bad OP, 3 MCID >= 16, 4 EVT_ID > 3), BUSY [39] 0 |
+| 0x10 | `bc_mon_ctr_val` | RO: CTR [61:0] (48 bits implemented), INV [62] (no event configured), OVF [63] |
+| 0x18 | `bc_alloc_ctl` | OP [4:0] (1 CONFIG_LIMIT, 2 READ_LIMIT), AT [7:5] RO 0 (no per-AT allocation), RCID [19:8], STATUS [38:32] (1 ok, 2 bad OP, 3 RCID >= 16, 5 Rbwb = 0, Rbwb > MRBWB or the sum over RCIDs > MRBWB; the allocation is then unchanged), BUSY [39] 0 |
+| 0x20 | `bc_bw_alloc` | Rbwb [15:0], Mweight [27:20], sharedAT [30:28] RO 0, useShared [31] RO 0 |
+| 0x80 | `BC_CTRL` | [0] EN regulation, [1] PACE (reset 1); monitoring and the pool work either way |
+| 0x88 | `BC_PERIOD` | accounting period, cycles (reset 10000) |
+| 0x90 | `BC_CAPACITY` | bytes per period the 1024 blocks stand for (reset 64000) |
+| 0x98 | `BC_POOL` | RO: [7:0] descriptors in the pool, [15:8] high-water mark (a write clears it) |
+| 0xA0 | `BC_FULL` | cycles a descriptor waited because the pool was full (a write clears it) |
+| 0xA8 | `BC_RATE` | RO: pacing rate, bytes per cycle in 16.16 (`BC_CAPACITY * 2^16 / BC_PERIOD`, 48 cycles after a write of either) |
+
+Reset (CBQRI: "all available bandwidth to RCID 0"): RCID 0 Rbwb = MRBWB and Mweight 255, every other RCID Rbwb 0 and
+Mweight 1 (UNSPECIFIED in CBQRI), regulation off: the pool is then a FIFO and nothing changes for software that does
+not know the controller. Software lowers RCID 0 before it gives other RCIDs blocks (the sum rule holds at every step).
+Monitoring counts the bytes of refills (read) and evictions (write) as the controller releases them, per the MCID of
+the descriptor, regulation on or off. The lock box's Bloom filter (`axi_llc_pkg::BloomHashWidth`) is 8 bits (256
+counters, was 6): parked misses keep their lines locked, and a few dozen locked lines in 64 counters gave frequent false
+lock stalls and could overflow the 3-bit counters.
+
+Not covered: traffic that bypasses the LLC (uncached ranges) is not regulated; per-AT allocation (code/data) is not
+implemented (AT read-only zero, allowed by CBQRI); the pool holds 16 descriptors, so more than 16 waiting misses (more
+than four cores with several each) would stall the lookup again.
+
 ## Checking it
 
 **Tests** (`t_qos` and `t_cbqri` are in the `sim_regress` suite `soc`; `t_qosv` and `t_iojob` run on their own):
@@ -341,8 +408,7 @@ thrash of 48 dirty lines in one LLC set pass in that mode with 0 checker errors 
 
 ## Next steps
 
-- A CBQRI bandwidth controller, or bandwidth/occupancy monitoring per MCID, at the LLC memory port
-  (`llc_out`).
+- Per-AT bandwidth allocation in the memory bandwidth controller, and regulation of traffic that bypasses the LLC.
 - Capacity usage monitoring (`cc_mon_ctl`), which would need an occupancy count per MCID kept with the LLC
   tags.
 

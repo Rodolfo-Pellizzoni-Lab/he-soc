@@ -684,6 +684,8 @@ module host_domain
       .QosRcidWidth     ( ariane_pkg::QOS_RCID_WIDTH     ),
       .QosRcidLsb       ( ariane_axi_soc::QosUserLsb     ),
       .QosAtBit         ( ariane_axi_soc::QosUserLsb + ariane_pkg::QOS_RCID_WIDTH + ariane_pkg::QOS_MCID_WIDTH ),
+      .QosBc            ( ariane_pkg::QOS_LLC_BC         ),
+      .QosBcPoolDepth   ( ariane_pkg::QOS_LLC_BC_POOL    ),
       .QosCcOffset      ( 32'h800                        )
     ) i_axi_llc (
       .clk_i               ( s_soc_clk                                                                           ),

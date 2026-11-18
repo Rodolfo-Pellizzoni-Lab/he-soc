@@ -181,6 +181,13 @@ module axi_llc_top #(
   /// Offset of the CBQRI capacity controller registers in the configuration port's address space (the
   /// configuration registers answer below it).
   parameter int unsigned QosCcOffset      = 32'h800,
+  /// RISC-V CBQRI bandwidth controller for the memory traffic (refills and evictions), see `axi_llc_cbqri_bc`:
+  /// 1 puts it between the hit/miss unit and the eviction unit (needs QosRcidWidth > 0). Its registers are at
+  /// QosBcOffset in the configuration port's address space (the capacity controller then answers below it).
+  parameter bit          QosBc            = 1'b0,
+  parameter int unsigned QosBcOffset      = 32'hC00,
+  /// Descriptors the bandwidth controller's parking pool holds.
+  parameter int unsigned QosBcPoolDepth   = 32'd16,
   /// AXI4+ATOP request type on the slave port.
   /// Expected format can be defined using `AXI_TYPEDEF_REQ_T.
   parameter type slv_req_t      = logic,
@@ -424,11 +431,16 @@ module axi_llc_top #(
     spm_addr_rule.end_addr      = spm_start_addr_i + axi_addr_t'(Cfg.SPMLength);
   end
 
-  // CBQRI capacity controller: takes the configuration port addresses at and above QosCcOffset
+  // CBQRI capacity controller: takes the configuration port addresses at and above QosCcOffset; the bandwidth
+  // controller (QosBc) those at and above QosBcOffset
   localparam int unsigned QosNumRcid = (QosRcidWidth > 0) ? 2**QosRcidWidth : 1;
+  localparam bit          QosBcOn    = QosBc && (QosRcidWidth > 0);
+  localparam int unsigned NumConf    = QosBcOn ? 3 : 2;
   logic [QosNumRcid-1:0][1:0][Cfg.SetAssociativity-1:0] qos_mask;
   lite_req_t  cfg_conf_req;
   lite_resp_t cfg_conf_resp;
+  lite_req_t  bc_conf_req;
+  lite_resp_t bc_conf_resp;
 
   if (QosRcidWidth > 0) begin : gen_cbqri_cc
     typedef logic [AxiLiteAddrWidth-1:0]   lite_addr_t;
@@ -440,11 +452,17 @@ module axi_llc_top #(
     `AXI_LITE_TYPEDEF_AR_CHAN_T(lite_ar_chan_t, lite_addr_t)
     `AXI_LITE_TYPEDEF_R_CHAN_T(lite_r_chan_t, lite_data_t)
 
-    lite_req_t  [1:0] conf_reqs;
-    lite_resp_t [1:0] conf_resps;
-    logic aw_sel, ar_sel;
-    assign aw_sel = (conf_req_i.aw.addr & (QosCcOffset * 2 - 1)) >= QosCcOffset;
-    assign ar_sel = (conf_req_i.ar.addr & (QosCcOffset * 2 - 1)) >= QosCcOffset;
+    lite_req_t  [NumConf-1:0] conf_reqs;
+    lite_resp_t [NumConf-1:0] conf_resps;
+    logic [$clog2(NumConf)-1:0] aw_sel, ar_sel;
+    always_comb begin
+      aw_sel = '0;
+      ar_sel = '0;
+      if ((conf_req_i.aw.addr & (QosCcOffset * 2 - 1)) >= QosCcOffset) aw_sel = 1;
+      if ((conf_req_i.ar.addr & (QosCcOffset * 2 - 1)) >= QosCcOffset) ar_sel = 1;
+      if (QosBcOn && (conf_req_i.aw.addr & (QosCcOffset * 2 - 1)) >= QosBcOffset) aw_sel = NumConf - 1;
+      if (QosBcOn && (conf_req_i.ar.addr & (QosCcOffset * 2 - 1)) >= QosBcOffset) ar_sel = NumConf - 1;
+    end
 
     axi_lite_demux #(
       .aw_chan_t   ( lite_aw_chan_t ),
@@ -454,7 +472,7 @@ module axi_llc_top #(
       .r_chan_t    ( lite_r_chan_t  ),
       .axi_req_t   ( lite_req_t     ),
       .axi_resp_t  ( lite_resp_t    ),
-      .NoMstPorts  ( 2              ),
+      .NoMstPorts  ( NumConf        ),
       .MaxTrans    ( 2              ),
       .FallThrough ( 1'b0           ),
       .SpillAw     ( 1'b0           ),
@@ -475,6 +493,12 @@ module axi_llc_top #(
     );
     assign cfg_conf_req  = conf_reqs[0];
     assign conf_resps[0] = cfg_conf_resp;
+    if (QosBcOn) begin : gen_bc_conf
+      assign bc_conf_req           = conf_reqs[NumConf-1];
+      assign conf_resps[NumConf-1] = bc_conf_resp;
+    end else begin : gen_no_bc_conf
+      assign bc_conf_req = '0;
+    end
 
     axi_llc_cbqri_cc #(
       .NumWays     ( Cfg.SetAssociativity ),
@@ -493,6 +517,7 @@ module axi_llc_top #(
     assign cfg_conf_req = conf_req_i;
     assign conf_resp_o  = cfg_conf_resp;
     assign qos_mask     = '1;
+    assign bc_conf_req  = '0;
   end
 
   // configuration, also has control over bypass logic and flush
@@ -707,6 +732,41 @@ module axi_llc_top #(
     .bist_valid_o   	( bist_valid    )
   );
 
+  // CBQRI bandwidth controller between the hit/miss unit's miss output and the eviction unit: a parking pool that
+  // releases descriptors needing the memory by RCID reservation (Rbwb) and weight (Mweight)
+  llc_desc_t bc_desc;
+  logic      bc_valid, bc_ready;
+  if (QosBcOn) begin : gen_cbqri_bc
+    axi_llc_cbqri_bc #(
+      .desc_t      ( llc_desc_t                                   ),
+      .RcidWidth   ( QosRcidWidth                                 ),
+      .RcidLsb     ( QosRcidLsb                                   ),
+      .McidWidth   ( QosAtBit - QosRcidLsb - QosRcidWidth         ),
+      .McidLsb     ( QosRcidLsb + QosRcidWidth                    ),
+      .LineBytes   ( Cfg.BlockSize / 8 * Cfg.NumBlocks            ),
+      .PoolDepth   ( QosBcPoolDepth                               ),
+      .DataWidth   ( AxiLiteDataWidth                             ),
+      .lite_req_t  ( lite_req_t                                   ),
+      .lite_resp_t ( lite_resp_t                                  )
+    ) i_cbqri_bc (
+      .clk_i,
+      .rst_ni,
+      .req_i   ( bc_conf_req  ),
+      .resp_o  ( bc_conf_resp ),
+      .desc_i  ( desc         ),
+      .valid_i ( miss_valid   ),
+      .ready_o ( miss_ready   ),
+      .desc_o  ( bc_desc      ),
+      .valid_o ( bc_valid     ),
+      .ready_i ( bc_ready     )
+    );
+  end else begin : gen_no_cbqri_bc
+    assign bc_desc      = desc;
+    assign bc_valid     = miss_valid;
+    assign miss_ready   = bc_ready;
+    assign bc_conf_resp = '0;
+  end
+
   axi_llc_evict_unit #(
     .Cfg       ( Cfg           ),
     .AxiCfg    ( AxiCfg        ),
@@ -720,9 +780,9 @@ module axi_llc_top #(
     .clk_i             ( clk_i                                ),
     .rst_ni            ( rst_ni                               ),
     .test_i            ( test_i                               ),
-    .desc_i            ( desc                                 ),
-    .desc_valid_i      ( miss_valid                           ),
-    .desc_ready_o      ( miss_ready                           ),
+    .desc_i            ( bc_desc                              ),
+    .desc_valid_i      ( bc_valid                             ),
+    .desc_ready_o      ( bc_ready                             ),
     .desc_o            ( evict_desc                           ),
     .desc_valid_o      ( evict_desc_valid                     ),
     .desc_ready_i      ( evict_desc_ready                     ),

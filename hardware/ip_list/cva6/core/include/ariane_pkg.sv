@@ -359,6 +359,9 @@ package ariane_pkg;
     //                                    2^QOS_RCID_WIDTH and 2*XLEN/8); 0 removes translation (hqosctl,
     //                                    hrcidmap0/1, vsrmcfg). Both need the hypervisor extension for the VS parts.
     //   QOS_NUM_VMCID                    entries of the vMCID translation table (default 16; 0 removes hmcidmap0/1)
+    //   QOS_LLC_BC                       1 (default): the LLC's CBQRI bandwidth controller for its memory traffic
+    //                                    (axi_llc_cbqri_bc, registers at 0x1040_1C00); 0 removes it
+    //   QOS_LLC_BC_POOL                  descriptors its parking pool holds (default 16)
 `ifdef QOS_RCID_WIDTH
     localparam int unsigned QOS_RCID_WIDTH = `QOS_RCID_WIDTH;
 `else
@@ -381,6 +384,17 @@ package ariane_pkg;
         logic [QOS_MCID_WIDTH-1:0] mcid;
         logic [QOS_RCID_WIDTH-1:0] rcid;
     } qos_ids_t;
+    // CBQRI bandwidth controller in the LLC (not a core feature; kept with the other QoS knobs)
+`ifdef QOS_LLC_BC
+    localparam bit QOS_LLC_BC = (`QOS_LLC_BC) != 0;
+`else
+    localparam bit QOS_LLC_BC = 1'b1;
+`endif
+`ifdef QOS_LLC_BC_POOL
+    localparam int unsigned QOS_LLC_BC_POOL = `QOS_LLC_BC_POOL;
+`else
+    localparam int unsigned QOS_LLC_BC_POOL = 16;
+`endif
     // Privilege association (CSR_MQOSCTL, CSR_MQOSID, CSR_HQOSID, CSR_SQOSID)
 `ifdef QOS_PRIV_ASSOC
     localparam bit QOS_PRIV_ASSOC = (`QOS_PRIV_ASSOC) != 0;

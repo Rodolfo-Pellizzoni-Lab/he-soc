@@ -209,7 +209,9 @@ package axi_llc_pkg;
   /// Width of the calculated hash function.
   ///
   /// Restriction has to be wider than TODO.
-  parameter int unsigned BloomHashWidth   = 32'd6;
+  /// 8 (256 counters): a bandwidth controller (`axi_llc_cbqri_bc`) keeps parked misses' lines locked, and with
+  /// 6 a few dozen locked lines give frequent false lock stalls and can overflow the 3-bit counters.
+  parameter int unsigned BloomHashWidth   = 32'd8;
   /// Number of hash rounds of the counting bloom filter.
   parameter int unsigned BloomHashRounds  = 32'd1;
   /// Width of the buckets of the counting bloom filter.
