@@ -216,7 +216,7 @@ module csr_regfile import ariane_pkg::*; #(
     logic [ariane_pkg::QOS_RCID_WIDTH-1:0] rcid_q, rcid_d;
     logic [ariane_pkg::QOS_MCID_WIDTH-1:0] mcid_q, mcid_d;
     // QoS-ID privilege association (mqosctl enables; mqosid / hqosid / sqosid = IDs of M / HS / VS accesses)
-    // and vRCID translation (hqosctl, hrcidmap, vsrmcfg = the guest's srmcfg). hardware/docs/qos.md.
+    // and guest ID translation (hqosctl, hrcidmap, hmcidmap, vsrmcfg = the guest's srmcfg). hardware/docs/qos.md.
     logic [2:0]                            mqosctl_q, mqosctl_d;   // [0] M, [1] HS, [2] VS
     ariane_pkg::qos_ids_t                  mqosid_q, mqosid_d;
     ariane_pkg::qos_ids_t                  hqosid_q, hqosid_d;
@@ -225,9 +225,13 @@ module csr_regfile import ariane_pkg::*; #(
     logic                                  qos_ven_q, qos_ven_d;   // hqosctl[0]: translate guest RCIDs
     logic [ariane_pkg::QOS_RCID_WIDTH-1:0] qos_defrcid_q, qos_defrcid_d; // hqosctl[16+]: RCID of unmapped vRCIDs
     ariane_pkg::qos_vrcid_map_t [ariane_pkg::QOS_VRCID_DIM-1:0] hrcidmap_q, hrcidmap_d;
+    // vMCID translation (hmcidmap, hqosctl[15:4] = MCID of unmapped vMCIDs), under the same VEN
+    logic [ariane_pkg::QOS_MCID_WIDTH-1:0] qos_defmcid_q, qos_defmcid_d;
+    ariane_pkg::qos_vmcid_map_t [ariane_pkg::QOS_VMCID_DIM-1:0] hmcidmap_q, hmcidmap_d;
     // build knobs (ariane_pkg): a disabled feature's CSRs are illegal and its state is constant zero
     localparam bit QosPA = ariane_pkg::QOS_PRIV_ASSOC;   // privilege association
     localparam bit QosVR = ariane_pkg::QOS_VRCID;        // vRCID translation (needs RVH)
+    localparam bit QosVM = ariane_pkg::QOS_VMCID;        // vMCID translation (needs the vRCID CSRs)
     ariane_pkg::qos_ids_t                  qos_fetch_ids_q, qos_data_ids_q;
 
     riscv::xlen_t dcache_q,    dcache_d;
@@ -459,6 +463,7 @@ module csr_regfile import ariane_pkg::*; #(
                     if (!QosVR) read_access_exception = 1'b1;
                     else begin
                         csr_rdata[0]     = qos_ven_q;
+                        csr_rdata[15:4]  = QosVM ? 12'(qos_defmcid_q) : 12'b0;
                         csr_rdata[27:16] = 12'(qos_defrcid_q);
                     end
                 end
@@ -482,6 +487,30 @@ module csr_regfile import ariane_pkg::*; #(
                                     hrcidmap_q[j + ariane_pkg::QOS_VRCID_PER_CSR].v;
                                 csr_rdata[8*j +: ariane_pkg::QOS_RCID_WIDTH] =
                                     hrcidmap_q[j + ariane_pkg::QOS_VRCID_PER_CSR].prcid;
+                            end
+                        end
+                    end
+                end
+                riscv::CSR_HMCIDMAP0: begin
+                    if (!QosVM) read_access_exception = 1'b1;
+                    else begin
+                        for (int unsigned j = 0; j < ariane_pkg::QOS_VRCID_PER_CSR; j++) begin
+                            if (j < ariane_pkg::QOS_NUM_VMCID) begin
+                                csr_rdata[8*j+7]                             = hmcidmap_q[j].v;
+                                csr_rdata[8*j +: ariane_pkg::QOS_MCID_WIDTH] = hmcidmap_q[j].pmcid;
+                            end
+                        end
+                    end
+                end
+                riscv::CSR_HMCIDMAP1: begin
+                    if (!QosVM) read_access_exception = 1'b1;
+                    else begin
+                        for (int unsigned j = 0; j < ariane_pkg::QOS_VRCID_PER_CSR; j++) begin
+                            if (j + ariane_pkg::QOS_VRCID_PER_CSR < ariane_pkg::QOS_NUM_VMCID) begin
+                                csr_rdata[8*j+7]                             =
+                                    hmcidmap_q[j + ariane_pkg::QOS_VRCID_PER_CSR].v;
+                                csr_rdata[8*j +: ariane_pkg::QOS_MCID_WIDTH] =
+                                    hmcidmap_q[j + ariane_pkg::QOS_VRCID_PER_CSR].pmcid;
                             end
                         end
                     end
@@ -938,6 +967,8 @@ module csr_regfile import ariane_pkg::*; #(
         qos_ven_d               = qos_ven_q;
         qos_defrcid_d           = qos_defrcid_q;
         hrcidmap_d              = hrcidmap_q;
+        qos_defmcid_d           = qos_defmcid_q;
+        hmcidmap_d              = hmcidmap_q;
 
         en_ld_st_translation_d  = en_ld_st_translation_q;
         if(ariane_pkg::RVH) begin
@@ -1207,6 +1238,7 @@ module csr_regfile import ariane_pkg::*; #(
                     if (!QosVR) update_access_exception_xc = 1'b1;
                     else begin
                         qos_ven_d     = csr_wdata[0];
+                        qos_defmcid_d = csr_wdata[4 +: ariane_pkg::QOS_MCID_WIDTH];
                         qos_defrcid_d = csr_wdata[16 +: ariane_pkg::QOS_RCID_WIDTH];
                     end
                 end
@@ -1229,6 +1261,29 @@ module csr_regfile import ariane_pkg::*; #(
                                 hrcidmap_d[j + ariane_pkg::QOS_VRCID_PER_CSR].v     = csr_wdata[8*j+7];
                                 hrcidmap_d[j + ariane_pkg::QOS_VRCID_PER_CSR].prcid =
                                     csr_wdata[8*j +: ariane_pkg::QOS_RCID_WIDTH];
+                            end
+                        end
+                    end
+                end
+                riscv::CSR_HMCIDMAP0: begin
+                    if (!QosVM) update_access_exception_xc = 1'b1;
+                    else begin
+                        for (int unsigned j = 0; j < ariane_pkg::QOS_VRCID_PER_CSR; j++) begin
+                            if (j < ariane_pkg::QOS_NUM_VMCID) begin
+                                hmcidmap_d[j].v     = csr_wdata[8*j+7];
+                                hmcidmap_d[j].pmcid = csr_wdata[8*j +: ariane_pkg::QOS_MCID_WIDTH];
+                            end
+                        end
+                    end
+                end
+                riscv::CSR_HMCIDMAP1: begin
+                    if (!QosVM) update_access_exception_xc = 1'b1;
+                    else begin
+                        for (int unsigned j = 0; j < ariane_pkg::QOS_VRCID_PER_CSR; j++) begin
+                            if (j + ariane_pkg::QOS_VRCID_PER_CSR < ariane_pkg::QOS_NUM_VMCID) begin
+                                hmcidmap_d[j + ariane_pkg::QOS_VRCID_PER_CSR].v     = csr_wdata[8*j+7];
+                                hmcidmap_d[j + ariane_pkg::QOS_VRCID_PER_CSR].pmcid =
+                                    csr_wdata[8*j +: ariane_pkg::QOS_MCID_WIDTH];
                             end
                         end
                     end
@@ -2382,7 +2437,7 @@ module csr_regfile import ariane_pkg::*; #(
 
     for (genvar k = 0; k < 2; k++) begin : gen_qos_ids
         // continuous assignments only (no default-then-override writes: hardware/xsim/README.md, comb rings)
-        logic                 sel_m, sel_hs, sel_vs, sel_vg, guest, map_hit;
+        logic                 sel_m, sel_hs, sel_vs, sel_vg, guest, map_hit, mmap_hit;
         ariane_pkg::qos_ids_t sel, srm;
         assign srm     = '{mcid: mcid_q, rcid: rcid_q};
         assign sel_m   = qos_priv[k] == riscv::PRIV_LVL_M && mqosctl_q[0];
@@ -2396,7 +2451,11 @@ module csr_regfile import ariane_pkg::*; #(
         assign guest   = !sel_m && !sel_hs && (sel_vs ? qos_ven_q : sel_vg);
         assign map_hit = (32'(sel.rcid) < ariane_pkg::QOS_NUM_VRCID) &&
                          hrcidmap_q[(ariane_pkg::QOS_VRCID_DIM > 1) ? sel.rcid : '0].v;
-        assign qos_ids[k] = '{mcid: sel.mcid,
+        assign mmap_hit = QosVM && (32'(sel.mcid) < ariane_pkg::QOS_NUM_VMCID) &&
+                          hmcidmap_q[(ariane_pkg::QOS_VMCID_DIM > 1) ? sel.mcid : '0].v;
+        assign qos_ids[k] = '{mcid: (!guest || !QosVM) ? sel.mcid :
+                                    mmap_hit ? hmcidmap_q[(ariane_pkg::QOS_VMCID_DIM > 1) ? sel.mcid : '0].pmcid :
+                                    qos_defmcid_q,
                               rcid: !guest ? sel.rcid :
                                     map_hit ? hrcidmap_q[(ariane_pkg::QOS_VRCID_DIM > 1) ? sel.rcid : '0].prcid :
                                     qos_defrcid_q};
@@ -2459,6 +2518,8 @@ module csr_regfile import ariane_pkg::*; #(
             qos_ven_q              <= 1'b0;
             qos_defrcid_q          <= '0;
             hrcidmap_q             <= '0;
+            qos_defmcid_q          <= '0;
+            hmcidmap_q             <= '0;
             qos_fetch_ids_q        <= '0;
             qos_data_ids_q         <= '0;
             dcache_q               <= {{riscv::XLEN-1{1'b0}}, 1'b1};
@@ -2547,6 +2608,8 @@ module csr_regfile import ariane_pkg::*; #(
             qos_ven_q              <= QosVR ? qos_ven_d     : 1'b0;
             qos_defrcid_q          <= QosVR ? qos_defrcid_d : '0;
             hrcidmap_q             <= QosVR ? hrcidmap_d    : '0;
+            qos_defmcid_q          <= QosVM ? qos_defmcid_d : '0;
+            hmcidmap_q             <= QosVM ? hmcidmap_d    : '0;
             qos_fetch_ids_q        <= qos_ids[0];
             qos_data_ids_q         <= qos_ids[1];
             dcache_q               <= dcache_d;

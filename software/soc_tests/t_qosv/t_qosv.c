@@ -1,5 +1,5 @@
 // QoS-ID privilege association and vRCID translation (hardware/docs/qos.md, "Privilege association and
-// virtualized RCIDs"). Core 0 only. Every expected tag is read back through the QoS probe of the accelerator
+// virtualized RCIDs / MCIDs"). Core 0 only. Every expected tag is read back through the QoS probe of the accelerator
 // socket (0x103F_0000), which returns the AXI user field of the read that reaches it: {AT, MCID, RCID, source}.
 //  - CSRs: reset values and WARL masks of mqosctl, mqosid, hqosid, sqosid, vsrmcfg, hqosctl, hrcidmap0/1
 //  - privilege association: M mode -> mqosid (mqosctl[0]), HS -> hqosid ([1]), VS -> sqosid ([2]); a mode whose
@@ -7,7 +7,8 @@
 //  - vRCID translation (hqosctl[0]): with it off, VS/VU accesses to srmcfg and sqosid raise a virtual-instruction
 //    exception (Ssqosid); with it on, VS mode reads and writes its own copies (vsrmcfg, sqosid) without a trap,
 //    and V=1 accesses carry the physical RCID hrcidmap gives the guest's RCID (the default RCID when the entry is
-//    invalid); MCIDs pass through
+//    invalid) and, with vMCID translation built (QOS_NUM_VMCID), the physical MCID hmcidmap gives the guest's MCID
+//    (the default MCID in hqosctl[15:4] when invalid); without it MCIDs pass through
 //  - HLV from M mode (ld/st virtualization on) takes the VS IDs
 #include "soc_test.h"
 
@@ -24,6 +25,8 @@
 #define HRCIDMAP1 0x6C2
 #define VSRMCFG   0x6C3
 #define HQOSID    0x6C4
+#define HMCIDMAP0 0x6C5
+#define HMCIDMAP1 0x6C6
 #define MQOSID    0x7C0
 #define MQOSCTL   0x7C1
 #define R_(n) CSR_R(n)
@@ -35,6 +38,16 @@
 enum { C_U = 8, C_HS = 9, C_VS = 10, C_M = 11, C_ILL = 2, C_VIRT = 22 };
 
 static int rbits = 4, mbits = 4;
+// the MCID a guest access carries for virtual MCID v (section 6): translated through hmcidmap when vMCID
+// translation is built, else v
+static int vm_g, nm_g;
+static uint64_t mmap_g[2], defm_g;
+static uint64_t M(uint64_t v) {
+  if (!vm_g) return v;
+  if ((int)v >= nm_g) return defm_g;
+  uint64_t b = (mmap_g[v / 8] >> (8 * (v % 8))) & 0xFF;
+  return (b & 0x80) ? (b & 0x7F) : defm_g;
+}
 static int popcount(uint64_t x) { int n = 0; while (x) { n += x & 1; x >>= 1; } return n; }
 
 static void check_tag(const char *what, uint32_t u, uint64_t r, uint64_t m) {
@@ -148,7 +161,13 @@ int main(void) {
   // ---- 1. which features the build has (absent CSRs raise illegal instruction), reset values, WARL masks
   int pa = TRY_CSRR(0x7C1) == 0;          // privilege association (QOS_PRIV_ASSOC)
   int vr = TRY_CSRR(0x6C0) == 0;          // vRCID translation (QOS_NUM_VRCID > 0)
-  printf("privilege association %s, vRCID translation %s\r\n", pa ? "present" : "absent", vr ? "present" : "absent");
+  int vm = vr && TRY_CSRR(0x6C5) == 0;    // vMCID translation (QOS_NUM_VMCID > 0, needs the vRCID CSRs)
+  printf("privilege association %s, vRCID translation %s, vMCID translation %s\r\n", pa ? "present" : "absent",
+         vr ? "present" : "absent", vm ? "present" : "absent");
+  if (!vm) {
+    uint64_t c0 = TRY_CSRR(0x6C5), c1 = TRY_CSRR(0x6C6);
+    CHECK(c0 == C_ILL && c1 == C_ILL, "absent vMCID CSRs: mcause hmcidmap0 %d hmcidmap1 %d, expected 2", (int)c0, (int)c1);
+  }
   if (!pa) {
     uint64_t c0 = TRY_CSRR(0x7C1), c1 = TRY_CSRR(0x7C0), c2 = TRY_CSRR(0x6C4), c3 = TRY_CSRR(0x5C0);
     CHECK(c0 == C_ILL && c1 == C_ILL && c2 == C_ILL && c3 == C_ILL,
@@ -167,7 +186,7 @@ int main(void) {
   mbits = popcount((warl >> 16) & 0xFFF);
   uint64_t rm = (1ULL << rbits) - 1, mm = (1ULL << mbits) - 1, idm = IDS(rm, mm);
   printf("RCID %d bits, MCID %d bits\r\n", rbits, mbits);
-  int nv = 0;                             // vRCID table entries
+  int nv = 0, nm = 0;                     // vRCID / vMCID table entries
   if (pa) {
     CHECK(R_(0x7C1) == 0 && R_(0x7C0) == 0 && R_(0x6C4) == 0 && R_(0x5C0) == 0,
           "reset: mqosctl %x mqosid %x hqosid %x sqosid %x", (unsigned)R_(0x7C1), (unsigned)R_(0x7C0),
@@ -183,7 +202,8 @@ int main(void) {
           "reset: vsrmcfg %x hqosctl %x map0 %x map1 %x", (unsigned)R_(0x6C3), (unsigned)R_(0x6C0),
           (unsigned)R_(0x6C1), (unsigned)R_(0x6C2));
     W_(0x6C3, ~0ULL); CHECK(R_(0x6C3) == idm, "vsrmcfg WARL %08x%08x", H64(R_(0x6C3)));
-    W_(0x6C0, ~0ULL); CHECK(R_(0x6C0) == (1 | (rm << 16)), "hqosctl WARL %08x%08x", H64(R_(0x6C0)));
+    W_(0x6C0, ~0ULL);
+    CHECK(R_(0x6C0) == (1 | (rm << 16) | (vm ? mm << 4 : 0)), "hqosctl WARL %08x%08x", H64(R_(0x6C0)));
     W_(0x6C1, ~0ULL); W_(0x6C2, ~0ULL);
     uint64_t m0 = R_(0x6C1), m1 = R_(0x6C2);
     // entries are filled from vRCID 0 up: each one reads back {V, all RCID bits}, the rest read zero
@@ -194,6 +214,19 @@ int main(void) {
     }
     CHECK(nv >= 1 && nv <= (1 << rbits), "vRCID table: %d entries", nv);
     printf("vRCID table: %d entries\r\n", nv);
+    if (vm) {
+      CHECK(R_(0x6C5) == 0 && R_(0x6C6) == 0, "reset: hmcidmap0 %x hmcidmap1 %x", (unsigned)R_(0x6C5), (unsigned)R_(0x6C6));
+      W_(0x6C5, ~0ULL); W_(0x6C6, ~0ULL);
+      uint64_t n0 = R_(0x6C5), n1 = R_(0x6C6);
+      for (int i = 0; i < 16; i++) {
+        uint64_t b = ((i < 8 ? n0 : n1) >> (8 * (i % 8))) & 0xFF;
+        if (b == (0x80 | mm) && nm == i) nm++;
+        else CHECK(b == 0, "hmcidmap entry %d WARL 0x%x (entries so far %d)", i, (unsigned)b, nm);
+      }
+      CHECK(nm >= 1 && nm <= (1 << mbits), "vMCID table: %d entries", nm);
+      printf("vMCID table: %d entries\r\n", nm);
+      W_(0x6C5, 0); W_(0x6C6, 0);
+    }
     W_(0x6C0, 0); W_(0x6C1, 0); W_(0x6C2, 0); W_(0x6C3, 0);
   }
 
@@ -257,41 +290,55 @@ int main(void) {
     for (int i = 0; i < 3; i++) map[ent[i] / 8] |= (0x80ULL | phys[i]) << (8 * (ent[i] % 8));
     W_(0x6C1, map[0]);
     W_(0x6C2, map[1]);
+    // vMCID map (when built): 5 -> 10, 1 -> 13, 7 -> 3, the last entry vmb -> 6; 4 unmapped -> default MCID 11
+    int vmb = nm > 0 ? nm - 1 : 1;
+    vm_g = vm; nm_g = nm; defm_g = 11 & mm; mmap_g[0] = mmap_g[1] = 0;
+    int ment[4] = {5, 1, 7, vmb}; uint64_t mphys[4] = {10 & mm, 13 & mm, 3 & mm, 6 & mm};
+    for (int i = 0; i < 4; i++)
+      if (vm && ment[i] < nm) mmap_g[ment[i] / 8] |= (0x80ULL | mphys[i]) << (8 * (ment[i] % 8));
+    if (vm) { W_(0x6C5, mmap_g[0]); W_(0x6C6, mmap_g[1]); }
     uint64_t em_r = pa ? 3 : 1, em_m = pa ? 4 : 2, eh_r = pa ? 5 : 1, eh_m = pa ? 6 : 2;
     W_(0x6C3, IDS(va, 5));                // the guest's srmcfg, as a hypervisor would restore it
-    W_(0x6C0, 1 | (def << 16));
+    W_(0x6C0, 1 | (def << 16) | (vm ? defm_g << 4 : 0));
     if (pa) W_(0x7C1, 3);                 // VS association off: V=1 accesses carry vsrmcfg
-    expect_lower("VS, vsrmcfg vRCID va", lower(1, 1, 0, 0, 1), C_VS, pa_, 5);
+    expect_lower("VS, vsrmcfg vRCID va", lower(1, 1, 0, 0, 1), C_VS, pa_, M(5));
     lower_t l = lower(1, 1, 0, 0, 1);
     CHECK(l.rd == IDS(va, 5), "VS reads srmcfg (translation on): %08x%08x, expected the virtual %08x%08x", H64(l.rd),
           H64(IDS(va, 5)));
-    expect_lower("VU, vsrmcfg vRCID va", lower(0, 1, 0, 0, 0), C_U, pa_, 5);
+    expect_lower("VU, vsrmcfg vRCID va", lower(0, 1, 0, 0, 0), C_U, pa_, M(5));
     l = lower(1, 1, 1, IDS(vc, 1), 1);    // the guest writes its srmcfg: no trap
-    expect_lower("VS writes srmcfg vRCID vc", l, C_VS, vc == va ? pa_ : pc, 1);
+    expect_lower("VS writes srmcfg vRCID vc", l, C_VS, vc == va ? pa_ : pc, M(1));
     CHECK(l.rd == IDS(vc, 1), "VS reads back srmcfg: %08x%08x", H64(l.rd));
     CHECK(R_(0x6C3) == IDS(vc, 1) && R_(0x181) == IDS(1, 2), "guest srmcfg write: vsrmcfg %08x%08x (expected %d/1), "
           "host srmcfg %08x%08x (expected 1/2)", H64(R_(0x6C3)), vc, H64(R_(0x181)));
-    expect_lower("VS writes srmcfg vRCID vb (last entry)", lower(1, 1, 1, IDS(vb, 1), 0), C_VS, pb, 1);
-    expect_lower("VS writes srmcfg vRCID vinv (unmapped)", lower(1, 1, 1, IDS(vinv, 4), 0), C_VS, def, 4);
-    expect_lower("VU, vsrmcfg vRCID vinv", lower(0, 1, 0, 0, 0), C_U, def, 4);
+    expect_lower("VS writes srmcfg vRCID vb, vMCID vmb (last entries)", lower(1, 1, 1, IDS(vb, vmb), 0), C_VS, pb, M(vmb));
+    expect_lower("VS writes srmcfg vRCID vinv, vMCID 4 (unmapped)", lower(1, 1, 1, IDS(vinv, 4), 0), C_VS, def, M(4));
+    expect_lower("VU, vsrmcfg vRCID vinv", lower(0, 1, 0, 0, 0), C_U, def, M(4));
     expect_lower("HS, translation on", lower(1, 0, 0, 0, 0), C_HS, eh_r, eh_m);
     expect_lower("U, translation on", lower(0, 0, 0, 0, 0), C_U, 1, 2);
     check_tag("M, translation on", probe_m(), em_r, em_m);
-    check_tag("HLV, translation on, vsrmcfg", probe_hlv(), def, 4);
+    check_tag("HLV, translation on, vsrmcfg", probe_hlv(), def, M(4));
     if (pa) {
       // VS association on, guest-owned sqosid (translated); VU keeps vsrmcfg
       W_(0x7C1, 7);
       l = lower(1, 1, 2, IDS(va, 7), 2);  // the guest writes its sqosid: no trap
-      expect_lower("VS writes sqosid vRCID va", l, C_VS, pa_, 7);
+      expect_lower("VS writes sqosid vRCID va", l, C_VS, pa_, M(7));
       CHECK(l.rd == IDS(va, 7) && R_(0x5C0) == IDS(va, 7), "VS reads back sqosid %08x%08x, M reads %08x%08x",
             H64(l.rd), H64(R_(0x5C0)));
-      expect_lower("VU with VS association on", lower(0, 1, 0, 0, 0), C_U, def, 4);
-      check_tag("HLV, VS association, translated", probe_hlv(), pa_, 7);
-      check_tag("M with MPRV, MPP=S, MPV=1", probe_mprv(1, 1), pa_, 7);
+      expect_lower("VU with VS association on", lower(0, 1, 0, 0, 0), C_U, def, M(4));
+      check_tag("HLV, VS association, translated", probe_hlv(), pa_, M(7));
+      check_tag("M with MPRV, MPP=S, MPV=1", probe_mprv(1, 1), pa_, M(7));
       // a map change applies to the next access
       map[va / 8] = (map[va / 8] & ~(0xFFULL << (8 * (va % 8)))) | ((0x80ULL | (6 & rm)) << (8 * (va % 8)));
       if (va < 8) W_(0x6C1, map[0]); else W_(0x6C2, map[1]);
-      expect_lower("VS after remapping vRCID va -> 6", lower(1, 1, 0, 0, 0), C_VS, 6 & rm, 7);
+      expect_lower("VS after remapping vRCID va -> 6", lower(1, 1, 0, 0, 0), C_VS, 6 & rm, M(7));
+      if (vm && nm > 7) {
+        // and a vMCID remap: 7 -> 2
+        mmap_g[0] = (mmap_g[0] & ~(0xFFULL << 56)) | ((0x80ULL | (2 & mm)) << 56);
+        W_(0x6C5, mmap_g[0]);
+        expect_lower("VS after remapping vMCID 7 -> 2", lower(1, 1, 0, 0, 0), C_VS, 6 & rm, M(7));
+        CHECK(M(7) == (2 & mm), "vMCID 7 now maps to 2");
+      }
       // translation off again: the guest traps, sqosid is used as physical
       W_(0x6C0, 0);
       expect_lower("VS writes srmcfg, translation off again", lower(1, 1, 1, IDS(1, 1), 0), C_VIRT, 0, 0);
@@ -303,6 +350,7 @@ int main(void) {
     }
     expect_lower("VU, translation off: srmcfg", lower(0, 1, 0, 0, 0), C_U, 1, 2);
     W_(0x6C1, 0); W_(0x6C2, 0); W_(0x6C3, 0);
+    if (vm) { W_(0x6C5, 0); W_(0x6C6, 0); }
   }
 
   // ---- 7. everything off: srmcfg again

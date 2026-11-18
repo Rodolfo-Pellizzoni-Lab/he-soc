@@ -25,7 +25,7 @@ into (way partitioning). There is no bandwidth controller and no capacity monito
 Sources: `riscv_pkg.sv` (`CSR_SRMCFG`), `csr_regfile.sv` (register, access checks, `qos_fetch_ids_o` /
 `qos_data_ids_o`), `cva6.sv` (tagging of the core's AXI port).
 
-## Privilege association and virtualized RCIDs (custom CSRs)
+## Privilege association and virtualized RCIDs / MCIDs (custom CSRs)
 
 Two custom extensions on top of Ssqosid, modelled on Arm MPAM's per-exception-level PARTID registers
 (`MPAM3_EL3`, `MPAM2_EL2`, `MPAM1_EL1`) and its virtual-PARTID mapping (`MPAMVPMn_EL2`):
@@ -33,9 +33,11 @@ Two custom extensions on top of Ssqosid, modelled on Arm MPAM's per-exception-le
 - **Privilege association**: M-mode, HS-mode and VS-mode accesses can carry IDs of their own instead of
   `srmcfg`, so firmware, the hypervisor (or a non-virtualized kernel, which runs in HS mode) and a guest kernel
   are each charged to their own RCID/MCID while U-mode keeps the per-process `srmcfg`.
-- **vRCID translation**: a guest gets its own RCID space. With translation on, VS mode reads and writes
-  `srmcfg` (and `sqosid`) without trapping; the values are virtual, and every V=1 access carries the physical
-  RCID a hypervisor-owned table gives the guest's RCID. MCIDs are not translated (as MPAM's PMG).
+- **vRCID / vMCID translation**: a guest gets its own RCID and MCID spaces. With translation on, VS mode reads and
+  writes `srmcfg` (and `sqosid`) without trapping; the values are virtual, and every V=1 access carries the
+  physical RCID and MCID that hypervisor-owned tables give the guest's. Unlike MPAM, whose monitoring group (PMG)
+  lives inside a PARTID and so needs no translation of its own, CBQRI selects monitoring counters by MCID alone:
+  without translation two guests using the same MCID would share counters.
 
 | CSR | Address | Access | Layout | Meaning |
 |---|---|---|---|---|
@@ -43,13 +45,15 @@ Two custom extensions on top of Ssqosid, modelled on Arm MPAM's per-exception-le
 | `mqosid` | 0x7C0 | M | as `srmcfg` | IDs of M-mode accesses (`mqosctl[0]`) |
 | `hqosid` | 0x6C4 | HS, M | as `srmcfg` | IDs of HS-mode accesses (`mqosctl[1]`) |
 | `sqosid` | 0x5C0 | HS, M; VS only when `hqosctl[0]` | as `srmcfg` | IDs of VS-mode accesses (`mqosctl[2]`); virtual when `hqosctl[0]` |
-| `hqosctl` | 0x6C0 | HS, M | [0] VEN, [16+] default RCID | vRCID translation enable; the physical RCID of unmapped vRCIDs |
+| `hqosctl` | 0x6C0 | HS, M | [0] VEN, [15:4] default MCID, [27:16] default RCID | guest ID translation enable; the physical MCID / RCID of unmapped virtual IDs |
 | `hrcidmap0` | 0x6C1 | HS, M | 8 bytes, byte i = {V (bit 7), physical RCID} | vRCID i -> physical RCID, i = 0..7 |
 | `hrcidmap1` | 0x6C2 | HS, M | same | vRCIDs 8..15 |
 | `vsrmcfg` | 0x6C3 | HS, M | as `srmcfg` | the guest's `srmcfg` (what VS mode sees as `srmcfg` when VEN = 1), for save/restore on a world switch |
+| `hmcidmap0` | 0x6C5 | HS, M | 8 bytes, byte i = {V (bit 7), physical MCID} | vMCID i -> physical MCID, i = 0..7 |
+| `hmcidmap1` | 0x6C6 | HS, M | same | vMCIDs 8..15 |
 
-All reset to 0 (association off, translation off: the behaviour of plain Ssqosid). The table has
-`ariane_pkg::QOS_NUM_VRCID` = 16 entries with 4-bit RCIDs (2^RCID width, at most 16 on RV64).
+All reset to 0 (association off, translation off: the behaviour of plain Ssqosid). The tables have
+`ariane_pkg::QOS_NUM_VRCID` = 16 and `QOS_NUM_VMCID` = 16 entries with 4-bit IDs (2^ID width, at most 16 on RV64).
 
 **Build knobs** (defines with defaults in `ariane_pkg.sv`; set them as make variables / environment for the
 Questa and FPGA flows, `SOC_EXTRA_DEFINES="QOS_NUM_VRCID=0 ..."` for xsim, `env` of the MCP's `fpga_build`), so
@@ -60,7 +64,8 @@ area and timing can be compared with and without each addition:
 | `QOS_RCID_WIDTH` | 4 | implemented RCID bits (at most 12); sizes the SoC user field, the LLC's CBQRI table and the vRCID table |
 | `QOS_MCID_WIDTH` | 4 | implemented MCID bits (at most 12) |
 | `QOS_PRIV_ASSOC` | 1 | 0: no privilege association; `mqosctl`, `mqosid`, `hqosid`, `sqosid` are illegal CSRs, their logic is removed |
-| `QOS_NUM_VRCID` | 16 | vRCID table entries (capped at 2^`QOS_RCID_WIDTH` and 16 on RV64); 0: no translation, `hqosctl`, `hrcidmap0/1`, `vsrmcfg` are illegal, their logic is removed |
+| `QOS_NUM_VRCID` | 16 | vRCID table entries (capped at 2^`QOS_RCID_WIDTH` and 16 on RV64); 0: no translation, `hqosctl`, `hrcidmap0/1`, `vsrmcfg` (and the vMCID CSRs) are illegal, their logic is removed |
+| `QOS_NUM_VMCID` | 16 | vMCID table entries (capped at 2^`QOS_MCID_WIDTH` and 16 on RV64); 0: guest MCIDs pass through untranslated, `hmcidmap0/1` are illegal, `hqosctl[15:4]` reads 0. Needs the vRCID CSRs |
 
 With both features off, the core behaves as plain Ssqosid (only `srmcfg`). Translation and the VS parts also need
 the hypervisor extension (`CVA6ConfigHExtEn`). `t_qosv` detects which features exist (an absent CSR must raise an
@@ -74,11 +79,13 @@ current privilege; loads and stores use the effective load/store privilege (`mst
 |---|---|---|
 | M | `mqosctl[0]` | `mqosid` |
 | HS (S, V=0) | `mqosctl[1]` | `hqosid` |
-| VS (S, V=1) | `mqosctl[2]` | `sqosid`, RCID translated if VEN |
-| VS, VU (V=1) | VEN | `vsrmcfg`, RCID translated |
+| VS (S, V=1) | `mqosctl[2]` | `sqosid`, RCID and MCID translated if VEN |
+| VS, VU (V=1) | VEN | `vsrmcfg`, RCID and MCID translated |
 | anything else | | `srmcfg` |
 
-Translation: vRCID r maps to `hrcidmap[r].prcid` when that entry is valid, else to the default RCID of `hqosctl`.
+Translation: vRCID r maps to `hrcidmap[r].prcid` when that entry is valid, else to the default RCID of `hqosctl`;
+vMCID m likewise through `hmcidmap[m]` and the default MCID. Device DMA submitted by a guest carries the translated
+IDs too (the doorbell write is tagged by the core).
 
 **Guest access.** VEN = 0: VS/VU accesses to `srmcfg` and `sqosid` raise a virtual-instruction exception (Ssqosid
 behaviour, the hypervisor emulates; with `mqosctl[2]` set, `sqosid` then holds physical IDs the hypervisor chose).
@@ -269,7 +276,8 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
   `srmcfg`; loads under MPRV (MPP = S, U; MPV = 1) and HLV from M mode taking the effective privilege's IDs;
   VS/VU access to `srmcfg`/`sqosid` trapping with translation off and reaching the guest copies (no trap,
   virtual values read back, host `srmcfg` untouched) with it on; translation through both map CSRs, the default
-  RCID for an invalid entry, a remap applying to the next access.
+  RCID for an invalid entry, a remap applying to the next access; the same for guest MCIDs through `hmcidmap`
+  (untranslated again once VEN is cleared), and the vMCID CSRs illegal when `QOS_NUM_VMCID=0`.
 - **`t_iojob`** checks device DMA tags (accelerator socket, "Device DMA" above): capability and reset values, write
   masks; three jobs queued by one core under three `srmcfg` values, each job's completion carrying its submitter's
   tag; jobs queued by cores 1 and 2 (their source ports in the tag); a full queue (OVF, DROPPED, the dropped job never

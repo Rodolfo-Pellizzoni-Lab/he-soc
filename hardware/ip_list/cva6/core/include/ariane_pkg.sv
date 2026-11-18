@@ -358,6 +358,7 @@ package ariane_pkg;
     //   QOS_NUM_VRCID                    entries of the vRCID translation table (default 16, capped at
     //                                    2^QOS_RCID_WIDTH and 2*XLEN/8); 0 removes translation (hqosctl,
     //                                    hrcidmap0/1, vsrmcfg). Both need the hypervisor extension for the VS parts.
+    //   QOS_NUM_VMCID                    entries of the vMCID translation table (default 16; 0 removes hmcidmap0/1)
 `ifdef QOS_RCID_WIDTH
     localparam int unsigned QOS_RCID_WIDTH = `QOS_RCID_WIDTH;
 `else
@@ -404,6 +405,25 @@ package ariane_pkg;
         logic                      v;
         logic [QOS_RCID_WIDTH-1:0] prcid;
     } qos_vrcid_map_t;
+    // vMCID translation (CSR_HMCIDMAP0/1, default MCID in hqosctl[15:4]): the guest's MCIDs translated like its RCIDs,
+    // under the same enable (hqosctl.VEN); one byte per virtual MCID, {V (bit 7), physical MCID (low bits)}. Needs
+    // the vRCID CSRs (QOS_VRCID). Knob QOS_NUM_VMCID: entries (default 16, capped at 2^QOS_MCID_WIDTH and
+    // 2*XLEN/8); 0 removes it (guest MCIDs then pass through untranslated).
+`ifdef QOS_NUM_VMCID
+    localparam int unsigned QOS_NUM_VMCID_CFG = `QOS_NUM_VMCID;
+`else
+    localparam int unsigned QOS_NUM_VMCID_CFG = 16;
+`endif
+    localparam int unsigned QOS_NUM_VMCID_MAX = (2**QOS_MCID_WIDTH < 2 * QOS_VRCID_PER_CSR) ?
+                                                2**QOS_MCID_WIDTH : 2 * QOS_VRCID_PER_CSR;
+    localparam int unsigned QOS_NUM_VMCID     = (QOS_NUM_VMCID_CFG < QOS_NUM_VMCID_MAX) ?
+                                                QOS_NUM_VMCID_CFG : QOS_NUM_VMCID_MAX;
+    localparam bit          QOS_VMCID         = QOS_VRCID && (QOS_NUM_VMCID > 0);
+    localparam int unsigned QOS_VMCID_DIM     = (QOS_NUM_VMCID > 0) ? QOS_NUM_VMCID : 1;   // array size
+    typedef struct packed {
+        logic                      v;
+        logic [QOS_MCID_WIDTH-1:0] pmcid;
+    } qos_vmcid_map_t;
 
     // ---------------
     // Fetch Stage
