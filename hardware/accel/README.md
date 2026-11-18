@@ -14,7 +14,9 @@ slot 0..7 --irq_o--> OR --> PLIC source 8 = interrupt ID 9 (the cluster end-of-c
 | Registers of slot `s` | `0x1000_0000 + s * 0x1_0000`, 64 KB, 32-bit registers |
 | Empty slot / past slot 7 | DECERR, read data `0xdeadbeef` (CVA6 takes no exception on AXI errors: software just sees the data) |
 | QoS probe `0x103F_0000` (8 bytes) | read `+0x0`: AXI user field of that read; `+0x4`: user field of the last write there (QoS tag, see `hardware/docs/qos.md`) |
-| Tag policy of slot `s`: `0x103F_0100 + 8*s` | `+0` TAG_POLICY (RW): bit 31 FORCE, `[UserWidth-1:0]` (`[11:0]` with four cores, `[12:0]` with eight) the user field to stamp on the slot's DMA while forced; `+4` LAST_USER (R): the user field of the slot's most recent DMA request, after the policy (see "QoS tags" below) |
+| Tag policy of slot `s`: `0x103F_0100 + 8*s` | `+0` TAG_POLICY (RW): bit 31 FORCE, bit 30 RANGE_EN, bit 29 DEV_OFF, `[UserWidth-1:0]` (`[11:0]` with four cores, `[12:0]` with eight) the slot's default tag; `+4` LAST_USER (R): the user field of the slot's most recent DMA request, after the policy (see "QoS tags" below) |
+| Tag capabilities of slot `s`: `0x103F_0200 + 8*s` | `+0` QOS_CAP (R): bit 0 JOB (the device tags per job), `[15:8]` number of range entries; `+4` LAST_SRC (R): the rule that tagged the slot's most recent DMA request, `[1:0]` 0 device, 1 range (entry in `[15:8]`), 2 FORCE, 3 default |
+| Address-range tags, entry `k`: `0x103F_1000 + 16*k` | `+0` BASE, `+4` LIMIT (first / last page, physical address >> 12, inclusive), `+8` CFG: bit 31 V, bit `16+s` applies to slot `s`, `[UserWidth-1:0]` the tag; 16 entries (`SOCK_QOS_RANGES`), past the last: DECERR |
 | Accelerator does not acknowledge in 4096 cycles | SLVERR, read data `0xdeadbeef` (the simulation does not hang) |
 | 64-bit CPU access | two register accesses, low word first |
 | Atomics (AMO) to the window | refused, SLVERR |
@@ -133,6 +135,44 @@ The socket is the trusted tagging point: an accelerator can only ask for a tag, 
 in the socket's own window, can override it. The CCU writes its port index into the low `QosUserLsb` bits of the
 user field, so the socket clears them; `LAST_USER` therefore shows the tag with source port 0 while `TAG` inside
 the accelerator keeps the requester's port.
+
+### Tag rules: per-job tags, address ranges, the default
+
+The socket picks the tag of every DMA request by these rules, first match wins (design and rationale:
+`hardware/docs/qos.md`, "Device DMA"):
+
+| | Condition | Tag | `LAST_SRC` |
+|---|---|---|---|
+| 1 | `TAG_POLICY.FORCE` | the slot's default (`TAG_POLICY[UserWidth-1:0]`) | 2 |
+| 2 | `TAG_POLICY.RANGE_EN` and a valid range entry for this slot holds the request's address | the lowest such entry's tag (charged to the owner of the memory) | 1, entry in `[15:8]` |
+| 3 | the device tags per job (`QOS_CAP.JOB`) and `TAG_POLICY.DEV_OFF` is clear | the device's `mem_user_o` (charged to whoever submitted the job) | 0 |
+| 4 | otherwise | the slot's default | 3 |
+
+`QOS_CAP.JOB` comes from the socket parameter `JobTagSlots` (default: every slot). A device that does not keep a tag
+per job (it tags with whoever wrote last, or not at all) belongs out of it: its `DEV_OFF` then reads 1 and cannot be
+cleared, so its DMA is tagged by address range or with the default. `DEV_OFF` set on a device that does tag per job
+makes the socket ignore its tags the same way. Range entries are shared by the slots (each names the slots it
+applies to), match physical pages (`BASE <= address[43:12] <= LIMIT`, `address[63:44] == 0`), and are written
+invalid first by `accel_range_set()` (`software/accel/include/accel.h`) while they change.
+
+### Job queue (template accelerators)
+
+The template keeps the tag with each job, so jobs from different submitters can be queued and each job's DMA carries
+its own submitter's tag ("Design 1": the device is trusted to carry the tag). A job is a 32-byte descriptor in memory
+(`+0x00` SRC, `+0x08` DST, `+0x10` LEN [31:0] / ARG [63:32], `+0x18` completion); one 32-bit write of its address >> 3
+to `SUBMIT` (`0x40`) queues it together with the user field of that write, so concurrent submitters cannot mix up
+each other's register values. The accelerator reads the descriptor, does the work and writes the completion
+(`[0]` DONE, `[1]` ERR, `[31:16]` the job's tag, `[63:32]` cycles), all with the job's tag; then it sets `STATUS.DONE`
+(the interrupt, with IRQ_EN). `QSTAT` (`0x44`): `[7:0]` jobs waiting, `[15:8]` queue depth, `[16]` OVF (write 1 to
+clear); a `SUBMIT` to a full queue is dropped and counted in `DROPPED` (`0x48`): CVA6 ignores bus errors, so a write
+cannot report it. Jobs run in submission order, one at a time; `START` (the register path) still works and goes first
+when both arrive in the same cycle. `crc32` has no queue (its single job is still tagged with whoever started it).
+`accel_submit()` in `accel.h` fences, writes `SUBMIT` and reads `QSTAT` back: the tag is taken when the write leaves
+the core, so the read-back keeps a caller from changing `srmcfg` (or its privilege) before that.
+
+Build knobs (defines, `make` variables, `fpga_build` environment): `SOCK_QOS_RANGES` (range entries, default 16, 0
+removes the table and its comparators) and `ACCEL_JOB_DEPTH` (queue depth of template accelerators, default 4, 0
+removes the queue; `SUBMIT` is then ignored and `QSTAT` reads 0).
 
 An accelerator must keep `mem_user_o` stable with the rest of the request until `mem_gnt_i` (the unit testbench
 checks it, and `set_user()` sets the user field its register driver presents; `last_mem_user` holds the tag of the

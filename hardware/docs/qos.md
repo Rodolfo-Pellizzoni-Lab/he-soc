@@ -131,7 +131,7 @@ and `ariane_axi_soc::qos_user(tag)` to build one.
 | host xbar, CDC FIFOs, ID remapper, AMO/LR-SC adapters | pass `user` through |
 | LLC (`ip_list/axi_llc`) | allocates by the tag's RCID and AT (next section). Refills and evictions carry the tag of the request that caused them (new descriptor field `a_x_user`); config-port flushes carry 0 |
 | DRAM / HyperRAM / peripherals | ignore it |
-| Accelerator socket (`hardware/accel`, CCU port `CcuAccelPort`: 4, 8 with eight cores) | tags each slot's DMA either with the user field the accelerator presents (the template: the tag of the hart that wrote START, so I/O is charged to the hart it works for) or with a tag the OS forces per slot in `TAG_POLICY` (`0x103F_0100 + 8*slot`); `LAST_USER` reads it back. `t_iotag` |
+| Accelerator socket (`hardware/accel`, CCU port `CcuAccelPort`: 4, 8 with eight cores) | tags each DMA request with the device's per-job tag (the template: the tag of the write that started or submitted the job), an address range's tag, or the slot's default, by the rules of the next section; `LAST_USER` / `LAST_SRC` read back the last request's tag and rule. `t_iotag`, `t_iojob` |
 | Other masters (debug module, iDMA, uDMA, cluster, the Xilinx Ethernet DMA on CCU port `CcuEthPort`: 5, 9 with eight cores) | tag 0 (RCID 0, MCID 0) |
 
 **The source-port bits also key LR/SC reservations.** Both `axi_riscv_atomics` adapters (L2 and L3,
@@ -141,6 +141,64 @@ separate read and write tables) does not keep the LR's AR ID and the SC's AW ID 
 flight, so an ID-keyed table only worked by timing luck: on the VCU118 every SC to the uncached L2 failed while
 simulation (instant UART / L2 responses) passed. The address-based clear on any write is unchanged. Masters other than
 the cores share entry 0.
+
+## Device DMA: per-job tags, address ranges, defaults
+
+The goal: a device's DMA is charged to whoever asked for the work, per RCID, also when several tenants (and VMs, with
+their own RCID spaces) share the device. The cores already put a hardware-set tag on every request, so the write that
+hands a device its work (the doorbell) carries the submitter's tag: `srmcfg`, the privilege-associated IDs, or a
+guest's vRCID translated by `hrcidmap` (the previous section). That tag is physical by the time it reaches the device;
+the socket translates nothing.
+
+**Trust model ("Design 1").** A device that keeps the doorbell's tag with each job and puts it on that job's DMA is
+trusted to do so, the way a PCIe device is trusted to stamp the right requester ID and PASID on each DMA (which the
+IOMMU uses for the memory-isolation decision itself). The socket does not check per-job tags; it can only override
+them per slot. A socket-held job table that hands the device handles instead of tags (so the device cannot use a tag
+nobody submitted) is the stronger alternative; it is not built.
+
+**Rules.** The socket picks each DMA request's tag (registers and the rule table: `hardware/accel/README.md`, "Tag
+rules"; RTL: `hardware/accel/accel_socket.sv`):
+
+1. `FORCE` -> the slot's default tag: the device as its own principal, the IOMMU device context's `DC.ta` model.
+2. `RANGE_EN` and a range entry for the slot holds the address -> that entry's tag: **charged to the owner of the
+   memory**, for devices that do not tag per job. Right when each tenant's buffers are its own (per-tenant buffer
+   pools registered once); shared buffers and the device's own memory are charged to whichever entry or default
+   covers them. Physical pages, programmed by the host; a guest's ranges would go through the hypervisor (trap and
+   translate the tag).
+3. the device tags per job (`QOS_CAP.JOB`, `DEV_OFF` clear) -> the device's tag: **charged to whoever submitted the
+   job**.
+4. otherwise -> the slot's default.
+
+**Job queue.** The template accelerator queues jobs from several submitters, each with its own tag: a job is a
+descriptor in memory and one 32-bit `SUBMIT` write queues it with that write's tag (README, "Job queue"). Its
+descriptor read, data and completion write all carry the tag. A device that runs several jobs at once needs the same
+per-job tag column in whatever job table it already has, carried to its DMA port with each request.
+
+**Software.**
+
+- The tag is taken when a request leaves the core: change `srmcfg` (or the privilege) only after the doorbell write
+  has left (`accel_submit()` reads a device register back). A kernel that submits for a task while it runs that
+  task's `srmcfg` charges the task; with the HS privilege association on (`mqosctl[1]`), kernel accesses carry
+  `hqosid` instead, so a driver submitting for a task must switch `hqosid` (or leave the association off).
+- Work done for someone else (deferred submission, a hypervisor's I/O thread under virtio) carries the submitter's
+  tag unless that software switches it around the doorbell write.
+- Linux does not write `srmcfg` on context switch yet; nothing under Linux is charged per task until it does.
+
+**IOMMU.** Not needed for the tags. The SoC's RISC-V IOMMU (`ip_list/riscv-iommu`, no QoS-ID support) sits only in
+front of the S-mode iDMA; the socket's DMA reaches the coherence unit with physical addresses. An IOMMU in front of
+the socket is needed to give a slot (or a VF) to a VM: memory isolation, not tagging. The range check then belongs
+after it, on host-physical addresses.
+
+**Not built.** Virtual functions (per-VF register pages, default tags and range matching, a VF ID on the memory port;
+planned knob `ACCEL_NUM_VFS`, 0 = today), the IOMMU in front of the socket, the socket-held job table, weighted
+attribution of batched work, Linux support.
+
+**Build knobs** (defines, `make` variables, `fpga_build` environment), next to the CPU-side ones:
+
+| Knob | Default | Effect |
+|---|---|---|
+| `SOCK_QOS_RANGES` | 16 | address-range entries; 0 removes the table and its comparators |
+| `ACCEL_JOB_DEPTH` | 4 | job-queue depth of template accelerators; 0 removes the queue |
 
 ## LLC capacity controller (CBQRI)
 
@@ -198,7 +256,7 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
 
 ## Checking it
 
-**Tests** (both in the `sim_regress` suite `soc`):
+**Tests** (`t_qos` and `t_cbqri` are in the `sim_regress` suite `soc`; `t_qosv` and `t_iojob` run on their own):
 
 - **`t_qos`** checks `srmcfg`: reset value, WARL behaviour, and access in M, S, U, VS and VU mode.
   - Through the accelerator socket's **QoS probe** at `0x103F_0000`, every core reads back the user field
@@ -212,6 +270,14 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
   VS/VU access to `srmcfg`/`sqosid` trapping with translation off and reaching the guest copies (no trap,
   virtual values read back, host `srmcfg` untouched) with it on; translation through both map CSRs, the default
   RCID for an invalid entry, a remap applying to the next access.
+- **`t_iojob`** checks device DMA tags (accelerator socket, "Device DMA" above): capability and reset values, write
+  masks; three jobs queued by one core under three `srmcfg` values, each job's completion carrying its submitter's
+  tag; jobs queued by cores 1 and 2 (their source ports in the tag); a full queue (OVF, DROPPED, the dropped job never
+  runs); an M-mode `SUBMIT` with `mqosctl.M` carrying `mqosid`; the range rules (lowest entry wins, inclusive bounds,
+  V and slot bits, RANGE_EN / DEV_OFF / FORCE, misses to the device's tag or the default) on the example and crc32,
+  read back through `LAST_USER` / `LAST_SRC`. Builds without the queue or the table check that they are absent. The
+  accelerator unit test (`accel_unit_test(name='example')`) checks the tag of every DMA request of three queued jobs
+  (`mem_user_of(addr)` in `hardware/accel/tb/accel_tb.sv`).
 - **`t_cbqri`** has four parts:
   - **Register interface.** All fields, STATUS codes, and `CONFIG_LIMIT`/`READ_LIMIT` round trips.
   - **Isolation.** 8 victim lines (RCID 1, ways 0–7) and 80 reads of 40 aggressor lines (RCID 2,
@@ -230,7 +296,9 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
     (`srmcfg`, or a privilege-associated register with the guest RCID translated: the fetch IDs for
     instruction fetches, the load/store IDs otherwise), and AT = 1 exactly for instruction fetches.
   - At the **LLC input**, a request must carry a tag its source core issued for that 64-byte line, or, for
-    CCU write-backs, a tag another core issued for that line.
+    CCU write-backs, a tag another core or the accelerator socket issued for that line. (The socket's requests are
+    recorded at its port into the CCU, role `dma`: a socket write to a line dirty in a core's cache makes the CCU
+    write the core's data back with the socket's tag and the core's source port.)
   - At the **LLC output**, a refill must carry the user field of a recent LLC request to that line. An
     eviction must carry the user field of a recent request to that set. A write-back of an LLC flush has no
     requester: it carries user field 0 and AXI ID 0, so the memory SPU charges it to source 0, core 0's code
@@ -258,7 +326,9 @@ thrash of 48 dirty lines in one LLC set pass in that mode with 0 checker errors 
 **Not covered:**
 
 - Page-table walks (no test turns on virtual memory). They go through the D$ like other loads.
-- The CCU's own write-back path, which needs a CleanUnique/LR race on a dirty line.
+- The CCU's own write-back path for a core's CleanUnique/LR race on a dirty line. (Its write-back on behalf of
+  the accelerator socket is reached: in `t_iojob` the socket's writes to lines dirty in core 0's D$ make the CCU
+  write core 0's data back with the socket's tag and core 0's port, 131 times, all matching the socket's tags.)
 - The cluster build (`EXCLUDE_CLUSTER` off).
 
 ## Next steps
