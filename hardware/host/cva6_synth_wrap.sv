@@ -457,8 +457,10 @@ module cva6_synth_wrap
       .rst_ni ( rst_ni             ),
       .req_i      ( ace_ariane_req[i]               ),
       .resp_i     ( ace_ariane_resp[i]              ),
-      .csr_rcid_i ( i_ariane.csr_regfile_i.rcid_q   ),
-      .csr_mcid_i ( i_ariane.csr_regfile_i.mcid_q   )
+      .csr_rcid_i  ( i_ariane.csr_regfile_i.qos_data_ids_q.rcid  ),
+      .csr_mcid_i  ( i_ariane.csr_regfile_i.qos_data_ids_q.mcid  ),
+      .csr_frcid_i ( i_ariane.csr_regfile_i.qos_fetch_ids_q.rcid ),
+      .csr_fmcid_i ( i_ariane.csr_regfile_i.qos_fetch_ids_q.mcid )
     );
     `endif
 

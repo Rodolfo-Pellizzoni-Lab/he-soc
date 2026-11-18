@@ -352,14 +352,58 @@ package ariane_pkg;
     // srmcfg (0x181) holds the RCID in bits 11:0 and the MCID in bits 27:16. These are the implemented widths
     // (at most 12 each); the other bits are read-only zero. Every AXI AR and AW the core issues carries
     // {AT, MCID, RCID} in user[QOS_TAG_WIDTH-1:0], AT being the CBQRI access type (0 data, 1 code).
+    // Build knobs (+define, or the make variable of the same name, see hardware/Makefile; hardware/docs/qos.md):
+    //   QOS_RCID_WIDTH / QOS_MCID_WIDTH  implemented ID widths (default 4 each, at most 12)
+    //   QOS_PRIV_ASSOC                   0 removes the privilege association CSRs (mqosctl, mqosid, hqosid, sqosid)
+    //   QOS_NUM_VRCID                    entries of the vRCID translation table (default 16, capped at
+    //                                    2^QOS_RCID_WIDTH and 2*XLEN/8); 0 removes translation (hqosctl,
+    //                                    hrcidmap0/1, vsrmcfg). Both need the hypervisor extension for the VS parts.
+`ifdef QOS_RCID_WIDTH
+    localparam int unsigned QOS_RCID_WIDTH = `QOS_RCID_WIDTH;
+`else
     localparam int unsigned QOS_RCID_WIDTH = 4;
+`endif
+`ifdef QOS_MCID_WIDTH
+    localparam int unsigned QOS_MCID_WIDTH = `QOS_MCID_WIDTH;
+`else
     localparam int unsigned QOS_MCID_WIDTH = 4;
+`endif
     localparam int unsigned QOS_TAG_WIDTH  = QOS_RCID_WIDTH + QOS_MCID_WIDTH + 1;
     typedef struct packed {
         logic                      at;
         logic [QOS_MCID_WIDTH-1:0] mcid;
         logic [QOS_RCID_WIDTH-1:0] rcid;
     } qos_tag_t;
+    // An {MCID, RCID} pair: srmcfg and the custom QoS-ID registers (CSR_MQOSID, CSR_HQOSID, CSR_SQOSID,
+    // CSR_VSRMCFG) all use srmcfg's layout (RCID in bits 11:0, MCID in bits 27:16).
+    typedef struct packed {
+        logic [QOS_MCID_WIDTH-1:0] mcid;
+        logic [QOS_RCID_WIDTH-1:0] rcid;
+    } qos_ids_t;
+    // Privilege association (CSR_MQOSCTL, CSR_MQOSID, CSR_HQOSID, CSR_SQOSID)
+`ifdef QOS_PRIV_ASSOC
+    localparam bit QOS_PRIV_ASSOC = (`QOS_PRIV_ASSOC) != 0;
+`else
+    localparam bit QOS_PRIV_ASSOC = 1'b1;
+`endif
+    // vRCID translation (CSR_HQOSCTL, CSR_HRCIDMAP0/1, CSR_VSRMCFG): one byte per virtual RCID in the map CSRs,
+    // {V (bit 7), physical RCID (low bits)}
+`ifdef QOS_NUM_VRCID
+    localparam int unsigned QOS_NUM_VRCID_CFG = `QOS_NUM_VRCID;
+`else
+    localparam int unsigned QOS_NUM_VRCID_CFG = 16;
+`endif
+    localparam int unsigned QOS_VRCID_PER_CSR = riscv::XLEN / 8;
+    localparam int unsigned QOS_NUM_VRCID_MAX = (2**QOS_RCID_WIDTH < 2 * QOS_VRCID_PER_CSR) ?
+                                                2**QOS_RCID_WIDTH : 2 * QOS_VRCID_PER_CSR;
+    localparam int unsigned QOS_NUM_VRCID     = (QOS_NUM_VRCID_CFG < QOS_NUM_VRCID_MAX) ?
+                                                QOS_NUM_VRCID_CFG : QOS_NUM_VRCID_MAX;
+    localparam bit          QOS_VRCID         = RVH && (QOS_NUM_VRCID > 0);
+    localparam int unsigned QOS_VRCID_DIM     = (QOS_NUM_VRCID > 0) ? QOS_NUM_VRCID : 1;   // array size
+    typedef struct packed {
+        logic                      v;
+        logic [QOS_RCID_WIDTH-1:0] prcid;
+    } qos_vrcid_map_t;
 
     // ---------------
     // Fetch Stage

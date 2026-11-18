@@ -1,7 +1,7 @@
 // Simulation-only QoS tag scoreboard (hardware/docs/qos.md). One instance per observation point:
 //
-//   Role "core"    at core i's AXI port (cva6_synth_wrap): every new AR/AW must carry RCID / MCID = the hart's srmcfg
-//                  (csr_rcid_i / csr_mcid_i) and AT = 1 exactly for instruction fetches (AR ID 4'b0000); records,
+//   Role "core"    at core i's AXI port (cva6_synth_wrap): every new AR/AW must carry the RCID / MCID the hart's CSR file
+//                  selects (csr_regfile: srmcfg or a privilege-associated register; fetch and load/store IDs) and AT = 1 exactly for instruction fetches (AR ID 4'b0000); records,
 //                  per 64-byte line, the tags core i put on its requests (the last 8 per line).
 //   Role "llc_in"  at the LLC slave port: every AR/AW must carry the tag its source core (user[QosUserLsb-1:0]) used for that
 //                  line. A tag that another core used for the line counts as "ccu" (a write-back the CCU issues for
@@ -54,9 +54,12 @@ module qos_monitor #(
   input logic  rst_ni,
   input req_t  req_i,
   input resp_t resp_i,
-  // role "core": the hart's srmcfg fields
+  // role "core": the IDs the hart's CSR file selects for loads/stores (csr_*) and for instruction fetches
+  // (csr_f*): srmcfg, or the privilege-associated registers with guest RCIDs translated (csr_regfile.sv)
   input logic [ariane_pkg::QOS_RCID_WIDTH-1:0] csr_rcid_i = '0,
   input logic [ariane_pkg::QOS_MCID_WIDTH-1:0] csr_mcid_i = '0,
+  input logic [ariane_pkg::QOS_RCID_WIDTH-1:0] csr_frcid_i = '0,
+  input logic [ariane_pkg::QOS_MCID_WIDTH-1:0] csr_fmcid_i = '0,
   // role "llc_out": the LLC is writing a dirty line back for a flush (its evict_flush event)
   input logic                                  llc_flush_evict_i = 1'b0
 );
@@ -156,12 +159,14 @@ module qos_monitor #(
   typedef struct { bit is_w; longint unsigned addr; int unsigned u; } obs_t;
   obs_t deferred[$];   // role "llc_out": requests sampled in the previous cycle
   task automatic check_csr(bit is_w, int unsigned u, bit fetch);
-    if (f_rcid(u) != csr_rcid_i || f_mcid(u) != csr_mcid_i || f_at(u) != fetch) begin
+    int unsigned er, em;
+    er = fetch ? csr_frcid_i : csr_rcid_i;
+    em = fetch ? csr_fmcid_i : csr_mcid_i;
+    if (f_rcid(u) != er || f_mcid(u) != em || f_at(u) != fetch) begin
       n_err++;
       if (n_err <= 10)
-        $display("[QOS] ERROR %s%0d %s src=%0d at=%0d rcid=%0d mcid=%0d: srmcfg has rcid=%0d mcid=%0d, at should be %0d",
-                 Name, Core, is_w ? "aw" : "ar", f_src(u), f_at(u), f_rcid(u), f_mcid(u), csr_rcid_i, csr_mcid_i,
-                 fetch);
+        $display("[QOS] ERROR %s%0d %s src=%0d at=%0d rcid=%0d mcid=%0d: the CSR file selects rcid=%0d mcid=%0d, at should be %0d",
+                 Name, Core, is_w ? "aw" : "ar", f_src(u), f_at(u), f_rcid(u), f_mcid(u), er, em, fetch);
     end
   endtask
 

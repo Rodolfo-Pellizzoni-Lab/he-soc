@@ -473,6 +473,15 @@ package riscv;
         CSR_SATP           = 12'h180,
         CSR_SCOUNTOVF       = 12'hDA0,
         CSR_SRMCFG         = 12'h181, // Ssqosid
+        // QoS-ID virtualization and privilege association (custom, hardware/docs/qos.md)
+        CSR_SQOSID         = 12'h5C0, // IDs of VS-mode accesses (guest kernel)
+        CSR_HQOSCTL        = 12'h6C0, // vRCID translation enable + default physical RCID
+        CSR_HRCIDMAP0      = 12'h6C1, // vRCID -> physical RCID table, entries 0..XLEN/8-1
+        CSR_HRCIDMAP1      = 12'h6C2, // entries XLEN/8..2*XLEN/8-1
+        CSR_VSRMCFG        = 12'h6C3, // the guest's srmcfg (virtual IDs), for the hypervisor to save/restore
+        CSR_HQOSID         = 12'h6C4, // IDs of HS-mode accesses
+        CSR_MQOSID         = 12'h7C0, // IDs of M-mode accesses
+        CSR_MQOSCTL        = 12'h7C1, // privilege association enables: [0] M, [1] HS, [2] VS
         CSR_SCONTEXT       = 12'h5A8,
         // Hypervisor-extended Supervisor Mode CSRs
         CSR_HSTATUS        = 12'h600,

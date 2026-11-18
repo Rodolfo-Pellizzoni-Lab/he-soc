@@ -130,6 +130,7 @@ a shadow variable (`<var>_xc`, lines marked `// xsim:`). Rewritten:
 | AXI data-width downsizer W/R blocks ↔ fall-through fifo | `axi_dw_downsizer.sv`, `fifo_v3.sv` (data_o) | first UART write, 2.53 ms |
 | SPU monitor CAM: each entry's block read `ptr_d[mmatch]`, written by the other entries' blocks (rewritten to `mmatch_next` from registered state, which also removed the `addr_idx_o` latch) | `spu/src/spu_r_chan.sv`, `spu_w_chan.sv` | only with the board-like DRAM path: a read response and a new request in the same cycle, 2.62 ms |
 | LLC channel splitter control ↔ its burst cutter and the descriptor arbiter (`i_rw_arb_tree`): the splitter's defaults for `curr_chan` and `desc_valid_o`, the cutter's for `desc_o` | `axi_llc_chan_splitter.sv`, `axi_llc_burst_cutter.sv` | t_qos with 8 cores, 4.26 ms (2026-10-30) |
+| CVA6 CSR write exceptions: `csr_update` computes `update_access_exception` / `virtual_update_access_exception` (default 0) and reads `ex_i`, which the commit stage builds from `csr_exception_o` | `cva6/core/csr_regfile.sv` | the first CSR write that traps (VS-mode `csrw srmcfg`, t_qosv, 2026-11-18); trapping reads were never affected |
 | CVA6 hypervisor loads/stores: the LSU's `which_op` defaults (`mmu_hs_ld_st_inst`, `translation_req`, ...) → MMU `csr_hs_ld_st_inst_o` → CSR file `ld_st_v` / `en_ld_st_translation` → MMU `lsu_dtlb_hit_o` → load unit → `which_op` | `cva6/core/load_store_unit.sv` | the first HLV/HSV (t_qosv, 2026-11-18) |
 
 The rewrite's final assignment must sit at the top level of the block. An earlier revision of the

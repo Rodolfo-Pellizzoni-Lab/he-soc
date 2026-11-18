@@ -210,6 +210,12 @@ ifdef NUM_CVA6
   compile_fpga += NUM_CVA6=$(NUM_CVA6)
 endif
 
+# QoS-ID knobs (make variable or environment; defaults in ip_list/cva6/core/include/ariane_pkg.sv, see
+# docs/qos.md): QOS_RCID_WIDTH / QOS_MCID_WIDTH (4), QOS_PRIV_ASSOC (1; 0 removes the privilege association
+# CSRs), QOS_NUM_VRCID (16; 0 removes vRCID translation)
+QOS_KNOBS := QOS_RCID_WIDTH QOS_MCID_WIDTH QOS_PRIV_ASSOC QOS_NUM_VRCID
+$(foreach k,$(QOS_KNOBS),$(if $($(k)),$(eval compile_flag += +define+$(k)=$($(k)))$(eval compile_fpga += $(k)=$($(k)))))
+
 ifdef exclude-cluster
   questa-cmd += +EXCLUDE_CLUSTER=$(exclude-cluster)
   compile_flag +=  +define+EXCLUDE_CLUSTER

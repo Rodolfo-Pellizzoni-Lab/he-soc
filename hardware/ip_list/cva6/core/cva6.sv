@@ -671,8 +671,7 @@ module cva6 import ariane_pkg::*; #(
   // ---------
   // CSR
   // ---------
-  logic [ariane_pkg::QOS_RCID_WIDTH-1:0] qos_rcid;
-  logic [ariane_pkg::QOS_MCID_WIDTH-1:0] qos_mcid;
+  ariane_pkg::qos_ids_t qos_fetch_ids, qos_data_ids;
 
   logic [riscv::SCONTEXTW-1:0] scontext_q, scontext_csr;
   logic [riscv::HCONTEXTW-1:0] hcontext_q, hcontext_csr;
@@ -758,8 +757,8 @@ module cva6 import ariane_pkg::*; #(
     .perf_overflow_irq_i    ( overflow_irq_perf_csr         ),
     .pmpcfg_o               ( pmpcfg                        ),
     .pmpaddr_o              ( pmpaddr                       ),
-    .qos_rcid_o             ( qos_rcid                      ),
-    .qos_mcid_o             ( qos_mcid                      ),
+    .qos_fetch_ids_o        ( qos_fetch_ids                 ),
+    .qos_data_ids_o         ( qos_data_ids                  ),
     .debug_req_i,
     .ipi_i,
     .irq_i,
@@ -1033,14 +1032,17 @@ module cva6 import ariane_pkg::*; #(
   // -------------------
   // QoS tag (Ssqosid)
   // -------------------
-  // Every AR and AW leaving the core carries {AT, MCID, RCID} of srmcfg in user[QOS_TAG_WIDTH-1:0]. A request
-  // that is waiting for ready keeps the tag it was raised with (AXI payload stability across an srmcfg write).
-  // AT = 1 for instruction fetches: the WB cache subsystem gives I$ refills AXI ID 4'b0000; the WT one does not
-  // distinguish them (AT = 0).
-  ariane_pkg::qos_tag_t qos_tag, qos_aw_tag_q, qos_ar_tag_q, qos_aw_tag, qos_ar_tag;
+  // Every AR and AW leaving the core carries {AT, MCID, RCID} in user[QOS_TAG_WIDTH-1:0]: the IDs the CSR file
+  // selects for the access (srmcfg, or a privilege-associated register, guest RCIDs translated; csr_regfile.sv).
+  // A request that is waiting for ready keeps the tag it was raised with (AXI payload stability across a CSR
+  // write or a privilege change). AT = 1 for instruction fetches: the WB cache subsystem gives I$ refills AXI ID
+  // 4'b0000, and they take the fetch IDs (current privilege); everything else takes the load/store IDs (effective
+  // ld/st privilege). The WT subsystem does not distinguish them (AT = 0, load/store IDs).
+  ariane_pkg::qos_tag_t qos_tag, qos_fetch_tag, qos_aw_tag_q, qos_ar_tag_q, qos_aw_tag, qos_ar_tag;
   logic                 qos_aw_hold_q, qos_ar_hold_q;
 
-  assign qos_tag = '{at: 1'b0, mcid: qos_mcid, rcid: qos_rcid};
+  assign qos_tag       = '{at: 1'b0, mcid: qos_data_ids.mcid,  rcid: qos_data_ids.rcid};
+  assign qos_fetch_tag = '{at: 1'b1, mcid: qos_fetch_ids.mcid, rcid: qos_fetch_ids.rcid};
 
   axi_req_t             qos_req;
 
@@ -1048,8 +1050,8 @@ module cva6 import ariane_pkg::*; #(
     qos_req    = axi_req_cache;
     qos_aw_tag = qos_aw_hold_q ? qos_aw_tag_q : qos_tag;
     qos_ar_tag = qos_ar_hold_q ? qos_ar_tag_q : qos_tag;
-    if (!qos_ar_hold_q && DCACHE_TYPE != int'(cva6_config_pkg::WT)) begin
-      qos_ar_tag.at = (axi_req_cache.ar.id[3:2] == 2'b00);
+    if (!qos_ar_hold_q && DCACHE_TYPE != int'(cva6_config_pkg::WT) && axi_req_cache.ar.id[3:2] == 2'b00) begin
+      qos_ar_tag = qos_fetch_tag;
     end
     qos_req.aw.user[ariane_pkg::QOS_TAG_WIDTH-1:0] = qos_aw_tag;
     qos_req.ar.user[ariane_pkg::QOS_TAG_WIDTH-1:0] = qos_ar_tag;
