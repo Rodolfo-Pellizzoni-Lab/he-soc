@@ -10,15 +10,16 @@
 // Bandwidth allocation (bc_bw_alloc per RCID): NBWBLKS = 1024 blocks stand for BC_CAPACITY bytes per accounting
 // period of BC_PERIOD cycles (implementation-defined registers below), so an RCID's reservation is
 // Rbwb * BC_CAPACITY / 1024 bytes per period. Release order, among descriptors the ordering rules allow:
-//   1. descriptors that cost nothing (hits the LLC routes through the miss pipeline to keep AXI order, flushes) and
-//      descriptors that a descriptor of an RCID still inside its reservation waits for (priority inheritance, two
-//      levels), oldest first;
+//   1. descriptors that cost nothing (hits the LLC routes through the miss pipeline to keep AXI order, flushes),
+//      then descriptors that a descriptor of an RCID still inside its reservation waits for (priority inheritance,
+//      two levels), oldest first;
 //   2. descriptors of RCIDs inside their reservation (used < reserved this period), oldest first;
 //   3. descriptors of RCIDs past their reservation with Mweight > 0, sharing what is left in proportion to Mweight
 //      (stride scheduling: each release adds 4096 / Mweight per line to the RCID's pass; lowest pass first);
 //   RCIDs past their reservation with Mweight = 0 wait for the next period (a hard limit).
 // The controller hands out BC_CAPACITY bytes per period: with BC_CTRL.PACE (the reset value) a token bucket paces all
-// releases to BC_CAPACITY / BC_PERIOD bytes per cycle (bursts of up to two lines), so that when the memory is the
+// releases to BC_CAPACITY / BC_PERIOD bytes per cycle (bursts of up to two lines; the arbiter picks a descriptor by
+// class first and then waits for its tokens, so a two-line one is not starved by one-line ones), so that when the memory is the
 // bottleneck the waiting happens here, where the arbiter orders it, and not in the in-order pipeline and memory
 // queues behind it (with one or two misses per core in flight the pool would otherwise never hold a choice). Set
 // BC_CAPACITY at or a little below what the memory sustains. Within that rate the arbiter is work-conserving:
@@ -200,12 +201,16 @@ module axi_llc_cbqri_bc #(
       e_tok[i] = (pool_q[i].refill & pool_q[i].evict) ? tok2 : tok1;
   end
 
-  // the three classes and the RCIDs with a class-3 candidate (no input from the blocks below: no comb ring)
+  // the classes, chosen without regard to the tokens (a descriptor of a lower class must not take the tokens a waiting
+  // one of a higher class accumulates for: a two-line descriptor would starve behind one-line ones), and the RCIDs
+  // with a class-3 candidate (no input from the blocks below: no comb ring)
+  logic [PoolDepth-1:0] f0;
   always_comb begin
     for (int unsigned i = 0; i < PoolDepth; i++) begin
-      c0[i] = rdy[i] & en_q & (e_free[i] | ((need1[i] | need2[i]) & e_tok[i]));
-      c1[i] = rdy[i] & (!en_q | (e_under[i] & e_tok[i]));
-      c2[i] = rdy[i] & en_q & e_wgt[i] & e_tok[i];
+      f0[i] = rdy[i] & en_q & e_free[i];                          // costs nothing: needs no tokens either
+      c0[i] = rdy[i] & en_q & !e_free[i] & (need1[i] | need2[i]);
+      c1[i] = rdy[i] & (!en_q | e_under[i]);
+      c2[i] = rdy[i] & en_q & e_wgt[i];
     end
     for (int unsigned r = 0; r < NumRcid; r++) begin
       has2[r] = 1'b0;
@@ -234,8 +239,11 @@ module axi_llc_cbqri_bc #(
     rmin = ti[0];
   end
 
+  logic sel_free;
   always_comb begin
-    if (|c0)      begin cand = c0; mode = 2'd0; end
+    sel_free = 1'b0;
+    if (|f0)      begin cand = f0; mode = 2'd0; sel_free = 1'b1; end
+    else if (|c0) begin cand = c0; mode = 2'd0; end
     else if (|c1) begin cand = c1; mode = 2'd1; end
     else begin
       mode = 2'd2;
@@ -243,9 +251,10 @@ module axi_llc_cbqri_bc #(
     end
     // the oldest candidate
     for (int unsigned i = 0; i < PoolDepth; i++) sel[i] = cand[i] & !(|(cand & older_q[i]));
-    any_sel = |sel;
     sel_idx = '0;
     for (int unsigned i = 0; i < PoolDepth; i++) if (sel[i]) sel_idx = IdxW'(i);
+    // the chosen descriptor leaves when its tokens are there; until then nothing else that costs bandwidth does
+    any_sel = |sel && (sel_free || e_tok[sel_idx]);
   end
 
   logic        load, rel_rd, rel_wr;

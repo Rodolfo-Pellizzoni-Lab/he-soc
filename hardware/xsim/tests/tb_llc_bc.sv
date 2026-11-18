@@ -10,6 +10,9 @@
 //      (priority inheritance releases RCID 1's writes that RCID 2's wait for)
 //   G  monitoring: per-MCID read+write / read / write byte counts equal the released traffic
 //   H  random traffic and configurations, then a drain: nothing is lost or stuck
+//   J  pacing with two-line descriptors: RCID 1 (Rbwb 40 %) misses always evict a dirty line (two lines each), RCID 2
+//      (1 block, Mweight 64) costs one line each: RCID 1 still gets its 40 % (a lower class must not take the
+//      tokens a higher one waits for; before the fix RCID 1 starved)
 //   I  a memory with a queue in front (8 descriptors, like the refill path and the memory's own FIFOs) and one
 //      descriptor in flight per RCID: with pacing (BC_CTRL.PACE) the waiting happens in the pool and Mweight
 //      32 / 64 / 128 still gives 1/7, 2/7, 4/7; without pacing the queue serves in arrival order (logged only);
@@ -121,6 +124,7 @@ module tb_llc_bc;
   // ------------------------------------------------------------------------------------------- traffic
   // generator: per RCID, a weight (0 = off) and the share of writes (percent); IDs: RCID r uses IDs 4r..4r+3
   int unsigned gen_on[NR], gen_wr_pct[NR], gen_flush_pct;
+  int          gen_evict_pct[NR] = '{-1, -1, -1, -1};      // -1: one in three refills evicts
   logic        gen_rand_ids;                            // H: any ID for any RCID
   int unsigned seq = 0;
   desc_t       inserted[$];
@@ -143,7 +147,8 @@ module tb_llc_bc;
     if (d.flush) begin d.refill = 1'b0; d.evict = $urandom_range(0, 1); end
     else begin
       d.refill = ($urandom_range(0, 9) != 0);           // 10 % pass-through (a hit routed through the miss path)
-      d.evict  = d.refill && ($urandom_range(0, 2) == 0);
+      d.evict  = d.refill && ((gen_evict_pct[r] < 0) ? ($urandom_range(0, 2) == 0)
+                                                     : ($urandom_range(0, 99) < gen_evict_pct[r]));
     end
     return d;
   endfunction
@@ -437,6 +442,26 @@ module tb_llc_bc;
     expect_share("I", 2, sh[2], 2.0/7 - 0.04, 2.0/7 + 0.04);
     expect_share("I", 3, sh[3], 4.0/7 - 0.04, 4.0/7 + 0.04);
     stop_and_drain();
+
+    // ---- J
+    mlp = 4;
+    dq  = 0;
+    wr32(32'h88, PERIOD); wr32(32'h90, CAP);
+    set_limit(1, 1, 1); set_limit(2, 1, 1); set_limit(3, 1, 1);
+    set_limit(1, 410, 0); set_limit(2, 1, 64);
+    gen_evict_pct[1] = 100; gen_evict_pct[2] = 0;
+    wr32(32'h80, 3);
+    traffic('{0, 1, 1, 0}, '{0, 0, 0, 0}, 0);
+    repeat (60) @(posedge clk);
+    repeat (2 * PERIOD) @(posedge clk);
+    shares(10 * PERIOD, sh);
+    begin
+      real frac = real'(rel_bytes[1]) / real'(10 * CAP);
+      $display("  J RCID 1 (two-line descriptors, Rbwb 40 %%): %5.1f %% of the bandwidth", 100.0 * frac);
+      if (frac < 0.37) fail($sformatf("J: RCID 1 got %.3f of the bandwidth with two-line descriptors", frac));
+    end
+    stop_and_drain();
+    gen_evict_pct[1] = -1; gen_evict_pct[2] = -1;
 
     if (fails == 0) $display("LLC BC UNIT PASS");
     else            $display("LLC BC UNIT FAIL: %0d failures", fails);

@@ -6,9 +6,15 @@
 //   0  regulation off                                                        (shares logged)
 //   R  RCID 1 Rbwb 50 % Mweight 0, RCID 2 20 % Mweight 0, RCID 3 1 block Mweight 16   -> 50 / 20 / 30 %
 //   W  Rbwb 1 block each, Mweight 32 / 64 / 128                                     -> 1/7, 2/7, 4/7
+//      Handing out 24 lines per period (a release every ~530 cycles): a core has one miss in flight and a line takes
+//      about 290 cycles, so at 45 lines (a release every 284 cycles) the heavy core's next miss is often not there
+//      yet when a release is due and the release goes to whoever waits (work-conserving; CBQRI weighs only the RCIDs
+//      actively requesting): the shares come out compressed (19.8 / 33.7 / 46.4 % in simulation). Logged as W45.
 //   F  RCID 1 Rbwb 40 % Mweight 1, RCIDs 2 and 3 1 block Mweight 255                 -> RCID 1 >= 40 %
 //   H  core 1 alone, Rbwb 20 % Mweight 0: 20 % of the controller's bandwidth (a hard limit); Mweight 16: more
-//   M  per-MCID monitors (read+write bytes, read bytes) against the APMU's per-core reads x 64
+//   M  per-MCID monitors against the APMU, with the workers stopped and the pipeline drained at both ends of the
+//      window so nothing is in flight: MCID 1 read+write bytes = 64 x (core 1's DRAM reads + writes), MCID 2 read
+//      bytes = 64 x core 2's reads, MCID 3 write bytes = 64 x core 3's writes (evictions its refills cause), exactly
 //   S  registers: capabilities, READ_LIMIT of the reset state, STATUS 2 / 3 / 5, BC_RATE
 #include "soc_test.h"
 
@@ -93,8 +99,12 @@ static void apmu_setup(void) {
     REG32(EVENT_SEL_BASE_ADDR  + (CTR0 + c) * COUNTER_BUNDLE_SIZE) = MEM_RD_REQ_CORE(c);
     REG32(EVENT_INFO_BASE_ADDR + (CTR0 + c) * COUNTER_BUNDLE_SIZE) = 0;
     REG32(COUNTER_BASE_ADDR    + (CTR0 + c) * COUNTER_BUNDLE_SIZE) = 0;
+    REG32(EVENT_SEL_BASE_ADDR  + (CTR0 + 3 + c) * COUNTER_BUNDLE_SIZE) = MEM_WR_REQ_CORE(c);
+    REG32(EVENT_INFO_BASE_ADDR + (CTR0 + 3 + c) * COUNTER_BUNDLE_SIZE) = 0;
+    REG32(COUNTER_BASE_ADDR    + (CTR0 + 3 + c) * COUNTER_BUNDLE_SIZE) = 0;
   }
 }
+static uint32_t apmu_wr(int c) { return REG32(COUNTER_BASE_ADDR + (CTR0 + 3 + c) * COUNTER_BUNDLE_SIZE) & 0x3FFFFFFFu; }
 static void apmu_read(uint32_t v[4]) {
   for (int c = 1; c < 4; c++) v[c] = REG32(COUNTER_BASE_ADDR + (CTR0 + c) * COUNTER_BUNDLE_SIZE) & 0x3FFFFFFFu;
 }
@@ -172,18 +182,16 @@ int main(void) {
     CHECK(pm(l, 1) >= 450 && pm(l, 1) <= 550, "R: core 1 (Rbwb 50 %%, Mweight 0) got %d per mille", pm(l, 1));
     CHECK(pm(l, 2) >= 160 && pm(l, 2) <= 240, "R: core 2 (Rbwb 20 %%, Mweight 0) got %d per mille", pm(l, 2));
     CHECK(pm(l, 3) >= 240 && pm(l, 3) <= 360, "R: core 3 (shares the rest) got %d per mille", pm(l, 3));
-    // M: monitors count at the controller, the APMU at the memory port: a few lines in flight apart
-    for (int c = 1; c < 4; c++) {
-      uint64_t m = (c == 1) ? m1 : (c == 2) ? m2 : m3;
-      int64_t d = (int64_t)(m & ((1ULL << 62) - 1)) / LINE - (int64_t)l[c];
-      CHECK(!(m >> 62) && d >= -6 && d <= 6, "M: MCID %d counted %d lines, the APMU %d (word %lx)", c,
-            (int)((m & ((1ULL << 62) - 1)) / LINE), l[c], m);
-    }
+    // (the monitors count at the controller and the APMU at the memory port, a few bus operations apart and
+    // with lines in flight between the two points: compared exactly in M)
   }
 
   // ---- W
   config(1, 32, 1, 64, 1, 128);
+  measure("W45", l);
+  REG32(BC + BC_CAPACITY) = 24 * LINE;
   measure("W", l);
+  REG32(BC + BC_CAPACITY) = CAPACITY;
   CHECK(pm(l, 1) >= 100 && pm(l, 1) <= 190, "W: Mweight 32 got %d per mille (1/7)", pm(l, 1));
   CHECK(pm(l, 2) >= 230 && pm(l, 2) <= 340, "W: Mweight 64 got %d per mille (2/7)", pm(l, 2));
   CHECK(pm(l, 3) >= 500 && pm(l, 3) <= 640, "W: Mweight 128 got %d per mille (4/7)", pm(l, 3));
@@ -203,6 +211,38 @@ int main(void) {
   printf("  H  core 1 alone: %d lines at Rbwb 20 %% Mweight 0 (reservation %d), %d with Mweight 16\r\n", hard, want, l[1]);
   CHECK(hard + 2 >= want && hard <= want + 2, "H: hard limit gave %d lines, reservation %d", hard, want);
   CHECK(l[1] >= 2 * hard, "H: Mweight 16 alone gave %d lines, no more than twice the hard limit's %d", l[1], hard);
+
+  // ---- M: exact, with the workers stopped and everything drained at both ends
+  run[1] = 0;
+  config(300, 8, 300, 8, 100, 8);
+  run[1] = 1; run[2] = 1; run[3] = 1;
+  wait_cycles(PERIOD);
+  {
+    uint32_t r0[4], r1[4], w0[4], w1[4];
+    uint64_t mv[4];
+    for (int c = 1; c < 4; c++) run[c] = 0;
+    wait_cycles(2 * PERIOD);
+    CHECK(mon(1, 1, 1) == 1 && mon(1, 2, 2) == 1 && mon(1, 3, 3) == 1, "M: CONFIG_EVENT failed");
+    apmu_read(r0);
+    for (int c = 1; c < 4; c++) w0[c] = apmu_wr(c);
+    for (int c = 1; c < 4; c++) run[c] = 1;
+    wait_cycles(WINDOW);
+    for (int c = 1; c < 4; c++) run[c] = 0;
+    wait_cycles(2 * PERIOD);
+    for (int c = 1; c < 4; c++) { mon(2, c, 0); mv[c] = rd64(BC_MON_VAL); }
+    apmu_read(r1);
+    for (int c = 1; c < 4; c++) w1[c] = apmu_wr(c);
+    uint64_t want[4];
+    want[1] = (uint64_t)(r1[1] - r0[1] + w1[1] - w0[1]) * LINE;
+    want[2] = (uint64_t)(r1[2] - r0[2]) * LINE;
+    want[3] = (uint64_t)(w1[3] - w0[3]) * LINE;
+    for (int c = 1; c < 4; c++) {
+      printf("  M  MCID %d (EVT %d): counter %d bytes, APMU %d bytes (reads %d, writes %d)\r\n", c, c,
+             (int)(mv[c] & ((1ULL << 62) - 1)), (int)want[c], r1[c] - r0[c], w1[c] - w0[c]);
+      CHECK(!(mv[c] >> 62) && (mv[c] & ((1ULL << 62) - 1)) == want[c], "M: MCID %d counted %d bytes, the APMU %d",
+            c, (int)(mv[c] & ((1ULL << 62) - 1)), (int)want[c]);
+    }
+  }
 
   // ---- done: pool statistics, everything back to the reset state
   uint32_t pool = REG32(BC + BC_POOL), full = REG32(BC + BC_FULL);
