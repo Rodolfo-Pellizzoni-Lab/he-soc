@@ -129,7 +129,9 @@ module load_store_unit import ariane_pkg::*; #(
     end
 
     logic                     st_valid_i;
+  logic st_valid_i_xc; // xsim: shadow of st_valid_i
     logic                     ld_valid_i;
+  logic ld_valid_i_xc; // xsim: shadow of ld_valid_i
     logic                     ld_translation_req;
     logic                     st_translation_req;
     logic [riscv::VLEN-1:0]   ld_vaddr;
@@ -141,12 +143,17 @@ module load_store_unit import ariane_pkg::*; #(
     logic                     st_hs_ld_st_inst;
     logic                     st_hlvx_inst;
     logic                     translation_req;
+  logic translation_req_xc; // xsim: shadow of translation_req
     logic                     translation_valid;
     logic [riscv::VLEN-1:0]   mmu_vaddr;
+  logic [riscv::VLEN-1:0] mmu_vaddr_xc; // xsim: shadow of mmu_vaddr
     logic [riscv::PLEN-1:0]   mmu_paddr, mmu_vaddr_plen, fetch_vaddr_plen;
     logic [riscv::XLEN-1:0]   mmu_tinst;
+  logic [riscv::XLEN-1:0] mmu_tinst_xc; // xsim: shadow of mmu_tinst
     logic                     mmu_hs_ld_st_inst;
+  logic mmu_hs_ld_st_inst_xc; // xsim: shadow of mmu_hs_ld_st_inst
     logic                     mmu_hlvx_inst;
+  logic mmu_hlvx_inst_xc; // xsim: shadow of mmu_hlvx_inst
     exception_t               mmu_exception;
     logic                     dtlb_hit;
     logic [riscv::PPNW-1:0]   dtlb_ppn;
@@ -416,42 +423,49 @@ module load_store_unit import ariane_pkg::*; #(
     // determine whether this is a load or store
     always_comb begin : which_op
 
-        ld_valid_i = 1'b0;
-        st_valid_i = 1'b0;
+        ld_valid_i_xc = 1'b0;
+        st_valid_i_xc = 1'b0;
 
-        translation_req      = 1'b0;
-        mmu_vaddr            = {riscv::VLEN{1'b0}};
-        mmu_tinst            = {riscv::XLEN{1'b0}};
-        mmu_hs_ld_st_inst    = 1'b0;
-        mmu_hlvx_inst        = 1'b0;
+        translation_req_xc      = 1'b0;
+        mmu_vaddr_xc            = {riscv::VLEN{1'b0}};
+        mmu_tinst_xc            = {riscv::XLEN{1'b0}};
+        mmu_hs_ld_st_inst_xc    = 1'b0;
+        mmu_hlvx_inst_xc        = 1'b0;
 
         // check the operation to activate the right functional unit accordingly
         unique case (lsu_ctrl.fu)
             // all loads go here
             LOAD:  begin
-                ld_valid_i           = lsu_ctrl.valid;
-                translation_req      = ld_translation_req;
-                mmu_vaddr            = ld_vaddr;
+                ld_valid_i_xc           = lsu_ctrl.valid;
+                translation_req_xc      = ld_translation_req;
+                mmu_vaddr_xc            = ld_vaddr;
                 if(ariane_pkg::RVH) begin
-                    mmu_tinst            = ld_tinst;
-                    mmu_hs_ld_st_inst    = ld_hs_ld_st_inst;
-                    mmu_hlvx_inst        = ld_hlvx_inst;
+                    mmu_tinst_xc            = ld_tinst;
+                    mmu_hs_ld_st_inst_xc    = ld_hs_ld_st_inst;
+                    mmu_hlvx_inst_xc        = ld_hlvx_inst;
                 end
             end
             // all stores go here
             STORE: begin
-                st_valid_i           = lsu_ctrl.valid;
-                translation_req      = st_translation_req;
-                mmu_vaddr            = st_vaddr;
+                st_valid_i_xc           = lsu_ctrl.valid;
+                translation_req_xc      = st_translation_req;
+                mmu_vaddr_xc            = st_vaddr;
                 if(ariane_pkg::RVH) begin
-                    mmu_tinst            = st_tinst;
-                    mmu_hs_ld_st_inst    = st_hs_ld_st_inst;
-                    mmu_hlvx_inst        = st_hlvx_inst;
+                    mmu_tinst_xc            = st_tinst;
+                    mmu_hs_ld_st_inst_xc    = st_hs_ld_st_inst;
+                    mmu_hlvx_inst_xc        = st_hlvx_inst;
                 end
             end
             // not relevant for the LSU
             default: ;
         endcase
+        ld_valid_i = ld_valid_i_xc; // xsim: outputs assigned once
+        st_valid_i = st_valid_i_xc; // xsim: outputs assigned once
+        translation_req = translation_req_xc; // xsim: outputs assigned once
+        mmu_vaddr = mmu_vaddr_xc; // xsim: outputs assigned once
+        mmu_tinst = mmu_tinst_xc; // xsim: outputs assigned once
+        mmu_hs_ld_st_inst = mmu_hs_ld_st_inst_xc; // xsim: outputs assigned once
+        mmu_hlvx_inst = mmu_hlvx_inst_xc; // xsim: outputs assigned once
     end
 
     // ------------------------
