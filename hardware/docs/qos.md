@@ -22,8 +22,74 @@ into (way partitioning). There is no bandwidth controller and no capacity monito
 - The widths are set in `ip_list/cva6/core/include/ariane_pkg.sv` (at most 12 each). The SoC user width follows
   from them.
 
-Sources: `riscv_pkg.sv` (`CSR_SRMCFG`), `csr_regfile.sv` (register, access checks, `qos_rcid_o` / `qos_mcid_o`),
-`cva6.sv` (tagging of the core's AXI port).
+Sources: `riscv_pkg.sv` (`CSR_SRMCFG`), `csr_regfile.sv` (register, access checks, `qos_fetch_ids_o` /
+`qos_data_ids_o`), `cva6.sv` (tagging of the core's AXI port).
+
+## Privilege association and virtualized RCIDs (custom CSRs)
+
+Two custom extensions on top of Ssqosid, modelled on Arm MPAM's per-exception-level PARTID registers
+(`MPAM3_EL3`, `MPAM2_EL2`, `MPAM1_EL1`) and its virtual-PARTID mapping (`MPAMVPMn_EL2`):
+
+- **Privilege association**: M-mode, HS-mode and VS-mode accesses can carry IDs of their own instead of
+  `srmcfg`, so firmware, the hypervisor (or a non-virtualized kernel, which runs in HS mode) and a guest kernel
+  are each charged to their own RCID/MCID while U-mode keeps the per-process `srmcfg`.
+- **vRCID translation**: a guest gets its own RCID space. With translation on, VS mode reads and writes
+  `srmcfg` (and `sqosid`) without trapping; the values are virtual, and every V=1 access carries the physical
+  RCID a hypervisor-owned table gives the guest's RCID. MCIDs are not translated (as MPAM's PMG).
+
+| CSR | Address | Access | Layout | Meaning |
+|---|---|---|---|---|
+| `mqosctl` | 0x7C1 | M | [0] M, [1] HS, [2] VS (WARL) | privilege association enables |
+| `mqosid` | 0x7C0 | M | as `srmcfg` | IDs of M-mode accesses (`mqosctl[0]`) |
+| `hqosid` | 0x6C4 | HS, M | as `srmcfg` | IDs of HS-mode accesses (`mqosctl[1]`) |
+| `sqosid` | 0x5C0 | HS, M; VS only when `hqosctl[0]` | as `srmcfg` | IDs of VS-mode accesses (`mqosctl[2]`); virtual when `hqosctl[0]` |
+| `hqosctl` | 0x6C0 | HS, M | [0] VEN, [16+] default RCID | vRCID translation enable; the physical RCID of unmapped vRCIDs |
+| `hrcidmap0` | 0x6C1 | HS, M | 8 bytes, byte i = {V (bit 7), physical RCID} | vRCID i -> physical RCID, i = 0..7 |
+| `hrcidmap1` | 0x6C2 | HS, M | same | vRCIDs 8..15 |
+| `vsrmcfg` | 0x6C3 | HS, M | as `srmcfg` | the guest's `srmcfg` (what VS mode sees as `srmcfg` when VEN = 1), for save/restore on a world switch |
+
+All reset to 0 (association off, translation off: the behaviour of plain Ssqosid). The table has
+`ariane_pkg::QOS_NUM_VRCID` = 16 entries with 4-bit RCIDs (2^RCID width, at most 16 on RV64).
+
+**Build knobs** (defines with defaults in `ariane_pkg.sv`; set them as make variables / environment for the
+Questa and FPGA flows, `SOC_EXTRA_DEFINES="QOS_NUM_VRCID=0 ..."` for xsim, `env` of the MCP's `fpga_build`), so
+area and timing can be compared with and without each addition:
+
+| Define | Default | Effect |
+|---|---|---|
+| `QOS_RCID_WIDTH` | 4 | implemented RCID bits (at most 12); sizes the SoC user field, the LLC's CBQRI table and the vRCID table |
+| `QOS_MCID_WIDTH` | 4 | implemented MCID bits (at most 12) |
+| `QOS_PRIV_ASSOC` | 1 | 0: no privilege association; `mqosctl`, `mqosid`, `hqosid`, `sqosid` are illegal CSRs, their logic is removed |
+| `QOS_NUM_VRCID` | 16 | vRCID table entries (capped at 2^`QOS_RCID_WIDTH` and 16 on RV64); 0: no translation, `hqosctl`, `hrcidmap0/1`, `vsrmcfg` are illegal, their logic is removed |
+
+With both features off, the core behaves as plain Ssqosid (only `srmcfg`). Translation and the VS parts also need
+the hypervisor extension (`CVA6ConfigHExtEn`). `t_qosv` detects which features exist (an absent CSR must raise an
+illegal-instruction exception) and checks the rest. Verified configurations: the defaults.
+
+**Which IDs an access carries.** For each access, the first matching rule applies. Instruction fetches use the
+current privilege; loads and stores use the effective load/store privilege (`mstatus.MPRV`/`MPP`/`MPV`, and
+`hstatus.SPVP` for HLV/HSV):
+
+| Access from | Condition | IDs |
+|---|---|---|
+| M | `mqosctl[0]` | `mqosid` |
+| HS (S, V=0) | `mqosctl[1]` | `hqosid` |
+| VS (S, V=1) | `mqosctl[2]` | `sqosid`, RCID translated if VEN |
+| VS, VU (V=1) | VEN | `vsrmcfg`, RCID translated |
+| anything else | | `srmcfg` |
+
+Translation: vRCID r maps to `hrcidmap[r].prcid` when that entry is valid, else to the default RCID of `hqosctl`.
+
+**Guest access.** VEN = 0: VS/VU accesses to `srmcfg` and `sqosid` raise a virtual-instruction exception (Ssqosid
+behaviour, the hypervisor emulates; with `mqosctl[2]` set, `sqosid` then holds physical IDs the hypervisor chose).
+VEN = 1: VS mode reads and writes `vsrmcfg` through `srmcfg` and `sqosid` directly; VU mode still raises a
+virtual-instruction exception. U mode: illegal instruction for both.
+
+**Timing.** The selected IDs are registered in the CSR file: a CSR write or a privilege change applies to requests
+raised from the next cycle on. As for `srmcfg`, the tag is taken when the request leaves the core, so a store that
+drains from the store buffer, or a write-back of a line, after a privilege change carries the new privilege's IDs.
+
+Tested by `software/soc_tests/t_qosv` (see "Checking it").
 
 ## The tag on the buses
 
@@ -140,6 +206,12 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
     write's.
   - It generates cached traffic with per-core tags, cross-core sharing, AMOs, LR/SC, and 48 dirty lines in
     one 16-way LLC set, so the LLC evicts to memory.
+- **`t_qosv`** checks the privilege association and vRCID translation (core 0, every tag read back through the
+  QoS probe): reset values and WARL masks of the new CSRs; M/HS/VS association on and off, U/VU keeping
+  `srmcfg`; loads under MPRV (MPP = S, U; MPV = 1) and HLV from M mode taking the effective privilege's IDs;
+  VS/VU access to `srmcfg`/`sqosid` trapping with translation off and reaching the guest copies (no trap,
+  virtual values read back, host `srmcfg` untouched) with it on; translation through both map CSRs, the default
+  RCID for an invalid entry, a remap applying to the next access.
 - **`t_cbqri`** has four parts:
   - **Register interface.** All fields, STATUS codes, and `CONFIG_LIMIT`/`READ_LIMIT` round trips.
   - **Isolation.** 8 victim lines (RCID 1, ways 0–7) and 80 reads of 40 aggressor lines (RCID 2,
@@ -154,8 +226,9 @@ configuration registers stay at `0x1040_1000`. Source: `ip_list/axi_llc/src/axi_
 `sim_regress` fails a test that has any):
 
 - **Scoreboard** (`host/qos_monitor.sv`) checks every request:
-  - At each **core port**, a new request must carry the hart's current `srmcfg` RCID/MCID, and AT = 1
-    exactly for instruction fetches.
+  - At each **core port**, a new request must carry the RCID/MCID the hart's CSR file currently selects
+    (`srmcfg`, or a privilege-associated register with the guest RCID translated: the fetch IDs for
+    instruction fetches, the load/store IDs otherwise), and AT = 1 exactly for instruction fetches.
   - At the **LLC input**, a request must carry a tag its source core issued for that 64-byte line, or, for
     CCU write-backs, a tag another core issued for that line.
   - At the **LLC output**, a refill must carry the user field of a recent LLC request to that line. An
