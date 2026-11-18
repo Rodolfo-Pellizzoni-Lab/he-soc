@@ -170,6 +170,7 @@ int main(void) {
   set_cc(0, 0xFFFE); set_cc(2, 0xFFFE); set_cc(3, 0xFFFE);
   apmu_setup();
   soc_wake_all();
+  CHECK(soc_wait_harts(0xE, 200000000) == 0xE, "cores 1-3 did not start: harts_up %x", harts_up);
   REG32(BC + BC_CTRL) = 3;
   printf("  the controller hands out %d lines per window of %d cycles; the aggressor's hard limit is 1 block\r\n",
          CAP_LINES * WINDOW / PERIOD, WINDOW);

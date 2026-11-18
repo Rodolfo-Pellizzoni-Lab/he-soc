@@ -112,6 +112,15 @@ static inline uint32_t soc_wake_all(void) {
   return up;
 }
 
+// Waits (up to `cycles`) until every hart in `mask` has started and returns the harts of `mask` that did. On the
+// board, OpenOCD resumes hart 1 over JTAG some 20 ms (about a million cycles) after hart 0, so a test that times
+// its workers must wait for them before the first measurement.
+static inline uint32_t soc_wait_harts(uint32_t mask, uint64_t cycles) {
+  uint64_t t0 = soc_cycles();
+  while ((harts_up & mask) != mask && soc_cycles() - t0 < cycles) __asm__ volatile("nop");
+  return harts_up & mask;
+}
+
 SOC_SRAM static volatile uint64_t soc_barrier_count;
 // all n cores call it once per round (round = 1, 2, ...)
 static inline void soc_barrier(int n, int round) {

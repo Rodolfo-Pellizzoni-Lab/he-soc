@@ -155,6 +155,7 @@ int main(void) {
   REG32(DM + 0x00) = 3;
   apmu_setup();
   soc_wake_all();
+  CHECK(soc_wait_harts(0xE, 200000000) == 0xE, "cores 1-3 did not start: harts_up %x", harts_up);
   for (int c = 1; c < 4; c++) run[c] = 1;
 
   // ---- 0
