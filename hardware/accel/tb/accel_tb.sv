@@ -16,6 +16,7 @@
 //   wait_reg(off, mask, val, max_cycles)  poll until (reg & mask) == val (fails on timeout)
 //   cycles(n)                     wait n clock cycles
 //   mem_stall(pct)                % of cycles the memory model withholds gnt / delays rvalid (default 30)
+//   mem_user_of(addr) -> user     the user field (QoS tag) of the last granted request to the word holding addr
 //   max_cycles = N;               global timeout (default 200000 cycles); reg_timeout = N; ack timeout (4096)
 //
 // Every check(), rd_check(), wait_reg() and wait_irq() call counts as one check; port-protocol checks only count
@@ -169,6 +170,10 @@ module accel_tb;
     end
   endfunction
   function automatic void mem_stall(int unsigned pct); stall_pct = pct; endfunction
+  logic [15:0] mem_user_at [logic [63:0]];   // the user field of the last granted request, per word
+  function automatic logic [15:0] mem_user_of(logic [63:0] addr);
+    return mem_user_at.exists(addr >> 3) ? mem_user_at[addr >> 3] : 16'hFFFF;
+  endfunction
 
   // gnt: random stalls; responses: queued, returned in order after a random delay
   typedef struct { logic [63:0] rdata; int unsigned due; } rsp_t;
@@ -202,6 +207,7 @@ module accel_tb;
         proto(mem_addr[2:0] == 3'b0, $sformatf("unaligned mem address 0x%0h", mem_addr));
         proto(!mem_we || mem_strb != '0, $sformatf("mem write with zero strobes at 0x%0h", mem_addr));
         last_mem_user = mem_user;
+        mem_user_at[mem_addr >> 3] = mem_user;
         if (mem_we) begin
           logic [63:0] o = mem_read(mem_addr);
           for (int b = 0; b < 8; b++) if (mem_strb[b]) o[8*b +: 8] = mem_wdata[8*b +: 8];

@@ -10,17 +10,31 @@
 //     mem_gnt_i. Traffic goes through a port of the coherence unit: coherent with the cores' caches (see README).
 //   irq_o: level, routed to PLIC interrupt ID 9 (shared by all slots).
 //
-// Template behaviour: dst[i] = compute(src[i], ARG) for i < LEN (64-bit words), one word in flight.
+// Template behaviour: dst[i] = compute(src[i], ARG) for i < LEN (64-bit words), one word in flight, one job at a time.
+// A job is started either through the registers (START) or by submitting a descriptor to the job queue (SUBMIT).
+// Every DMA request of a job carries the QoS tag of the register write that started or submitted it (reg_user_i of
+// that write): per-job tags ("Design 1", hardware/docs/qos.md "Device DMA").
 // Register map (byte offsets):
-//   0x00 CTRL    W  bit0 START (self-clearing), bit1 IRQ_EN
+//   0x00 CTRL    W  bit0 START (self-clearing, ignored while BUSY), bit1 IRQ_EN
 //   0x04 STATUS  R  bit0 BUSY, bit1 DONE, bit2 ERR   W  write 1 to bit1 to clear DONE/ERR (and the interrupt)
 //   0x08 SRC_LO  0x0C SRC_HI   source address
 //   0x10 DST_LO  0x14 DST_HI   destination address
 //   0x18 LEN     number of 64-bit words
 //   0x1C ARG     operand for compute()
 //   0x20 ID      R  0xAC0C9B9F
-//   0x24 CYCLES  R  clock cycles taken by the last run
-//   0x28 TAG     R  user field latched at START (the hart that started the run): the tag on this run's DMA
+//   0x24 CYCLES  R  clock cycles taken by the last job
+//   0x28 TAG     R  the tag of the running (or last) job: the user field of the write that started or submitted it
+//   0x40 SUBMIT  W  descriptor address >> 3 (32-bit write): queues {descriptor, tag of this write}; when the queue is
+//                   full the job is dropped (QSTAT.OVF, DROPPED)
+//   0x44 QSTAT   R  [7:0] jobs waiting (submitted, not started), [15:8] queue depth (0: no queue), [16] OVF
+//                W  write 1 to bit 16 to clear OVF
+//   0x48 DROPPED R  number of SUBMITs dropped because the queue was full
+// Job descriptor (32 bytes, 8-byte aligned, read by the accelerator with the job's tag):
+//   +0x00 SRC   +0x08 DST   +0x10 [31:0] LEN, [63:32] ARG
+//   +0x18 completion, written by the accelerator when the job ends (with the job's tag):
+//         [0] DONE, [1] ERR (bus error), [31:16] the job's tag, [63:32] cycles
+// Queued jobs run in submission order, when the engine is idle; a START in the same cycle goes first. A queued job
+// sets DONE when its completion is written (the interrupt, if IRQ_EN) and ORs its ERR into STATUS.ERR.
 
 module example (
   input  logic        clk_i,
@@ -54,19 +68,43 @@ module example (
     return x + 64'(arg);
   endfunction
 
+  // job-queue depth (build knob ACCEL_JOB_DEPTH, 0..255; 0 removes the queue: SUBMIT is ignored, QSTAT reads 0)
+`ifdef ACCEL_JOB_DEPTH
+  localparam int unsigned JobDepth = `ACCEL_JOB_DEPTH;
+`else
+  localparam int unsigned JobDepth = 4;
+`endif
+  localparam int unsigned JobDim = (JobDepth > 0) ? JobDepth : 1;
+  localparam int unsigned JobW   = (JobDim > 1) ? $clog2(JobDim) : 1;
+
   // ------------------------------------------------------------------ registers
   logic [63:0] src_q, dst_q;
   logic [31:0] len_q, arg_q, cycles_q;
   logic        irq_en_q, done_q, err_q;
-  logic [15:0] tag_q;   // the requester's user field, latched at START
+  logic [15:0] tag_q;   // the tag of the running job: user field of the write that started or submitted it
 
-  typedef enum logic [2:0] { IDLE, RD_REQ, RD_WAIT, WR_REQ, WR_WAIT } state_e;
+  // job queue: descriptor address >> 3 and the submitter's tag
+  logic [JobDim-1:0][31:0] q_desc_q;
+  logic [JobDim-1:0][15:0] q_tag_q;
+  logic [JobW-1:0]         q_wp_q, q_rp_q;
+  logic [7:0]              q_cnt_q;
+  logic                    q_ovf_q;
+  logic [31:0]             q_drop_q;
+
+  typedef enum logic [3:0] { IDLE, DS_REQ, DS_WAIT, RD_REQ, RD_WAIT, WR_REQ, WR_WAIT, CP_REQ, CP_WAIT } state_e;
   state_e      state_q;
+  logic [63:0] j_src_q, j_dst_q, j_desc_q;   // the running job
+  logic [31:0] j_len_q, j_arg_q;
+  logic        j_queued_q, j_err_q;
+  logic [1:0]  d_idx_q;                      // descriptor word being read
   logic [31:0] idx_q;
   logic [63:0] data_q;
 
-  wire busy  = (state_q != IDLE);
-  wire start = reg_req_i && reg_we_i && reg_addr_i == 16'h00 && reg_wdata_i[0] && !busy;
+  wire busy   = (state_q != IDLE);
+  wire start  = reg_req_i && reg_we_i && reg_addr_i == 16'h00 && reg_wstrb_i[0] && reg_wdata_i[0] && !busy;
+  wire submit = reg_req_i && reg_we_i && reg_addr_i == 16'h40 && reg_wstrb_i == 4'hF;
+  wire q_push = submit && (32'(q_cnt_q) < JobDepth);
+  wire q_pop  = (state_q == IDLE) && !start && (q_cnt_q != 8'd0);
 
   // write strobes applied to a 32-bit register
   function automatic logic [31:0] wmask(logic [31:0] old, logic [31:0] wd, logic [3:0] be);
@@ -89,24 +127,30 @@ module example (
       16'h20:  reg_rdata_o = 32'hAC0C9B9F;
       16'h24:  reg_rdata_o = cycles_q;
       16'h28:  reg_rdata_o = {16'b0, tag_q};
+      16'h44:  reg_rdata_o = {15'b0, q_ovf_q, 8'(JobDepth), q_cnt_q};
+      16'h48:  reg_rdata_o = q_drop_q;
       default: reg_rdata_o = 32'h0;
     endcase
   end
 
   // ------------------------------------------------------------------ engine
-  assign mem_req_o   = (state_q == RD_REQ) || (state_q == WR_REQ);
-  assign mem_we_o    = (state_q == WR_REQ);
-  assign mem_addr_o  = (state_q == WR_REQ) ? dst_q + {idx_q, 3'b000} : src_q + {idx_q, 3'b000};
+  assign mem_req_o   = (state_q == DS_REQ) || (state_q == RD_REQ) || (state_q == WR_REQ) || (state_q == CP_REQ);
+  assign mem_we_o    = (state_q == WR_REQ) || (state_q == CP_REQ);
+  assign mem_addr_o  = (state_q == DS_REQ) ? j_desc_q + {59'b0, d_idx_q, 3'b000} :
+                       (state_q == CP_REQ) ? j_desc_q + 64'h18 :
+                       (state_q == WR_REQ) ? j_dst_q + {29'b0, idx_q, 3'b000} : j_src_q + {29'b0, idx_q, 3'b000};
   assign mem_wdata_o = data_q;
   assign mem_strb_o  = 8'hff;
-  assign mem_user_o = tag_q;
+  assign mem_user_o  = tag_q;
   assign irq_o       = irq_en_q && done_q;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       src_q <= '0; dst_q <= '0; len_q <= '0; arg_q <= '0; cycles_q <= '0;
       irq_en_q <= 1'b0; done_q <= 1'b0; err_q <= 1'b0; tag_q <= '0;
-      state_q <= IDLE; idx_q <= '0; data_q <= '0;
+      q_desc_q <= '0; q_tag_q <= '0; q_wp_q <= '0; q_rp_q <= '0; q_cnt_q <= '0; q_ovf_q <= 1'b0; q_drop_q <= '0;
+      state_q <= IDLE; j_src_q <= '0; j_dst_q <= '0; j_desc_q <= '0; j_len_q <= '0; j_arg_q <= '0;
+      j_queued_q <= 1'b0; j_err_q <= 1'b0; d_idx_q <= '0; idx_q <= '0; data_q <= '0;
     end else begin
       // register writes
       if (reg_req_i && reg_we_i) begin
@@ -119,29 +163,74 @@ module example (
           16'h14: if (!busy) dst_q[63:32] <= wmask(dst_q[63:32], reg_wdata_i, reg_wstrb_i);
           16'h18: if (!busy) len_q <= wmask(len_q, reg_wdata_i, reg_wstrb_i);
           16'h1C: if (!busy) arg_q <= wmask(arg_q, reg_wdata_i, reg_wstrb_i);
+          16'h44: if (reg_wstrb_i[2] && reg_wdata_i[16]) q_ovf_q <= 1'b0;
           default: ;
         endcase
       end
+      // job queue: SUBMIT pushes {descriptor, the submitter's tag}, or counts a drop when full
+      if (q_push) begin
+        q_desc_q[q_wp_q] <= reg_wdata_i;
+        q_tag_q[q_wp_q]  <= reg_user_i;
+        q_wp_q           <= (32'(q_wp_q) == JobDim - 1) ? '0 : q_wp_q + 1'b1;
+      end else if (submit && JobDepth > 0) begin
+        q_ovf_q  <= 1'b1;
+        q_drop_q <= q_drop_q + 1;
+      end
+      if (q_pop) q_rp_q <= (32'(q_rp_q) == JobDim - 1) ? '0 : q_rp_q + 1'b1;
+      q_cnt_q <= q_cnt_q + {7'b0, q_push} - {7'b0, q_pop};
       if (busy) cycles_q <= cycles_q + 1;
       // engine
       case (state_q)
         IDLE: if (start) begin
-          tag_q <= reg_user_i;   // DMA of this run is tagged with the hart that started it
-          done_q <= 1'b0; err_q <= 1'b0; idx_q <= '0; cycles_q <= '0;
+          // job from the registers: DMA tagged with the hart that wrote START
+          tag_q <= reg_user_i;
+          j_src_q <= src_q; j_dst_q <= dst_q; j_len_q <= len_q; j_arg_q <= arg_q; j_queued_q <= 1'b0;
+          done_q <= (len_q == 0); err_q <= 1'b0; idx_q <= '0; cycles_q <= '0;
           state_q <= (len_q == 0) ? IDLE : RD_REQ;
-          if (len_q == 0) done_q <= 1'b1;
+        end else if (q_pop) begin
+          // queued job: DMA tagged with the hart that wrote its SUBMIT
+          tag_q <= q_tag_q[q_rp_q];
+          j_desc_q <= {29'b0, q_desc_q[q_rp_q], 3'b000}; j_queued_q <= 1'b1; j_err_q <= 1'b0;
+          d_idx_q <= '0; idx_q <= '0; cycles_q <= '0;
+          state_q <= DS_REQ;
+        end
+        DS_REQ:  if (mem_gnt_i) state_q <= DS_WAIT;
+        DS_WAIT: if (mem_rvalid_i) begin
+          j_err_q <= j_err_q | mem_err_i;
+          case (d_idx_q)
+            2'd0:    j_src_q <= mem_rdata_i;
+            2'd1:    j_dst_q <= mem_rdata_i;
+            default: begin j_len_q <= mem_rdata_i[31:0]; j_arg_q <= mem_rdata_i[63:32]; end
+          endcase
+          if (d_idx_q != 2'd2) begin d_idx_q <= d_idx_q + 2'd1; state_q <= DS_REQ; end
+          else if (j_err_q || mem_err_i || mem_rdata_i[31:0] == 32'd0) begin
+            // nothing to do (or the descriptor could not be read): just the completion
+            data_q  <= {cycles_q, tag_q, 14'b0, j_err_q | mem_err_i, 1'b1};
+            state_q <= CP_REQ;
+          end else state_q <= RD_REQ;
         end
         RD_REQ:  if (mem_gnt_i) state_q <= RD_WAIT;
         RD_WAIT: if (mem_rvalid_i) begin
-          data_q  <= compute(mem_rdata_i, arg_q);
-          err_q   <= err_q | mem_err_i;
+          data_q  <= compute(mem_rdata_i, j_arg_q);
+          if (j_queued_q) j_err_q <= j_err_q | mem_err_i;
+          else            err_q   <= err_q | mem_err_i;
           state_q <= WR_REQ;
         end
         WR_REQ:  if (mem_gnt_i) state_q <= WR_WAIT;
         WR_WAIT: if (mem_rvalid_i) begin
-          err_q <= err_q | mem_err_i;
-          if (idx_q + 1 == len_q) begin state_q <= IDLE; done_q <= 1'b1; end
-          else begin idx_q <= idx_q + 1; state_q <= RD_REQ; end
+          if (!j_queued_q) err_q <= err_q | mem_err_i;
+          if (idx_q + 1 != j_len_q) begin idx_q <= idx_q + 1; state_q <= RD_REQ; end
+          else if (j_queued_q) begin
+            data_q  <= {cycles_q, tag_q, 14'b0, j_err_q | mem_err_i, 1'b1};
+            j_err_q <= j_err_q | mem_err_i;
+            state_q <= CP_REQ;
+          end else begin state_q <= IDLE; done_q <= 1'b1; end
+        end
+        CP_REQ:  if (mem_gnt_i) state_q <= CP_WAIT;
+        CP_WAIT: if (mem_rvalid_i) begin
+          done_q  <= 1'b1;
+          err_q   <= err_q | j_err_q | mem_err_i;
+          state_q <= IDLE;
         end
         default: state_q <= IDLE;
       endcase
