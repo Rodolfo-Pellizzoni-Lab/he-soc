@@ -3,10 +3,13 @@
 //   Role "core"    at core i's AXI port (cva6_synth_wrap): every new AR/AW must carry the RCID / MCID the hart's CSR file
 //                  selects (csr_regfile: srmcfg or a privilege-associated register; fetch and load/store IDs) and AT = 1 exactly for instruction fetches (AR ID 4'b0000); records,
 //                  per 64-byte line, the tags core i put on its requests (the last 8 per line).
+//   Role "dma"     at a DMA master's port into the CCU (the accelerator socket; Core = its CCU port index): records,
+//                  per line, the tags the DMA put on its requests, as "core" does, without a CSR check.
 //   Role "llc_in"  at the LLC slave port: every AR/AW must carry the tag its source core (user[QosUserLsb-1:0]) used for that
-//                  line. A tag that another core used for the line counts as "ccu" (a write-back the CCU issues for
-//                  dirty data snooped from that core carries the requester's tag); a user field of 0 that matches
-//                  no core request counts as "other" (masters other than the cores tag 0). Anything else is an error.
+//                  line. A tag that another core or a recorded DMA port used for the line counts as "ccu" (a write-back
+//                  the CCU issues for dirty data snooped from a core carries the requester's tag, and the source port
+//                  of the core that supplied the data); a user field of 0 that matches no core request counts as
+//                  "other" (masters other than the cores tag 0). Anything else is an error.
 //   Role "llc_out" at the LLC memory port: a refill (AR) must carry the user field of a recent LLC request to the same
 //                  line, an eviction (AW) that of a recent request to the same set (the request that caused it). A
 //                  write-back of an LLC flush has no requester and carries user field 0. The LLC announces each one
@@ -43,8 +46,8 @@ endpackage
 
 module qos_monitor #(
   parameter string       Name     = "axi",
-  parameter string       Role     = "llc_in",   // "core", "llc_in" or "llc_out"
-  parameter int unsigned Core     = 0,          // role "core": the core index
+  parameter string       Role     = "llc_in",   // "core", "dma", "llc_in" or "llc_out"
+  parameter int unsigned Core     = 0,          // role "core": the core index; role "dma": its CCU port index
   parameter int unsigned LineBits = 6,          // 64-byte LLC lines
   parameter int unsigned SetBits  = 10,         // LLC sets (ariane_soc::LLC_NUM_LINES)
   parameter type         req_t    = logic,
@@ -116,7 +119,7 @@ module qos_monitor #(
     found = 0;
     if (is_w) aw_n[u] = aw_n.exists(u) ? aw_n[u] + 1 : 1;
     else      ar_n[u] = ar_n.exists(u) ? ar_n[u] + 1 : 1;
-    if (Role == "core") begin
+    if (Role == "core" || Role == "dma") begin
       key = (longint'(Core) << 56) | line;
       h   = core_tags.exists(key) ? core_tags[key] : '0;
       core_tags[key] = push(h, tag);
@@ -133,9 +136,10 @@ module qos_monitor #(
         end
         if (found) n_ccu++;
       end
+      // the user fields of the CCU's DMA ports, whether or not a "dma" instance recorded them
+      if (src >= ariane_soc::NumCVA6) sock_tags[u] = sock_tags.exists(u) ? sock_tags[u] + 1 : 1;
       if (!found) begin
         if (u == 0 || src >= ariane_soc::NumCVA6) n_other++;   // not from a core: a DMA port of the CCU
-        if (src >= ariane_soc::NumCVA6) sock_tags[u] = sock_tags.exists(u) ? sock_tags[u] + 1 : 1;
         else                                       error(is_w ? 1 : 0, addr, u);
       end
       h = llc_line.exists(line) ? llc_line[line] : '0;
@@ -199,7 +203,7 @@ module qos_monitor #(
 
   final begin
     int unsigned keys [int unsigned];
-    if (Role != "core") begin
+    if (Role != "core" && Role != "dma") begin
       foreach (ar_n[u]) keys[u] = 1;
       foreach (aw_n[u]) keys[u] = 1;
       foreach (keys[k]) begin   // fields decoded inline: with several function calls on a foreach index in one
@@ -216,6 +220,8 @@ module qos_monitor #(
     end
     if (Role == "core")
       $display("[QOS] check %s%0d: %0d requests, %0d errors%s", Name, Core, n_ok, n_err, n_err ? " ERROR" : "");
+    else if (Role == "dma")
+      $display("[QOS] %s: %0d requests recorded", Name, n_ok);
     else if (Role == "llc_in") begin
       $display("[QOS] check %s: %0d ok, %0d ccu, %0d other, %0d errors%s", Name, n_ok, n_ccu, n_other, n_err,
                n_err ? " ERROR" : "");

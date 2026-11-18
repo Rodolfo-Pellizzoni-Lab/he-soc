@@ -1047,6 +1047,23 @@ module al_saqr
        .mst_resp_i ( accel_m_resp  ),
        .irq_o      ( s_cluster_eoc )
      );
+`ifndef SYNTHESIS
+     // QoS scoreboard: the tags the socket puts on its DMA, per line (host/qos_monitor.sv): a write-back the CCU issues
+     // for a core's dirty line on behalf of a socket request carries the socket's tag with the core's source port
+     qos_monitor #(
+       .Name     ( "accel_dma"                             ),
+       .Role     ( "dma"                                   ),
+       .Core     ( ariane_soc::CcuAccelPort                ),
+       .LineBits ( $clog2(ariane_soc::LLC_NUM_BLOCKS * 8)  ),
+       .req_t    ( ariane_axi_soc::req_slv_t               ),
+       .resp_t   ( ariane_axi_soc::resp_slv_t              )
+     ) i_qos_mon_accel_dma (
+       .clk_i  ( s_soc_clk    ),
+       .rst_ni ( s_soc_rst_n  ),
+       .req_i  ( accel_m_req  ),
+       .resp_i ( accel_m_resp )
+     );
+`endif
 
      // the idle cluster TLB's master port ends here
      `AXI_ASSIGN_TO_REQ(tlb_idle_req, tlb_idle_axi_bus)
