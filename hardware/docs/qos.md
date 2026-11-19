@@ -357,6 +357,9 @@ release); its overshoot is bounded by the requests admitted just before the budg
 best-effort DMA (Mweight > 0) is admitted at once and its descriptors are class 3 as before (they wait only while
 reserved traffic takes the bandwidth); a request that touches a line held by a parked descriptor of another RCID
 still waits for it in the coherence unit and in the LLC's lookup.
+Result (SoC simulation, 2026-11-19, `t_bcd` D): next to the hard-limited DMA the other cores' LLC-hit loads run at
+98 / 101 % of alone (longest 148 / 149 cycles, was 3 % and 12,340), the DMA waits 49,309 of the window's 51,200
+cycles at its gate and moves 4 DRAM lines in 4 periods; the cases with a reserved or best-effort DMA are unchanged.
 
 | Offset | Register | |
 |---|---|---|
