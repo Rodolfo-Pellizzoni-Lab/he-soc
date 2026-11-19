@@ -16,6 +16,14 @@ endif
 ifdef STATIC_IP
 RISCV_FLAGS += -DSTATIC_IP=$(call ip2hex,$(STATIC_IP)) -DSTATIC_MASK=$(call ip2hex,$(STATIC_MASK)) -DSTATIC_GW=$(call ip2hex,$(STATIC_GW))
 endif
+# QoS IDs per privilege (netboot.c): QOS_KERNEL=<RCID | MCID << 16> for the kernel (HS mode, mqosctl[1] + hqosid),
+# QOS_USER=<hart 0's srmcfg>, hart h gets QOS_USER + h * 0x10001. Without QOS_KERNEL the loader leaves both alone.
+ifdef QOS_KERNEL
+RISCV_FLAGS += -DQOS_KERNEL=$(QOS_KERNEL)
+ifdef QOS_USER
+RISCV_FLAGS += -DQOS_USER=$(QOS_USER)
+endif
+endif
 # link with the loader's own script instead of test.ld
 build: $(APP).c
 	$(RISCV_GCC) $(RISCV_FLAGS) -T netboot.ld $(RISCV_LINK_OPTS) $(cc-elf-y) $(inc_dir)/crt.S syscalls.c -L $(inc_dir) $(APP).c $(SRC) -o $(APP).riscv

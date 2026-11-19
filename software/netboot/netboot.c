@@ -253,12 +253,66 @@ static long tftp_get(const char *name, uint8_t *dst, unsigned long max) {
 // the wake-up back). Every hart arrives in OpenSBI with a0 = hart id and a1 = the DTB; hart 0 goes first and is the
 // cold-boot hart, the others wait for hart_go and a little longer (OpenSBI parks warm harts until the cold boot).
 static volatile uint32_t hart_go;
+// QoS IDs per privilege (hardware/docs/qos.md, "Privilege association"), only when built with QOS_KERNEL=<IDs in the
+// srmcfg layout, RCID | MCID << 16>: every hart enters the payload with mqosctl[1] (HS) set and hqosid = QOS_KERNEL,
+// so the kernel's accesses (HS mode) carry those IDs while U mode keeps srmcfg, which the loader sets to QOS_USER +
+// h * 0x10001 on hart h (RCID and MCID of hart 0's value plus h; QOS_USER defaults to 0, i.e. hart h gets RCID h and
+// MCID h). M mode (OpenSBI) is not associated: it carries srmcfg too. Hart 0 checks that the CSRs exist (QOS_PRIV_ASSOC
+// builds) and leaves everything at its reset value otherwise; nothing in OpenSBI or Linux writes these CSRs.
+#ifdef QOS_KERNEL
+#ifndef QOS_USER
+#define QOS_USER 0
+#endif
+#define CSR_SRMCFG  0x181
+#define CSR_MQOSCTL 0x7C1
+#define CSR_HQOSID  0x6C4
+#define MQOSCTL_HS  2
+static volatile uint32_t qos_on;
+static volatile uint64_t qos_user[SOC_NUM_CORES];
+#define QOS_STR_(x) #x
+#define QOS_STR(x) QOS_STR_(x)
+// a CSR read that cannot trap: 0 if the CSR exists, else mcause (t_qosv's TRY_CSRR)
+#define TRY_CSRR(n) ({ uint64_t _c, _o;                                                        \
+  __asm__ volatile("csrr %[o], mtvec\n la t0, 1f\n csrw mtvec, t0\n li %[c], 0\n csrr t1, " QOS_STR(n) "\n" \
+                   "j 2f\n .align 2\n 1: csrr %[c], mcause\n la t0, 2f\n csrw mepc, t0\n mret\n"        \
+                   "2: csrw mtvec, %[o]\n"                                                         \
+                   : [c] "=&r"(_c), [o] "=&r"(_o) :: "t0", "t1", "memory");                         \
+  _c; })
+static void qos_setup(void) {
+  if (TRY_CSRR(CSR_SRMCFG) || TRY_CSRR(CSR_MQOSCTL) || TRY_CSRR(CSR_HQOSID)) {
+    printf("netboot: QoS: no privilege association in this design (srmcfg / mqosctl / hqosid absent): IDs left at 0\n");
+    return;
+  }
+  for (int h = 0; h < SOC_NUM_CORES; h++) qos_user[h] = (uint64_t)QOS_USER + (uint64_t)h * 0x10001;
+  qos_on = 1;
+  printf("netboot: QoS: kernel (HS mode) RCID %d MCID %d on every hart; user srmcfg hart h = RCID %d+h MCID %d+h\n",
+         (int)(QOS_KERNEL & 0xFFF), (int)((QOS_KERNEL >> 16) & 0xFFF), (int)(QOS_USER & 0xFFF),
+         (int)((QOS_USER >> 16) & 0xFFF));
+}
+#define QOS_APPLY_ASM                                                                          \
+    "   lw   t0, 0(t4)\n\t"                                                                      \
+    "   beqz t0, 3f\n\t"                                                                         \
+    "   csrr t0, mhartid\n\t"                                                                    \
+    "   slli t0, t0, 3\n\t"                                                                      \
+    "   add  t5, t5, t0\n\t"                                                                     \
+    "   ld   t1, 0(t5)\n\t"                                                                      \
+    "   csrw " QOS_STR(CSR_SRMCFG) ", t1\n\t"                                                    \
+    "   li   t1, " QOS_STR(QOS_KERNEL) "\n\t"                                                    \
+    "   csrw " QOS_STR(CSR_HQOSID) ", t1\n\t"                                                    \
+    "   csrsi " QOS_STR(CSR_MQOSCTL) ", " QOS_STR(MQOSCTL_HS) "\n\t"                             \
+    "3:\n\t"
+#define QOS_LA_ASM "   la   t4, qos_on\n\t   la   t5, qos_user\n\t"
+#else
+#define QOS_APPLY_ASM ""
+#define QOS_LA_ASM ""
+#endif
 static void __attribute__((noreturn, naked)) enter_payload(void) {
   __asm__ volatile(
     "   .option push\n\t"
     "   .option norelax\n\t"                                                 // no gp: the ROM's harts bring their own
     "   la   t2, hart_go\n\t"
     "   la   t3, harts_up\n\t"
+    QOS_LA_ASM
     "   .option pop\n\t"
     "   csrr t0, mhartid\n\t"                                                // check in (harts_up, syscalls.c)
     "   li   t1, 1\n\t"
@@ -269,6 +323,7 @@ static void __attribute__((noreturn, naked)) enter_payload(void) {
     "   li   t1, 400000\n\t"
     "2: addi t1, t1, -1\n\t"
     "   bnez t1, 2b\n\t"
+    QOS_APPLY_ASM
     "   csrw mie, zero\n\t"
     "   fence\n\t"
     "   fence.i\n\t"
@@ -286,6 +341,14 @@ int thread_entry(int cid, int nc) {                                             
 static void __attribute__((noreturn)) jump(void) {
   xeth_wr(XAE_RCW1, xeth_rd(XAE_RCW1) & ~XAE_RCW1_RX);                        // no more DMA into memory
   xdma_reset(XDMA_RX); xdma_reset(XDMA_TX);
+#ifdef QOS_KERNEL
+  qos_setup();                                                                 // before the other harts can read it
+  if (qos_on) {                                                                // hart 0 itself
+    __asm__ volatile("csrw " QOS_STR(CSR_SRMCFG) ", %0" :: "r"(qos_user[0]));
+    __asm__ volatile("csrw " QOS_STR(CSR_HQOSID) ", %0" :: "r"((uint64_t)QOS_KERNEL));
+    __asm__ volatile("csrsi " QOS_STR(CSR_MQOSCTL) ", " QOS_STR(MQOSCTL_HS));
+  }
+#endif
   REG32(0x10404000) = (uint32_t)(uintptr_t)enter_payload;                      // the boot ROM's harts jump here
   REG32(0x10404024) = 1;                                                       // hart 1: the mailbox doorbell
   soc_wake_all();                                                              // harts >= 2: the APMU interrupts
