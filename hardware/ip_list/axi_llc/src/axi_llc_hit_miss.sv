@@ -434,6 +434,7 @@ module axi_llc_hit_miss #(
   // inputs to the miss counter unit
   assign cnt_up.id    = desc_o.a_x_id;
   assign cnt_up.rw    = desc_o.rw;
+  assign cnt_up.ub    = desc_o.rw & ~desc_o.wbuf;   // a write whose beats are not buffered (axi_llc_w_buffer)
   // count up if a transfer happens on the miss pipeline
   assign cnt_up.valid = ~desc_o.flush & miss_valid_o & miss_ready_i;
 

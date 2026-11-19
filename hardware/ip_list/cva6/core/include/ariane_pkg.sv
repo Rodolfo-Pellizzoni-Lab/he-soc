@@ -362,6 +362,9 @@ package ariane_pkg;
     //   QOS_LLC_BC                       1 (default): the LLC's CBQRI bandwidth controller for its memory traffic
     //                                    (axi_llc_cbqri_bc, registers at 0x1040_1C00); 0 removes it
     //   QOS_LLC_BC_POOL                  descriptors its parking pool holds (default 16)
+    //   QOS_LLC_WBUF                     slots of the LLC's write-data buffer (axi_llc_w_buffer, default 8): writes
+    //                                    then need only per-ID order, so a parked write holds up only its own ID;
+    //                                    0 removes it (every write in AW order)
 `ifdef QOS_RCID_WIDTH
     localparam int unsigned QOS_RCID_WIDTH = `QOS_RCID_WIDTH;
 `else
@@ -394,6 +397,11 @@ package ariane_pkg;
     localparam int unsigned QOS_LLC_BC_POOL = `QOS_LLC_BC_POOL;
 `else
     localparam int unsigned QOS_LLC_BC_POOL = 16;
+`endif
+`ifdef QOS_LLC_WBUF
+    localparam int unsigned QOS_LLC_WBUF = `QOS_LLC_WBUF;
+`else
+    localparam int unsigned QOS_LLC_WBUF = 8;
 `endif
     // Privilege association (CSR_MQOSCTL, CSR_MQOSID, CSR_HQOSID, CSR_SQOSID)
 `ifdef QOS_PRIV_ASSOC

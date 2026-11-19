@@ -188,6 +188,10 @@ module axi_llc_top #(
   parameter int unsigned QosBcOffset      = 32'hC00,
   /// Descriptors the bandwidth controller's parking pool holds.
   parameter int unsigned QosBcPoolDepth   = 32'd16,
+  /// Write-data buffer (`axi_llc_w_buffer`): slots, each holding the W beats of one write descriptor of up to a
+  /// line at full width, so that writes need only per-ID order and a parked write holds up only its own ID
+  /// (0: none, every write in AW order as in the original LLC).
+  parameter int unsigned QosWBufSlots     = 32'd0,
   /// AXI4+ATOP request type on the slave port.
   /// Expected format can be defined using `AXI_TYPEDEF_REQ_T.
   parameter type slv_req_t      = logic,
@@ -287,6 +291,10 @@ module axi_llc_top #(
     SPMLength         : SetAssociativity * NumLines * NumBlocks * (AxiCfg.DataWidthFull / 32'd8)
   };
 
+  // write-data buffer: slots and the width of a descriptor's slot index
+  localparam bit          WBufOn = QosWBufSlots > 0;
+  localparam int unsigned WSlotW = (QosWBufSlots > 1) ? $clog2(QosWBufSlots) : 1;
+
   // definition of the descriptor struct that gets sent around in the llc
   // (necessary here, because we can not have variable length structs in a package...)
   typedef logic [Cfg.SetAssociativity-1:0] way_ind_t;
@@ -314,6 +322,8 @@ module axi_llc_top #(
     logic [Cfg.TagLength -1:0]       evict_tag;// tag for evicting a line
     logic                            refill;   // refill the cache line
     logic                            flush;    // flush this line, comes from config
+    logic                            wbuf;     // a write whose W beats are in slot w_slot of the write-data buffer
+    logic [WSlotW-1:0]               w_slot;   // (axi_llc_w_buffer); 0: the write unit takes them from the W channel
   } llc_desc_t;
 
   // definition of the structs that are between the units and the ways
@@ -336,6 +346,7 @@ module axi_llc_top #(
   typedef struct packed {
     axi_slv_id_t                      id;           // AXI id of the count operation
     logic                             rw;           // 0:read, 1:write
+    logic                             ub;           // a write whose W beats are not buffered (in AW order)
     logic                             valid;        // valid, equals enable
   } cnt_t;
 
@@ -613,7 +624,9 @@ module axi_llc_top #(
     .mst_resps_i     ({bypass_resp, to_llc_resp})
   );
 
-  // AW channel burst splitter
+  // AW channel burst splitter (its descriptors go through the write-data buffer, if there is one)
+  llc_desc_t aw_split_desc;
+  logic      aw_split_valid, aw_split_ready;
   axi_llc_chan_splitter #(
     .Cfg    ( Cfg           ),
     .AxiCfg ( AxiCfg        ),
@@ -627,14 +640,54 @@ module axi_llc_top #(
     .ax_chan_slv_i   ( to_llc_req.aw                          ),
     .ax_chan_valid_i ( to_llc_req.aw_valid                    ),
     .ax_chan_ready_o ( to_llc_resp.aw_ready                   ),
-    .desc_o          ( ax_desc[axi_llc_pkg::AwChanUnit]       ),
-    .desc_valid_o    ( ax_desc_valid[axi_llc_pkg::AwChanUnit] ),
-    .desc_ready_i    ( ax_desc_ready[axi_llc_pkg::AwChanUnit] ),
+    .desc_o          ( aw_split_desc                          ),
+    .desc_valid_o    ( aw_split_valid                         ),
+    .desc_ready_i    ( aw_split_ready                         ),
     .unit_busy_o     ( aw_unit_busy                           ),
     .cached_rule_i   ( cached_addr_rule                       ),
     .spm_rule_i      ( spm_addr_rule                          )
   );
 
+  // write-data buffer: a slot per write descriptor, so that writes reach the write unit in any order
+  w_chan_t           wb_w;
+  logic              wb_wbuf, wb_valid, wb_ready, wb_w_ready, wu_w_ready;
+  logic [WSlotW-1:0] wb_slot;
+  if (WBufOn) begin : gen_w_buffer
+    axi_llc_w_buffer #(
+      .NumSlots  ( QosWBufSlots      ),
+      .MaxBeats  ( Cfg.NumBlocks     ),
+      .FillDepth ( QosWBufSlots + 8  ),
+      .desc_t    ( llc_desc_t        ),
+      .w_chan_t  ( w_chan_t          )
+    ) i_w_buffer (
+      .clk_i,
+      .rst_ni,
+      .test_i,
+      .desc_i       ( aw_split_desc                          ),
+      .desc_valid_i ( aw_split_valid                         ),
+      .desc_ready_o ( aw_split_ready                         ),
+      .desc_o       ( ax_desc[axi_llc_pkg::AwChanUnit]       ),
+      .desc_valid_o ( ax_desc_valid[axi_llc_pkg::AwChanUnit] ),
+      .desc_ready_i ( ax_desc_ready[axi_llc_pkg::AwChanUnit] ),
+      .w_i          ( to_llc_req.w                           ),
+      .w_valid_i    ( to_llc_req.w_valid                     ),
+      .w_ready_o    ( wb_w_ready                             ),
+      .rd_wbuf_i    ( wb_wbuf                                ),
+      .rd_slot_i    ( wb_slot                                ),
+      .rd_w_o       ( wb_w                                   ),
+      .rd_valid_o   ( wb_valid                               ),
+      .rd_ready_i   ( wb_ready                               )
+    );
+    assign to_llc_resp.w_ready = wb_w_ready;
+  end else begin : gen_no_w_buffer
+    assign ax_desc[axi_llc_pkg::AwChanUnit]       = aw_split_desc;
+    assign ax_desc_valid[axi_llc_pkg::AwChanUnit] = aw_split_valid;
+    assign aw_split_ready                         = ax_desc_ready[axi_llc_pkg::AwChanUnit];
+    assign wb_w       = '0;
+    assign wb_valid   = 1'b0;
+    assign wb_w_ready = 1'b0;
+    assign to_llc_resp.w_ready = wu_w_ready;
+  end
 
   // RW channel burst splitter
   axi_llc_chan_splitter #(
@@ -744,6 +797,9 @@ module axi_llc_top #(
       .McidWidth   ( QosAtBit - QosRcidLsb - QosRcidWidth         ),
       .McidLsb     ( QosRcidLsb + QosRcidWidth                    ),
       .LineBytes   ( Cfg.BlockSize / 8 * Cfg.NumBlocks            ),
+      .IndexLsb    ( Cfg.ByteOffsetLength + Cfg.BlockOffsetLength ),
+      .IndexWidth  ( Cfg.IndexLength                              ),
+      .TagWidth    ( Cfg.TagLength                                ),
       .PoolDepth   ( QosBcPoolDepth                               ),
       .DataWidth   ( AxiLiteDataWidth                             ),
       .lite_req_t  ( lite_req_t                                   ),
@@ -864,7 +920,9 @@ module axi_llc_top #(
     .way_inp_t ( way_inp_t    ),
     .lock_t    ( lock_t       ),
     .w_chan_t  ( w_chan_t     ),
-    .b_chan_t  ( slv_b_chan_t )
+    .b_chan_t  ( slv_b_chan_t ),
+    .WBuf      ( WBufOn       ),
+    .WSlotW    ( WSlotW       )
   ) i_write_unit  (
     .clk_i           ( clk_i                                ),
     .rst_ni          ( rst_ni                               ),
@@ -873,8 +931,8 @@ module axi_llc_top #(
     .desc_valid_i    ( write_desc_valid                     ),
     .desc_ready_o    ( write_desc_ready                     ),
     .w_chan_slv_i    ( to_llc_req.w                         ),
-    .w_chan_valid_i  ( to_llc_req.w_valid                   ),
-    .w_chan_ready_o  ( to_llc_resp.w_ready                  ),
+    .w_chan_valid_i  ( to_llc_req.w_valid & ~WBufOn         ),
+    .w_chan_ready_o  ( wu_w_ready                           ),
     .b_chan_slv_o    ( to_llc_resp.b                        ),
     .b_chan_valid_o  ( to_llc_resp.b_valid                  ),
     .b_chan_ready_i  ( to_llc_req.b_ready                   ),
@@ -883,7 +941,12 @@ module axi_llc_top #(
     .way_inp_ready_i ( to_way_ready[axi_llc_pkg::WChanUnit] ),
     .w_unlock_o      ( w_unlock                             ),
     .w_unlock_req_o  ( w_unlock_req                         ),
-    .w_unlock_gnt_i  ( w_unlock_gnt                         )
+    .w_unlock_gnt_i  ( w_unlock_gnt                         ),
+    .wb_wbuf_o       ( wb_wbuf                              ),
+    .wb_slot_o       ( wb_slot                              ),
+    .wb_w_i          ( wb_w                                 ),
+    .wb_valid_i      ( wb_valid                             ),
+    .wb_ready_o      ( wb_ready                             )
   );
 
   // read unit

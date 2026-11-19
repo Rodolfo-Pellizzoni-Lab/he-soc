@@ -25,8 +25,14 @@
 // BC_CAPACITY at or a little below what the memory sustains. Within that rate the arbiter is work-conserving:
 // whenever a release is allowed and a descriptor is eligible, one leaves. Without PACE it releases whenever the
 // pipeline takes a descriptor.
-// Ordering rules (the LLC's own): descriptors of one AXI ID leave in order, all writes leave in order (W beats
-// carry no ID), and a flush leaves in order with everything. With regulation off (BC_CTRL.EN = 0, the reset state)
+// Ordering rules (the LLC's own, and one the pool adds): a refill of a line does not leave before an older descriptor
+// that evicts that line (the lookup already gave the line's way to the older one, whose write-back is still to
+// come: a younger refill of the same line, into another way, would read the memory's stale copy; the in-order
+// pipeline downstream keeps the order once both are released, the eviction unit passes a descriptor on only after
+// its write response); descriptors of one AXI ID leave in order, a write whose W beats are not buffered
+// (`wbuf` = 0: every write without the LLC's write-data buffer, axi_llc_w_buffer; with it, only those with more beats
+// than a slot holds) leaves in order with every other write (W beats carry no ID), and a flush leaves in order with
+// everything. Buffered writes need only the per-ID order: a parked write then holds up only its own ID. With regulation off (BC_CTRL.EN = 0, the reset state)
 // every descriptor is class 1 and the pool is a FIFO.
 //
 // Registers (offsets in the block, 64-bit; a 32-bit bus accesses them as two words, low word first; a write of
@@ -56,12 +62,16 @@
 `include "common_cells/registers.svh"
 
 module axi_llc_cbqri_bc #(
-  parameter type         desc_t      = logic,   // the LLC descriptor: a_x_id, a_x_user, rw, refill, evict, flush
+  parameter type         desc_t      = logic,   // the LLC descriptor: a_x_id, a_x_addr, a_x_user, rw, refill, evict,
+                                                // evict_tag, flush, wbuf
   parameter int unsigned RcidWidth   = 32'd4,
   parameter int unsigned RcidLsb     = 32'd0,   // position of the RCID in desc.a_x_user
   parameter int unsigned McidWidth   = 32'd4,
   parameter int unsigned McidLsb     = 32'd4,   // position of the MCID in desc.a_x_user
   parameter int unsigned LineBytes   = 32'd64,  // bytes one refill or one eviction moves
+  parameter int unsigned IndexLsb    = 32'd6,   // set index in desc.a_x_addr (its tag above it), and their widths:
+  parameter int unsigned IndexWidth  = 32'd10,  // the line a descriptor refills is {a_x_addr tag, index}, the line
+  parameter int unsigned TagWidth    = 32'd16,  // it evicts {evict_tag, index}
   parameter int unsigned PoolDepth   = 32'd16,
   parameter int unsigned CtrWidth    = 32'd48,  // monitoring counter bits
   parameter int unsigned DataWidth   = 32'd32,  // AXI4-Lite data width: 32 or 64
@@ -149,6 +159,7 @@ module axi_llc_cbqri_bc #(
   logic  [PoolDepth-1:0] e_free, e_under, e_wgt;   // costs nothing / RCID inside its reservation / Mweight > 0
   logic  [PoolDepth-1:0][PoolDepth-1:0] dep;       // dep[i][j]: i must not leave before j if j is older
   logic  [PoolDepth-1:0] blocked, rdy, need1, need2;
+  logic  [PoolDepth-1:0][TagWidth+IndexWidth-1:0] rf_line, ev_line;   // the line each refills / evicts
   logic  [NumRcid-1:0]   under_r;
 
   always_comb begin
@@ -160,9 +171,15 @@ module axi_llc_cbqri_bc #(
       e_under[i] = under_r[e_rcid[i]];
       e_wgt[i]   = mweight_q[e_rcid[i]] != 8'd0;
     end
+    for (int unsigned i = 0; i < PoolDepth; i++) begin
+      rf_line[i] = {pool_q[i].a_x_addr[IndexLsb + IndexWidth +: TagWidth], pool_q[i].a_x_addr[IndexLsb +: IndexWidth]};
+      ev_line[i] = {TagWidth'(pool_q[i].evict_tag),                       pool_q[i].a_x_addr[IndexLsb +: IndexWidth]};
+    end
     for (int unsigned i = 0; i < PoolDepth; i++)
       for (int unsigned j = 0; j < PoolDepth; j++)
-        dep[i][j] = (pool_q[i].a_x_id == pool_q[j].a_x_id) | (pool_q[i].rw & pool_q[j].rw) |
+        dep[i][j] = (pool_q[i].a_x_id == pool_q[j].a_x_id) |
+                    (pool_q[i].refill & pool_q[j].evict & (rf_line[i] == ev_line[j])) |
+                    (pool_q[i].rw & pool_q[j].rw & !(pool_q[i].wbuf & pool_q[j].wbuf)) |
                     pool_q[i].flush | pool_q[j].flush;
     for (int unsigned i = 0; i < PoolDepth; i++) begin
       blocked[i] = |(pv_q & older_q[i] & dep[i]);

@@ -44,6 +44,7 @@ sources:
   - src/axi_llc_config.sv
   - src/axi_llc_cbqri_cc.sv
   - src/axi_llc_cbqri_bc.sv
+  - src/axi_llc_w_buffer.sv
   - src/axi_llc_hit_miss.sv
   # Level 3
   - src/axi_llc_top.sv

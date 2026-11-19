@@ -37,7 +37,9 @@ module tb_axi_llc #(
   /// Application time to the DUT
   parameter time         TbApplTime         = 2ns,
   /// Test time of the DUT
-  parameter time         TbTestTime         = 8ns
+  parameter time         TbTestTime         = 8ns,
+  /// Write-data buffer slots (axi_llc_w_buffer; 0: none)
+  parameter int unsigned TbWBufSlots        = 32'd0
 );
    
   /////////////////////////////
@@ -464,6 +466,7 @@ module tb_axi_llc #(
     .AxiLiteAddrWidth ( TbAxiAddrWidthLite ),
     .AxiLiteDataWidth ( TbAxiDataWidthLite ),
     .NumCfgRegcp      ( TbNumCfgRegcp      ),
+    .QosWBufSlots     ( TbWBufSlots        ),
     .slv_req_t        ( axi_slv_req_t      ),
     .slv_resp_t       ( axi_slv_resp_t     ),
     .mst_req_t        ( axi_mst_req_t      ),

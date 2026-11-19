@@ -297,10 +297,41 @@ little below what the memory sustains per period (`t_bc` hands out 90 %).
 RCIDs past their reservation with Mweight = 0 wait for the next period: a hard limit, as CBQRI defines Mweight 0.
 Within the paced rate the arbiter is work-conserving.
 
-**Ordering rules** (the LLC's own, kept by the pool): descriptors of one AXI ID leave in order; all writes leave in
-order (the LLC's write unit takes W beats in arrival order, and AXI4 W beats carry no ID); a flush leaves in order with
-everything. So a write miss of a throttled RCID can hold later writes of other RCIDs; priority inheritance releases it
-(charged to its owner) when a write of an RCID inside its reservation waits behind it.
+**Ordering rules** (kept by the pool):
+- descriptors of one AXI ID leave in order;
+- a refill of a line does not leave before an older descriptor that evicts that line. The lookup has already given
+  the line's way to the older descriptor, and its write-back is still to come: a younger refill of the line (a miss
+  into another way, after the line's owner touches it again) would read the memory's stale copy. Once both are
+  released the in-order pipeline keeps the order (the eviction unit passes a descriptor on only after its write
+  response). This rule was missing until 2026-11-18: a read could return stale data when a parked descriptor had
+  evicted a dirty line of another RCID (found by `tb_llc_wbuf`, below; the original LLC's in-order pipeline never
+  needed it);
+- a write whose W beats are not buffered leaves in order with every other write: the write unit then takes its beats
+  from the W channel, in AW order (AXI4 W beats carry no ID). With the **write-data buffer** (below) only writes with
+  more beats than a slot holds are unbuffered; without it, every write;
+- a flush leaves in order with everything.
+
+A descriptor that a waiting descriptor of an RCID inside its reservation depends on is released at once (priority
+inheritance, charged to its owner): the floor holds, at the cost of a leak for the RCID it belongs to.
+
+**Write-data buffer** (`ip_list/axi_llc/src/axi_llc_w_buffer.sv`, `axi_llc_top` parameter `QosWBufSlots`, build knob
+`QOS_LLC_WBUF`, default 8 slots, 0 removes it). Without it the LLC keeps all writes in AW order, so one throttled
+write held every later write of every RCID: next to a hard-limited writer (Rbwb 1, Mweight 0), a best-effort core's
+stores ran at 32 % and took up to 13k cycles (`t_bcw` F); its loads that first wrote a dirty L1 line back stalled the
+same way (52 %, up to 12.5k cycles, `t_bcd` B'); and a coherent DMA write held behind it stalled the coherence unit and
+with it every core (44 %, `t_bcd` E). The buffer sits on the AW descriptor stream after the burst cutter: a write
+descriptor of up to one line at full width (CVA6 write-backs, DMA words) gets a slot, its W beats are captured into it
+as they arrive, and the write unit reads its descriptor's slot, so writes reach it in any order. The pool then orders
+buffered writes only by AXI ID, and the miss counters send a write down the miss pipeline only behind an outstanding
+unbuffered write miss. A descriptor waits for a free slot (the AW channel then stalls for everyone); a narrow or FIXED
+burst with more beats on a line than a slot holds stays unbuffered and keeps the old order. Each CVA6 core has at most
+one write in flight per AXI adapter, so 8 slots cover the four cores, the coherence unit and the debug module.
+With it (SoC simulation, 2026-11-18): the best-effort stores of `t_bcw` F keep normal latency (longest 1,040 cycles
+instead of 13,147; 62 % of alone, the rest being the dirty evictions their refills now cause), the hard-limited writer
+no longer leaks through the core whose write-backs used to inherit (6 DRAM lines, as alone, instead of 12),
+`t_bcd` B' loads run at 97 % (longest 812 cycles) and E at 78 % (longest 699). Still open: a held write of the DMA's own
+RCID still stalls the coherence unit, which waits for each coherent write's response (`t_bcd` D: every core at 3 %,
+longest 12,340 cycles).
 
 | Offset | Register | |
 |---|---|---|
@@ -363,6 +394,17 @@ than four cores with several each) would stall the lookup again.
     writes 64 / `SOC_NUM_CORES` lines in one LLC set and must read back what it wrote. With four cores, RCIDs 4–7
     have 4 ways and 16 lines each; with eight, RCIDs 4–11 have 2 ways and 8 lines each.
 
+- **`tb_llc_wbuf`** (`hardware/xsim/tests/run_llc_wbuf.sh`, the LLC alone): eight AXI IDs with full-width and narrow
+  bursts and random strobes on disjoint regions that share the LLC's sets, a reference memory per ID, regulation off
+  and then RCID 1 hard-limited so its misses park while the others pass them; checks every read byte, every response,
+  and that everything finishes. `WBUF=0` runs the LLC without the write-data buffer. It found the stale-refill bug
+  (ordering rules above) and catches two injected ones: without the line rule, 37 stale reads; with buffered writes
+  allowed past an unbuffered write miss, a deadlock (the write unit waits for beats queued behind the unbuffered
+  write's).
+- **`t_bcw`** and **`t_bcd`** measure who a throttled write stops (see the write-data buffer above); `tb_llc_bc`
+  (`run_llc_bc.sh`) is the controller's unit test, with cases K (buffered writes next to a hard-limited writer: 97.9 %
+  of the bandwidth, 0.3 % unbuffered) and L (a random mix of buffered and unbuffered writes, ordering checked).
+
 **Simulation checkers** (both in every simulation; `sim_status` reports their errors as `qos_errors`, and
 `sim_regress` fails a test that has any):
 
@@ -408,6 +450,9 @@ thrash of 48 dirty lines in one LLC set pass in that mode with 0 checker errors 
 
 ## Next steps
 
+- The DMA path: a held coherent DMA write of the DMA's own RCID stalls the coherence unit (it waits for each write's
+  response): a non-coherent DMA port, write decoupling in the coherence unit, or an early write response from the
+  LLC's write-data buffer.
 - Per-AT bandwidth allocation in the memory bandwidth controller, and regulation of traffic that bypasses the LLC.
 - Capacity usage monitoring (`cc_mon_ctl`), which would need an occupancy count per MCID kept with the LLC
   tags.

@@ -3,6 +3,8 @@
 // controller's pool must too: a parked write of a throttled RCID holds every later write, of any RCID. Priority
 // inheritance releases it when a write of an RCID inside its reservation waits behind it (charged to its owner).
 // This test measures what that costs: it reports, and checks only what must hold either way.
+// With the LLC's write-data buffer (build knob QOS_LLC_WBUF, default 8 slots) buffered writes need only per-ID order:
+// the stall and the leak are gone (hardware/docs/qos.md); build with QOS_LLC_WBUF=0 to see them.
 //
 // Writes reach the LLC as L1 write-backs (CVA6's L1 is write-back, 16-byte lines, 8 ways x 128 sets): a store to a line
 // the L1 lacks reads it (a ReadUnique: an LLC read), and when the L1 set is full the miss handler first writes back

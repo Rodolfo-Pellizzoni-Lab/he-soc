@@ -16,6 +16,6 @@ xelab tb_llc_bc -s llc_bc --timescale 1ns/1ps --mt off \
   > xelab_llc_bc.log 2>&1 || { grep -E "ERROR" xelab_llc_bc.log | head -8; exit 1; }
 rc=0
 timeout 1800 xsim llc_bc -R -log llc_bc.log > llc_bc_stdout.log 2>&1 || rc=$?
-grep -E "^  [A-J]|^FAIL|LLC BC UNIT" llc_bc_stdout.log || true
+grep -E "^  [A-L]|^FAIL|LLC BC UNIT" llc_bc_stdout.log || true
 [ $rc = 124 ] && { echo "LLC BC UNIT FAIL: xsim still running after 1800 s"; exit 1; }
 ! grep -qE "^(Error|Fatal|ERROR|FATAL)" llc_bc_stdout.log && grep -q 'LLC BC UNIT PASS' llc_bc_stdout.log

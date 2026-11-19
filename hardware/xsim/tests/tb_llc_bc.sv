@@ -35,7 +35,9 @@ module tb_llc_bc;
     logic        refill;
     logic        evict;
     logic        flush;
-  } desc_t;
+    logic        wbuf;                                // a write with buffered W beats (only per-ID order)
+    logic [15:0] evict_tag;                           // all ones: never the tag of a sequence number (no line hazards
+  } desc_t;                                           // here; tb_llc_wbuf covers them in the LLC)
 
   `AXI_LITE_TYPEDEF_ALL(lite, logic [31:0], logic [31:0], logic [3:0])
 
@@ -126,6 +128,7 @@ module tb_llc_bc;
   int unsigned gen_on[NR], gen_wr_pct[NR], gen_flush_pct;
   int          gen_evict_pct[NR] = '{-1, -1, -1, -1};      // -1: one in three refills evicts
   logic        gen_rand_ids;                            // H: any ID for any RCID
+  int unsigned gen_wbuf_pct = 0;                        // K, L: share of writes with buffered W beats
   int unsigned seq = 0;
   desc_t       inserted[$];
   bit          done[int unsigned];
@@ -139,11 +142,13 @@ module tb_llc_bc;
     int unsigned mc;
     d = '0;
     d.a_x_addr = seq;
+    d.evict_tag = '1;
     d.a_x_id   = gen_rand_ids ? 4'($urandom_range(0, 15)) : 4'(4 * r + $urandom_range(0, 3));
     mc         = r;                                     // MCID = RCID
     d.a_x_user = {1'b0, 4'(mc), 4'(r), 3'(r)};
     d.flush    = ($urandom_range(0, 99) < gen_flush_pct);
     d.rw       = ($urandom_range(0, 99) < gen_wr_pct[r]);
+    d.wbuf     = d.rw && !d.flush && ($urandom_range(0, 99) < gen_wbuf_pct);
     if (d.flush) begin d.refill = 1'b0; d.evict = $urandom_range(0, 1); end
     else begin
       d.refill = ($urandom_range(0, 9) != 0);           // 10 % pass-through (a hit routed through the miss path)
@@ -224,7 +229,7 @@ module tb_llc_bc;
     if (s >= inserted.size()) begin fail($sformatf("descriptor %0d left but was never inserted", s)); return; end
     for (int unsigned t = oldest_open; t < s; t++) if (!done.exists(t)) begin
       o = inserted[t];
-      if (o.a_x_id == d.a_x_id || (o.rw && d.rw) || o.flush || d.flush)
+      if (o.a_x_id == d.a_x_id || (o.rw && d.rw && !(o.wbuf && d.wbuf)) || o.flush || d.flush)
         fail($sformatf("descriptor %0d (id %0d rw %0d flush %0d) left before older %0d (id %0d rw %0d flush %0d)",
                        s, d.a_x_id, d.rw, d.flush, t, o.a_x_id, o.rw, o.flush));
     end
@@ -462,6 +467,40 @@ module tb_llc_bc;
     end
     stop_and_drain();
     gen_evict_pct[1] = -1; gen_evict_pct[2] = -1;
+
+    // ---- K: writes next to a hard-limited writer (RCID 1: Rbwb 1, Mweight 0), the other writer (RCID 2) past its
+    // reservation (Rbwb 1, Mweight 64): unbuffered, all writes in order and RCID 2 waits behind RCID 1's parked
+    // writes; buffered (the LLC's write-data buffer), only per ID: RCID 2 takes what RCID 1 cannot
+    set_limit(1, 1, 1); set_limit(2, 1, 1); set_limit(3, 1, 1);
+    set_limit(1, 1, 0); set_limit(2, 1, 64);
+    for (int b = 0; b < 2; b++) begin
+      gen_wbuf_pct = b ? 100 : 0;
+      traffic('{0, 1, 1, 0}, '{0, 100, 100, 0}, 0);
+      repeat (2 * PERIOD) @(posedge clk);
+      shares(10 * PERIOD, sh);
+      begin
+        real f2 = real'(rel_bytes[2]) / real'(10 * CAP), f1 = real'(rel_bytes[1]) / real'(10 * CAP);
+        $display("  K %s writes: RCID 2 (best effort) %5.1f %% of the bandwidth, RCID 1 (hard limit) %5.1f %%",
+                 b ? "buffered  " : "unbuffered", 100.0 * f2, 100.0 * f1);
+        if (b && f2 < 0.80) fail($sformatf("K: buffered RCID 2 got %.3f next to a hard-limited writer", f2));
+        // the hard limit: about one release per period (up to two lines each), no inheritance between buffered writes
+        if (b && rel_bytes[1] > 10 * 2 * 64 + 256)
+          fail($sformatf("K: hard-limited RCID 1 moved %0d bytes in 10 periods", rel_bytes[1]));
+      end
+      stop_and_drain();
+    end
+
+    // ---- L: random mix of buffered and unbuffered writes, reads and flushes, any ID for any RCID: the ordering
+    // rules (checked on every release) and a full drain
+    gen_rand_ids = 1'b1;
+    gen_wbuf_pct = 50;
+    set_limit(1, 100, 8); set_limit(2, 1, 0); set_limit(3, 50, 32);
+    traffic('{0, 1, 1, 1}, '{0, 60, 60, 60}, 3);
+    repeat (6 * PERIOD) @(posedge clk);
+    stop_and_drain(20 * PERIOD);
+    $display("  L: %0d descriptors (half the writes buffered) left in a legal order", inserted.size());
+    gen_rand_ids = 1'b0;
+    gen_wbuf_pct = 0;
 
     if (fails == 0) $display("LLC BC UNIT PASS");
     else            $display("LLC BC UNIT FAIL: %0d failures", fails);

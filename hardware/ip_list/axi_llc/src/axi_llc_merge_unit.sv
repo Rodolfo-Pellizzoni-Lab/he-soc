@@ -62,6 +62,7 @@ module axi_llc_merge_unit #(
   // enable cnt_down_o if there is a transfer from the pipeline
   assign cnt_down_o.id    = refill_desc_i.a_x_id;
   assign cnt_down_o.rw    = refill_desc_i.rw;
+  assign cnt_down_o.ub    = refill_desc_i.rw & ~refill_desc_i.wbuf;
   assign cnt_down_o.valid = refill_valid_i & refill_ready_o;
 
   // The rw field is write = 1, read = 0.

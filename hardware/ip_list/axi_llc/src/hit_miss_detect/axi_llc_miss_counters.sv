@@ -81,12 +81,16 @@ module axi_llc_miss_counters #(
   end
   // assignment of the inputs to the write counter
   // this assignment was calculated using a karnot diagramm
-  assign en_w = ( ~cnt_up_i.rw     & cnt_down_i.rw  &   cnt_down_i.valid ) |
-                ( ~cnt_up_i.valid  & cnt_down_i.rw  &   cnt_down_i.valid ) |
-                (  cnt_up_i.rw     & cnt_up_i.valid &  ~cnt_down_i.rw    ) |
-                (  cnt_up_i.rw     & cnt_up_i.valid &  ~cnt_down_i.valid ) ;
+  // The write counter counts the write misses whose W beats the write unit takes straight from the W channel
+  // (`ub`: every write without the write-data buffer, only unbuffered ones with it, axi_llc_w_buffer): while one is
+  // outstanding every new write goes down the miss pipeline behind it, so that writes reach the write unit in AW order.
+  // Writes with buffered beats need only the per-ID order of the counters above.
+  assign en_w = ( ~cnt_up_i.ub     & cnt_down_i.ub  &   cnt_down_i.valid ) |
+                ( ~cnt_up_i.valid  & cnt_down_i.ub  &   cnt_down_i.valid ) |
+                (  cnt_up_i.ub     & cnt_up_i.valid &  ~cnt_down_i.ub    ) |
+                (  cnt_up_i.ub     & cnt_up_i.valid &  ~cnt_down_i.valid ) ;
 
-  assign down_w = ~cnt_up_i.rw | ~cnt_up_i.valid;
+  assign down_w = ~cnt_up_i.ub | ~cnt_up_i.valid;
 
   for (genvar j = 0; unsigned'(j) < NoCounters; j++) begin : gen_cmiss_counters
     counter #(

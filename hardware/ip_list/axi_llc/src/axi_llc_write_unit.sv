@@ -28,7 +28,12 @@ module axi_llc_write_unit #(
   /// AXI slave port W channel struct definition.
   parameter type w_chan_t = logic,
   /// AXI slave port B channel struct definition.
-  parameter type b_chan_t = logic
+  parameter type b_chan_t = logic,
+  /// Write-data buffer (axi_llc_w_buffer): the unit reads its descriptor's beats from the buffer (`wb_*`) instead of
+  /// the W channel, so descriptors may arrive in any order. `0`: the W channel FIFO, descriptors in AW order.
+  parameter bit WBuf = 1'b0,
+  /// Width of the descriptor's `w_slot`.
+  parameter int unsigned WSlotW = 32'd1
 ) (
   /// Clock, positive edge triggered.
   input logic clk_i,
@@ -67,7 +72,13 @@ module axi_llc_write_unit #(
   output logic w_unlock_req_o,
   /// Unlock request can be granted.
   /// NOT AXI compliant! Has to be `1'b1` so that the unit is active!
-  input logic w_unlock_gnt_i
+  input logic w_unlock_gnt_i,
+  /// Write-data buffer read port (WBuf): the current descriptor's `wbuf` and `w_slot`, its next beat.
+  output logic              wb_wbuf_o,
+  output logic [WSlotW-1:0] wb_slot_o,
+  input  w_chan_t           wb_w_i,
+  input  logic              wb_valid_i,
+  output logic              wb_ready_o
 );
   `include "common_cells/registers.svh"
   typedef logic [AxiCfg.AddrWidthFull-1:0] addr_t;
@@ -87,23 +98,36 @@ module axi_llc_write_unit #(
   // W channel pipeline FIFO
   // This FIFO buffers W beats as long as the corresponding AW
   // vector goes through the pipeline for lookup etc.
-  stream_fifo #(
-    .FALL_THROUGH ( 1'b0                          ),
-    .DEPTH        ( axi_llc_pkg::WChanBufferDepth ),
-    .T            ( w_chan_t                      )
-  ) i_w_stream_fifo (
-    .clk_i,
-    .rst_ni,
-    .flush_i    ( 1'b0           ),
-    .testmode_i ( test_i         ),
-    .usage_o    ( /*not used*/   ),
-    .data_i     ( w_chan_slv_i   ),
-    .valid_i    ( w_chan_valid_i ),
-    .ready_o    ( w_chan_ready_o ),
-    .data_o     ( w_chan         ),
-    .valid_o    ( w_valid        ),
-    .ready_i    ( w_ready        )
-  );
+  if (WBuf) begin : gen_wbuf
+    // beats from the write-data buffer: the slot of the descriptor in the unit (only read while busy)
+    assign wb_wbuf_o      = desc_q.wbuf;
+    assign wb_slot_o      = WSlotW'(desc_q.w_slot);
+    assign w_chan         = wb_w_i;
+    assign w_valid        = wb_valid_i;
+    assign wb_ready_o     = w_ready;
+    assign w_chan_ready_o = 1'b0;
+  end else begin : gen_w_fifo
+    assign wb_wbuf_o  = 1'b0;
+    assign wb_slot_o  = '0;
+    assign wb_ready_o = 1'b0;
+    stream_fifo #(
+      .FALL_THROUGH ( 1'b0                          ),
+      .DEPTH        ( axi_llc_pkg::WChanBufferDepth ),
+      .T            ( w_chan_t                      )
+    ) i_w_stream_fifo (
+      .clk_i,
+      .rst_ni,
+      .flush_i    ( 1'b0           ),
+      .testmode_i ( test_i         ),
+      .usage_o    ( /*not used*/   ),
+      .data_i     ( w_chan_slv_i   ),
+      .valid_i    ( w_chan_valid_i ),
+      .ready_o    ( w_chan_ready_o ),
+      .data_o     ( w_chan         ),
+      .valid_o    ( w_valid        ),
+      .ready_i    ( w_ready        )
+    );
+  end
 
   // way_inp assignments
   assign way_inp_o = '{
