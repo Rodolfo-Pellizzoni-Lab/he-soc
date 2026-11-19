@@ -17,6 +17,11 @@
 //      descriptor in flight per RCID: with pacing (BC_CTRL.PACE) the waiting happens in the pool and Mweight
 //      32 / 64 / 128 still gives 1/7, 2/7, 4/7; without pacing the queue serves in arrival order (logged only);
 //      BC_RATE = BC_CAPACITY * 2^16 / BC_PERIOD
+//   K  buffered and unbuffered writes next to a hard-limited writer; L  a random mix of both, ordering checked
+//   M  gated sources (port 4, axi_llc_bc_gate): descriptors of a hard-limited RCID from the gated port are never
+//      parked (from another port they wait for the next period); admission is granted while the RCID's used plus
+//      pending bytes are below its reservation, refused otherwise (BC_GATE_WAIT counts), granted again after done,
+//      always granted to an RCID with Mweight > 0 and with regulation off
 // Always: every descriptor leaves once, and none leaves before an older one of its AXI ID, an older write (if it is
 // a write) or an older flush (and a flush before nothing older).
 // Prints "LLC BC UNIT PASS" or "LLC BC UNIT FAIL: <n> failures".
@@ -48,6 +53,9 @@ module tb_llc_bc;
   lite_resp_t lresp;
   desc_t      in_d, out_d;
   logic       in_v, in_r, out_v, out_r;
+  logic       g_req = 1'b0, g_gnt, g_done = 1'b0;
+  logic [3:0] g_rcid = '0, g_done_rcid = '0;
+  logic [15:0] g_bytes = '0, g_done_bytes = '0;
 
   axi_llc_cbqri_bc #(
     .desc_t      ( desc_t     ),
@@ -59,13 +67,17 @@ module tb_llc_bc;
     .PoolDepth   ( 16         ),
     .CtrWidth    ( 48         ),
     .DataWidth   ( 32         ),
+    .NumGates    ( 1          ),
+    .GateSrcMask ( 64'h10     ),                      // port 4 is gated
     .lite_req_t  ( lite_req_t ),
     .lite_resp_t ( lite_resp_t)
   ) dut (
     .clk_i   ( clk   ), .rst_ni  ( rst_n ),
     .req_i   ( lreq  ), .resp_o  ( lresp ),
     .desc_i  ( in_d  ), .valid_i ( in_v  ), .ready_o ( in_r ),
-    .desc_o  ( out_d ), .valid_o ( out_v ), .ready_i ( out_r )
+    .desc_o  ( out_d ), .valid_o ( out_v ), .ready_i ( out_r ),
+    .gate_req_i ( g_req ), .gate_rcid_i ( g_rcid ), .gate_bytes_i ( g_bytes ), .gate_gnt_o ( g_gnt ),
+    .gate_done_i ( g_done ), .gate_done_rcid_i ( g_done_rcid ), .gate_done_bytes_i ( g_done_bytes )
   );
 
   int unsigned fails = 0;
@@ -129,6 +141,11 @@ module tb_llc_bc;
   int          gen_evict_pct[NR] = '{-1, -1, -1, -1};      // -1: one in three refills evicts
   logic        gen_rand_ids;                            // H: any ID for any RCID
   int unsigned gen_wbuf_pct = 0;                        // K, L: share of writes with buffered W beats
+  bit          gen_gated[NR] = '{0, 0, 0, 0};           // M: the RCID's descriptors come from the gated port 4
+  longint unsigned ins_cyc[int unsigned];               // insertion cycle per sequence number
+  longint unsigned cyc = 0;
+  longint unsigned max_wait[NR];                        // longest pool residency per RCID (cycles)
+  always @(posedge clk) cyc <= cyc + 1;
   int unsigned seq = 0;
   desc_t       inserted[$];
   bit          done[int unsigned];
@@ -145,7 +162,7 @@ module tb_llc_bc;
     d.evict_tag = '1;
     d.a_x_id   = gen_rand_ids ? 4'($urandom_range(0, 15)) : 4'(4 * r + $urandom_range(0, 3));
     mc         = r;                                     // MCID = RCID
-    d.a_x_user = {1'b0, 4'(mc), 4'(r), 3'(r)};
+    d.a_x_user = {1'b0, 4'(mc), 4'(r), gen_gated[r] ? 3'd4 : 3'(r)};
     d.flush    = ($urandom_range(0, 99) < gen_flush_pct);
     d.rw       = ($urandom_range(0, 99) < gen_wr_pct[r]);
     d.wbuf     = d.rw && !d.flush && ($urandom_range(0, 99) < gen_wbuf_pct);
@@ -171,6 +188,7 @@ module tb_llc_bc;
       @(posedge clk);
       took = in_v && in_r;
       if (took) begin
+        ins_cyc[seq] = cyc;
         inserted.push_back(in_d);
         inflight[in_d.a_x_user[6:3]]++;
         seq++;
@@ -234,6 +252,7 @@ module tb_llc_bc;
                        s, d.a_x_id, d.rw, d.flush, t, o.a_x_id, o.rw, o.flush));
     end
     done[s] = 1'b1;
+    if (cyc - ins_cyc[s] > max_wait[d.a_x_user[6:3]]) max_wait[d.a_x_user[6:3]] = cyc - ins_cyc[s];
     inflight[d.a_x_user[6:3]]--;
     while (done.exists(oldest_open)) oldest_open++;
     if (measure && !d.flush) rel_bytes[d.a_x_user[6:3]] += 64 * (int'(d.refill) + int'(d.evict));
@@ -267,6 +286,19 @@ module tb_llc_bc;
   task automatic expect_share(string t, int r, real got, real lo, real hi);
     $display("  %s RCID %0d: %5.1f %% (expected %4.1f..%4.1f)", t, r, 100.0 * got, 100.0 * lo, 100.0 * hi);
     if (got < lo || got > hi) fail($sformatf("%s: RCID %0d share %.3f outside %.3f..%.3f", t, r, got, lo, hi));
+  endtask
+
+  // M: one admission request (sampled before the edge that admits it) and one done
+  task automatic gate_try(int rcid, int bytes, output bit got);
+    @(posedge clk); #TA;
+    g_req = 1'b1; g_rcid = 4'(rcid); g_bytes = 16'(bytes);
+    #(TT - TA); got = g_gnt;
+    @(posedge clk); #TA; g_req = 1'b0;
+  endtask
+  task automatic gate_fin(int rcid, int bytes);
+    @(posedge clk); #TA;
+    g_done = 1'b1; g_done_rcid = 4'(rcid); g_done_bytes = 16'(bytes);
+    @(posedge clk); #TA; g_done = 1'b0;
   endtask
 
   // FIFO check for A
@@ -501,6 +533,52 @@ module tb_llc_bc;
     $display("  L: %0d descriptors (half the writes buffered) left in a legal order", inserted.size());
     gen_rand_ids = 1'b0;
     gen_wbuf_pct = 0;
+
+    // ---- M: gated sources
+    set_limit(1, 1, 1); set_limit(2, 1, 1); set_limit(3, 1, 1);
+    set_limit(1, 1, 0); set_limit(2, 1, 64);
+    wr32(32'h88, PERIOD); wr32(32'h90, CAP); wr32(32'h80, 3);
+    for (int g = 0; g < 2; g++) begin
+      gen_gated[1] = g;
+      traffic('{0, 1, 1, 0}, '{0, 0, 0, 0}, 0);
+      repeat (2 * PERIOD) @(posedge clk);
+      for (int k = 0; k < NR; k++) max_wait[k] = 0;
+      shares(10 * PERIOD, sh);
+      $display("  M RCID 1 (hard limit) from %s port: longest wait %0d cycles, %5.1f %% of the traffic",
+               g ? "the gated" : "an ungated", max_wait[1], 100.0 * sh[1]);
+      if (g && max_wait[1] > PERIOD / 4) fail($sformatf("M: gated RCID 1 descriptor waited %0d cycles", max_wait[1]));
+      if (!g && max_wait[1] < PERIOD / 2) fail($sformatf("M: ungated hard-limited RCID 1 waited only %0d cycles",
+                                                          max_wait[1]));
+      stop_and_drain();
+    end
+    gen_gated[1] = 0;
+    begin
+      bit got;
+      logic [31:0] w;
+      repeat (PERIOD + 10) @(posedge clk);                // a fresh period without RCID 1 traffic: used = 0
+      wr32(32'hB0, 0);                                    // clear BC_GATE_WAIT
+      gate_try(1, 256, got); if (!got) fail("M: first request of hard-limited RCID 1 refused (used 0, pend 0)");
+      gate_try(1, 256, got); if (got)  fail("M: second request admitted although pend 256 >= reservation");
+      gate_try(2, 256, got); if (!got) fail("M: request of RCID 2 (Mweight 64) refused");
+      rd32(32'hB0, w);       if (w == 0) fail("M: BC_GATE_WAIT did not count the refused request");
+      begin                                               // a clear while a request keeps waiting
+        logic [31:0] w2;
+        @(posedge clk); #TA; g_req = 1'b1; g_rcid = 4'd1; g_bytes = 16'd256;
+        repeat (200) @(posedge clk);
+        wr32(32'hB0, 0);
+        rd32(32'hB0, w2);
+        @(posedge clk); #TA; g_req = 1'b0;
+        if (w2 == 0 || w2 > 60) fail($sformatf("M: BC_GATE_WAIT %0d right after a clear while waiting", w2));
+      end
+      gate_fin(1, 256);
+      gate_try(1, 256, got); if (!got) fail("M: request of RCID 1 refused after the first one was done");
+      gate_fin(1, 256); gate_fin(2, 256);
+      wr32(32'h80, 0);                                    // regulation off: everything is admitted
+      gate_try(1, 256, got); if (!got) fail("M: refused with regulation off");
+      gate_try(1, 256, got); if (!got) fail("M: second request refused with regulation off");
+      gate_fin(1, 256); gate_fin(1, 256);
+      $display("  M admission: granted below the reservation, refused at it (BC_GATE_WAIT %0d), again after done", w);
+    end
 
     if (fails == 0) $display("LLC BC UNIT PASS");
     else            $display("LLC BC UNIT FAIL: %0d failures", fails);

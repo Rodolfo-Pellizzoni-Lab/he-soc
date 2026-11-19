@@ -410,6 +410,12 @@ module host_domain
 
 
    XBAR_TCDM_BUS axi_bridge_2_interconnect[AXI64_2_TCDM32_N_PORTS]();
+
+   // admission of the CCU's DMA ports (cva6_subsystem's axi_llc_bc_gate) at the LLC's bandwidth controller
+   logic [ariane_soc::NumCcuDmaPorts-1:0]                                 qos_gate_req, qos_gate_gnt, qos_gate_done;
+   logic [ariane_soc::NumCcuDmaPorts-1:0][ariane_pkg::QOS_RCID_WIDTH-1:0] qos_gate_rcid, qos_gate_done_rcid;
+   logic [ariane_soc::NumCcuDmaPorts-1:0][15:0]                           qos_gate_bytes, qos_gate_done_bytes;
+   localparam logic [63:0] QosGateSrcMask = (64'd1 << ariane_soc::CcuAccelPort) | (64'd1 << ariane_soc::CcuEthPort);
    XBAR_TCDM_BUS udma_2_tcdm_channels[NB_UDMA_TCDM_CHANNEL]();
 
 
@@ -687,6 +693,8 @@ module host_domain
       .QosBc            ( ariane_pkg::QOS_LLC_BC         ),
       .QosBcPoolDepth   ( ariane_pkg::QOS_LLC_BC_POOL    ),
       .QosWBufSlots     ( ariane_pkg::QOS_LLC_WBUF       ),
+      .QosGates         ( ariane_pkg::QOS_DMA_GATE ? ariane_soc::NumCcuDmaPorts : 0 ),
+      .QosGateSrcMask   ( ariane_pkg::QOS_DMA_GATE ? QosGateSrcMask : 64'd0 ),
       .QosCcOffset      ( 32'h800                        )
     ) i_axi_llc (
       .clk_i               ( s_soc_clk                                                                           ),
@@ -701,7 +709,14 @@ module host_domain
       .cached_start_addr_i ( {{(AXI_ADDRESS_WIDTH-$bits(s_llc_cache_addr_start)){1'b0}}, s_llc_cache_addr_start} ),
       .cached_end_addr_i   ( {{(AXI_ADDRESS_WIDTH-$bits(s_llc_cache_addr_end)){1'b0}}  , s_llc_cache_addr_end  } ),
       .spm_start_addr_i    ( {{(AXI_ADDRESS_WIDTH-$bits(s_llc_spm_addr_start)){1'b0}}  , s_llc_spm_addr_start  } ),
-      .axi_llc_events_o    ( llc_events                                                                          )
+      .axi_llc_events_o    ( llc_events                                                                          ),
+      .qos_gate_req_i        ( qos_gate_req        ),
+      .qos_gate_rcid_i       ( qos_gate_rcid       ),
+      .qos_gate_bytes_i      ( qos_gate_bytes      ),
+      .qos_gate_gnt_o        ( qos_gate_gnt        ),
+      .qos_gate_done_i       ( qos_gate_done       ),
+      .qos_gate_done_rcid_i  ( qos_gate_done_rcid  ),
+      .qos_gate_done_bytes_i ( qos_gate_done_bytes )
     );
 
    `ifndef SYNTHESIS
@@ -1223,7 +1238,14 @@ axi_spu_top #(
 
         // Per-core token bucket config region
         .token_bucket_cfg_req_i  ( token_bucket_cfg_req  ),
-        .token_bucket_cfg_resp_o ( token_bucket_cfg_resp )
+        .token_bucket_cfg_resp_o ( token_bucket_cfg_resp ),
+        .qos_gate_req_o        ( qos_gate_req        ),
+        .qos_gate_rcid_o       ( qos_gate_rcid       ),
+        .qos_gate_bytes_o      ( qos_gate_bytes      ),
+        .qos_gate_gnt_i        ( qos_gate_gnt        ),
+        .qos_gate_done_o       ( qos_gate_done       ),
+        .qos_gate_done_rcid_o  ( qos_gate_done_rcid  ),
+        .qos_gate_done_bytes_o ( qos_gate_done_bytes )
     );
 `endif // XSIM_CUT_i_cva6_subsystem
 

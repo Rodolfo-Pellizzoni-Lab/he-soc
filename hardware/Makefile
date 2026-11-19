@@ -216,9 +216,10 @@ endif
 # accel/templates/accel_template.sv): SOCK_QOS_RANGES (16 address-range tag entries; 0 removes the table),
 # ACCEL_JOB_DEPTH (4-job queue in template accelerators; 0 removes it); the LLC's CBQRI bandwidth controller
 # (ip_list/axi_llc/src/axi_llc_cbqri_bc.sv): QOS_LLC_BC (1; 0 removes it), QOS_LLC_BC_POOL (16-descriptor pool),
-# and its write-data buffer (axi_llc_w_buffer.sv): QOS_LLC_WBUF (8 slots; 0 removes it)
+# its write-data buffer (axi_llc_w_buffer.sv): QOS_LLC_WBUF (8 slots; 0 removes it), and the admission gates in
+# front of the CCU's DMA ports (axi_llc_bc_gate.sv): QOS_DMA_GATE (1; 0 removes them)
 QOS_KNOBS := QOS_RCID_WIDTH QOS_MCID_WIDTH QOS_PRIV_ASSOC QOS_NUM_VRCID QOS_NUM_VMCID SOCK_QOS_RANGES ACCEL_JOB_DEPTH \
-             QOS_LLC_BC QOS_LLC_BC_POOL QOS_LLC_WBUF
+             QOS_LLC_BC QOS_LLC_BC_POOL QOS_LLC_WBUF QOS_DMA_GATE
 $(foreach k,$(QOS_KNOBS),$(if $($(k)),$(eval compile_flag += +define+$(k)=$($(k)))$(eval compile_fpga += $(k)=$($(k)))))
 
 ifdef exclude-cluster

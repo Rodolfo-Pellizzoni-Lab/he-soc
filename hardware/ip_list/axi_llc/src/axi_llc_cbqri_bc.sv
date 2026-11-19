@@ -35,6 +35,16 @@
 // everything. Buffered writes need only the per-ID order: a parked write then holds up only its own ID. With regulation off (BC_CTRL.EN = 0, the reset state)
 // every descriptor is class 1 and the pool is a FIFO.
 //
+// Admission of gated sources (NumGates > 0): a request of a gated DMA port (axi_llc_bc_gate in front of the
+// coherence unit) asks the controller before it enters the coherence unit, with its RCID and its worst-case cost in
+// bytes. While regulation is on and the RCID has Mweight = 0, the request is admitted only if the RCID's bytes used
+// this period plus the worst-case bytes of its admitted, unfinished requests (pend) are below its reservation (the
+// same overshoot rule as a release); otherwise it waits at the gate, before the coherence unit, holding up only its
+// own port. Other RCIDs are always admitted. Descriptors from a gated source (GateSrcMask over the source field
+// below the RCID in the user field, which the coherence unit fills in, also on the write-backs it issues for a
+// request) of an RCID with Mweight = 0 count as inside its reservation: they were admitted against it, and parking
+// one would hold the coherence unit's single state machine, and with it every core, until the next period.
+//
 // Registers (offsets in the block, 64-bit; a 32-bit bus accesses them as two words, low word first; a write of
 // the byte that holds OP starts an operation, which completes in the cycle of the write, so BUSY is always 0):
 //   0x00 bc_capabilities RO  VER = 0x10, NBWBLKS = 1024, RPFX = 0, P = 0, MRBWB = 819 (80 %)
@@ -57,6 +67,7 @@
 //   0xA0 BC_FULL             cycles in which a descriptor waited because the pool was full (a write clears it)
 //   0xA8 BC_RATE         RO  the pacing rate, bytes per cycle in 16.16 fixed point (BC_CAPACITY * 2^16 / BC_PERIOD,
 //                            recomputed in 48 cycles after a write of either)
+//   0xB0 BC_GATE_WAIT        cycles in which a gated port's request waited for admission (a write clears it)
 // Reset: all RCIDs' Rbwb 0 and Mweight 1, except RCID 0: Rbwb = MRBWB and Mweight 255 (all bandwidth to RCID 0, as
 // CBQRI requires); counters off; regulation off; period 10000 cycles; capacity 64000 bytes.
 `include "common_cells/registers.svh"
@@ -75,6 +86,11 @@ module axi_llc_cbqri_bc #(
   parameter int unsigned PoolDepth   = 32'd16,
   parameter int unsigned CtrWidth    = 32'd48,  // monitoring counter bits
   parameter int unsigned DataWidth   = 32'd32,  // AXI4-Lite data width: 32 or 64
+  parameter int unsigned NumGates    = 32'd0,   // gated DMA ports (admission requests); 0: none
+  parameter logic [63:0] GateSrcMask = '0,      // bit s: source s (desc.a_x_user[RcidLsb-1:0]) is a gated port
+  // derived (do not set): port widths
+  parameter int unsigned GateW       = (NumGates > 0) ? NumGates : 1,
+  parameter int unsigned GateRcidW   = (RcidWidth > 0) ? RcidWidth : 1,
   parameter type         lite_req_t  = logic,
   parameter type         lite_resp_t = logic
 ) (
@@ -89,13 +105,22 @@ module axi_llc_cbqri_bc #(
   // to the eviction unit
   output desc_t      desc_o,
   output logic       valid_o,
-  input  logic       ready_i
+  input  logic       ready_i,
+  // admission requests of the gated ports (axi_llc_bc_gate): a request is admitted in a cycle with req and gnt;
+  // done returns the bytes of an admitted request when its last response has passed the gate
+  input  logic [GateW-1:0]                  gate_req_i,
+  input  logic [GateW-1:0][GateRcidW-1:0]   gate_rcid_i,
+  input  logic [GateW-1:0][15:0]            gate_bytes_i,
+  output logic [GateW-1:0]                  gate_gnt_o,
+  input  logic [GateW-1:0]                  gate_done_i,
+  input  logic [GateW-1:0][GateRcidW-1:0]   gate_done_rcid_i,
+  input  logic [GateW-1:0][15:0]            gate_done_bytes_i
 );
 
   localparam int unsigned NumRcid  = 2**RcidWidth;
   localparam int unsigned NumMcid  = 2**McidWidth;
+  localparam int unsigned RcidIdxW = GateRcidW;
   localparam int unsigned IdxW     = (PoolDepth > 1) ? $clog2(PoolDepth) : 1;
-  localparam int unsigned RcidIdxW = (RcidWidth > 0) ? RcidWidth : 1;
   localparam int unsigned NBWBLKS  = 32'd1024;
   localparam int unsigned MRBWB    = 32'd819;
   localparam int unsigned PassW    = 32;
@@ -137,6 +162,7 @@ module axi_llc_cbqri_bc #(
   logic [NumMcid-1:0]         ovf_q;
   logic [7:0]                 pool_max_q;
   logic [31:0]                full_q;
+  logic [31:0]                gwait_q;             // BC_GATE_WAIT
   logic                       b_valid_q, r_valid_q;
   logic [DataWidth-1:0]       r_data_q;
 
@@ -144,6 +170,7 @@ module axi_llc_cbqri_bc #(
   logic [31:0]                per_cnt_q;
   logic [NumRcid-1:0][31:0]   used_q, resv_q;
   logic [NumRcid-1:0][PassW-1:0] pass_q;
+  logic [NumRcid-1:0][31:0]   pend_q;              // worst-case bytes of admitted, unfinished gated requests
   rcid_t                      rc_idx_q;            // reservation recompute pointer
 
   // pool
@@ -159,6 +186,7 @@ module axi_llc_cbqri_bc #(
   rcid_t [PoolDepth-1:0] e_rcid;
   mcid_t [PoolDepth-1:0] e_mcid;
   logic  [PoolDepth-1:0] e_free, e_under, e_wgt;   // costs nothing / RCID inside its reservation / Mweight > 0
+  logic  [PoolDepth-1:0] e_gated;                  // from a gated source (admitted at its gate)
   logic  [PoolDepth-1:0][PoolDepth-1:0] dep;       // dep[i][j]: i must not leave before j if j is older
   logic  [PoolDepth-1:0] blocked, rdy, need1, need2;
   logic  [PoolDepth-1:0][TagWidth+IndexWidth-1:0] rf_line, ev_line;   // the line each refills / evicts
@@ -170,8 +198,10 @@ module axi_llc_cbqri_bc #(
       e_rcid[i]  = rcid_t'(pool_q[i].a_x_user[RcidLsb +: RcidIdxW]);
       e_mcid[i]  = mcid_t'(pool_q[i].a_x_user[McidLsb +: McidWidth]);
       e_free[i]  = pool_q[i].flush | !(pool_q[i].refill | pool_q[i].evict);
-      e_under[i] = under_r[e_rcid[i]];
       e_wgt[i]   = mweight_q[e_rcid[i]] != 8'd0;
+      e_gated[i] = (RcidLsb > 0) && GateSrcMask[6'(pool_q[i].a_x_user) & 6'((64'd1 << RcidLsb) - 64'd1)];
+      // admitted against the reservation at the gate: never parked (hard-limited RCIDs only, see the header)
+      e_under[i] = under_r[e_rcid[i]] | (e_gated[i] & !e_wgt[i]);
     end
     for (int unsigned i = 0; i < PoolDepth; i++) begin
       rf_line[i] = {pool_q[i].a_x_addr[IndexLsb + IndexWidth +: TagWidth], pool_q[i].a_x_addr[IndexLsb +: IndexWidth]};
@@ -289,6 +319,35 @@ module axi_llc_cbqri_bc #(
   assign rel_rcid  = e_rcid[sel_idx];
   assign rel_mcid  = e_mcid[sel_idx];
 
+  // admission of the gated ports: at most one per cycle (the pend sums stay exact), round robin among the ports
+  // whose request may go now
+  localparam int unsigned GateIdxW = (GateW > 1) ? $clog2(GateW) : 1;
+  logic [GateW-1:0]          gate_ok;
+  logic [GateIdxW-1:0]       gate_rr_q;
+  logic [NumRcid-1:0][31:0]  pend_d;
+  always_comb begin
+    logic found;
+    for (int unsigned k = 0; k < GateW; k++) begin
+      logic [32:0] committed;
+      committed  = {1'b0, used_q[gate_rcid_i[k]]} + {1'b0, pend_q[gate_rcid_i[k]]};
+      gate_ok[k] = (NumGates > 0) && gate_req_i[k] &&
+                   (!en_q || mweight_q[gate_rcid_i[k]] != 8'd0 || committed < {1'b0, resv_q[gate_rcid_i[k]]});
+    end
+    gate_gnt_o = '0;
+    found      = 1'b0;
+    for (int unsigned n = 0; n < GateW; n++) begin
+      int unsigned k;
+      k = (32'(gate_rr_q) + n) % GateW;
+      if (!found && gate_ok[k]) begin gate_gnt_o[k] = 1'b1; found = 1'b1; end
+    end
+    pend_d = pend_q;
+    for (int unsigned k = 0; k < GateW; k++) begin
+      if (gate_gnt_o[k])                  pend_d[gate_rcid_i[k]]      = pend_d[gate_rcid_i[k]] + 32'(gate_bytes_i[k]);
+      if (NumGates > 0 && gate_done_i[k]) pend_d[gate_done_rcid_i[k]] = pend_d[gate_done_rcid_i[k]] -
+                                                                         32'(gate_done_bytes_i[k]);
+    end
+  end
+
   // insertion slot: the lowest free entry
   logic [IdxW-1:0] free_idx;
   logic            has_free;
@@ -342,6 +401,7 @@ module axi_llc_cbqri_bc #(
       5'd19: reg_rd = {48'd0, pool_max_q, occ};
       5'd20: reg_rd = 64'(full_q);
       5'd21: reg_rd = 64'(rate_q);
+      5'd22: reg_rd = 64'(gwait_q);
       default: reg_rd = 64'd0;
     endcase
   end
@@ -426,6 +486,7 @@ module axi_llc_cbqri_bc #(
       ovf_q        <= '0;
       pool_max_q   <= '0;
       full_q       <= '0;
+      gwait_q      <= '0;
       b_valid_q    <= 1'b0;
       r_valid_q    <= 1'b0;
       r_data_q     <= '0;
@@ -433,6 +494,8 @@ module axi_llc_cbqri_bc #(
       used_q       <= '0;
       resv_q       <= '0;
       pass_q       <= '0;
+      pend_q       <= '0;
+      gate_rr_q    <= '0;
       rc_idx_q     <= '0;
       pool_q       <= '0;
       pv_q         <= '0;
@@ -504,6 +567,7 @@ module axi_llc_cbqri_bc #(
             5'd18: capacity_q <= merge(64'(capacity_q), w_d, w_s) & 64'hFFFF_FFFF;
             5'd19: pool_max_q <= '0;
             5'd20: full_q     <= '0;
+            5'd22: gwait_q    <= '0;
             default: ;
           endcase
         end
@@ -544,9 +608,16 @@ module axi_llc_cbqri_bc #(
       resv_q[rc_idx_q] <= 32'((64'(rbwb_q[rc_idx_q]) * 64'(capacity_q)) >> 10);
       rc_idx_q         <= (32'(rc_idx_q) == NumRcid - 1) ? rcid_t'(0) : rcid_t'(rc_idx_q + 1);
 
+      // ---- admissions of the gated ports
+      pend_q <= pend_d;
+      if (|gate_gnt_o) gate_rr_q <= (32'(gate_rr_q) + 1 >= GateW) ? '0 : GateIdxW'(32'(gate_rr_q) + 1);
+
       // ---- statistics
       if (occ > pool_max_q) pool_max_q <= occ;
-      if (valid_i && !has_free && full_q != '1) full_q <= full_q + 32'd1;
+      // (a write of the register clears it: the count skips that cycle, or it would undo the clear)
+      if (valid_i && !has_free && full_q != '1 && !(w_take && w_ours && w_idx == 5'd20)) full_q <= full_q + 32'd1;
+      if ((|(gate_req_i & ~gate_gnt_o)) && NumGates > 0 && gwait_q != '1 && !(w_take && w_ours && w_idx == 5'd22))
+        gwait_q <= gwait_q + 32'd1;
 
       // ---- output register
       if (out_valid_q && ready_i) out_valid_q <= 1'b0;

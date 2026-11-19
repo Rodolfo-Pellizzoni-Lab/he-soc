@@ -192,6 +192,13 @@ module axi_llc_top #(
   /// line at full width, so that writes need only per-ID order and a parked write holds up only its own ID
   /// (0: none, every write in AW order as in the original LLC).
   parameter int unsigned QosWBufSlots     = 32'd0,
+  /// Gated DMA ports (axi_llc_bc_gate in front of the coherence unit) that ask the bandwidth controller for
+  /// admission (qos_gate_* ports; 0: none), and the sources (user[QosRcidLsb-1:0]) their traffic carries.
+  parameter int unsigned QosGates         = 32'd0,
+  parameter logic [63:0] QosGateSrcMask   = '0,
+  /// Dependent parameters, do **not** overwrite: widths of the qos_gate_* ports.
+  parameter int unsigned QosGateW         = (QosGates > 0) ? QosGates : 1,
+  parameter int unsigned QosGateRcidW     = (QosRcidWidth > 0) ? QosRcidWidth : 1,
   /// AXI4+ATOP request type on the slave port.
   /// Expected format can be defined using `AXI_TYPEDEF_REQ_T.
   parameter type slv_req_t      = logic,
@@ -248,7 +255,15 @@ module axi_llc_top #(
   /// Events output, for tracked events see `axi_llc_pkg`.
   ///
   /// When not used, leave open.
-  output axi_llc_pkg::events_t axi_llc_events_o
+  output axi_llc_pkg::events_t axi_llc_events_o,
+  /// Admission of the gated DMA ports (axi_llc_bc_gate); tie the inputs to 0 when QosGates = 0.
+  input  logic [QosGateW-1:0]                    qos_gate_req_i,
+  input  logic [QosGateW-1:0][QosGateRcidW-1:0]  qos_gate_rcid_i,
+  input  logic [QosGateW-1:0][15:0]              qos_gate_bytes_i,
+  output logic [QosGateW-1:0]                    qos_gate_gnt_o,
+  input  logic [QosGateW-1:0]                    qos_gate_done_i,
+  input  logic [QosGateW-1:0][QosGateRcidW-1:0]  qos_gate_done_rcid_i,
+  input  logic [QosGateW-1:0][15:0]              qos_gate_done_bytes_i
 );
   `include "axi/typedef.svh"
 
@@ -802,6 +817,8 @@ module axi_llc_top #(
       .TagWidth    ( Cfg.TagLength                                ),
       .PoolDepth   ( QosBcPoolDepth                               ),
       .DataWidth   ( AxiLiteDataWidth                             ),
+      .NumGates    ( QosGates                                     ),
+      .GateSrcMask ( QosGateSrcMask                               ),
       .lite_req_t  ( lite_req_t                                   ),
       .lite_resp_t ( lite_resp_t                                  )
     ) i_cbqri_bc (
@@ -814,13 +831,21 @@ module axi_llc_top #(
       .ready_o ( miss_ready   ),
       .desc_o  ( bc_desc      ),
       .valid_o ( bc_valid     ),
-      .ready_i ( bc_ready     )
+      .ready_i ( bc_ready     ),
+      .gate_req_i        ( qos_gate_req_i        ),
+      .gate_rcid_i       ( qos_gate_rcid_i       ),
+      .gate_bytes_i      ( qos_gate_bytes_i      ),
+      .gate_gnt_o        ( qos_gate_gnt_o        ),
+      .gate_done_i       ( qos_gate_done_i       ),
+      .gate_done_rcid_i  ( qos_gate_done_rcid_i  ),
+      .gate_done_bytes_i ( qos_gate_done_bytes_i )
     );
   end else begin : gen_no_cbqri_bc
-    assign bc_desc      = desc;
-    assign bc_valid     = miss_valid;
-    assign miss_ready   = bc_ready;
-    assign bc_conf_resp = '0;
+    assign bc_desc        = desc;
+    assign bc_valid       = miss_valid;
+    assign miss_ready     = bc_ready;
+    assign bc_conf_resp   = '0;
+    assign qos_gate_gnt_o = '1;          // no controller: every request goes
   end
 
   axi_llc_evict_unit #(

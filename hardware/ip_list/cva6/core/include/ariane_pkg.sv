@@ -365,6 +365,9 @@ package ariane_pkg;
     //   QOS_LLC_WBUF                     slots of the LLC's write-data buffer (axi_llc_w_buffer, default 8): writes
     //                                    then need only per-ID order, so a parked write holds up only its own ID;
     //                                    0 removes it (every write in AW order)
+    //   QOS_DMA_GATE                     1 (default, with QOS_LLC_BC): an admission gate (axi_llc_bc_gate) in front
+    //                                    of each DMA port of the CCU, so a hard-limited DMA waits at its own port
+    //                                    instead of parking a coherent request that holds the CCU; 0 removes it
 `ifdef QOS_RCID_WIDTH
     localparam int unsigned QOS_RCID_WIDTH = `QOS_RCID_WIDTH;
 `else
@@ -402,6 +405,11 @@ package ariane_pkg;
     localparam int unsigned QOS_LLC_WBUF = `QOS_LLC_WBUF;
 `else
     localparam int unsigned QOS_LLC_WBUF = 8;
+`endif
+`ifdef QOS_DMA_GATE
+    localparam bit QOS_DMA_GATE = (`QOS_DMA_GATE != 0) && QOS_LLC_BC;
+`else
+    localparam bit QOS_DMA_GATE = QOS_LLC_BC;
 `endif
     // Privilege association (CSR_MQOSCTL, CSR_MQOSID, CSR_HQOSID, CSR_SQOSID)
 `ifdef QOS_PRIV_ASSOC

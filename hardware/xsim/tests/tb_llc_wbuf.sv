@@ -86,7 +86,14 @@ module tb_llc_wbuf #(
     .cached_start_addr_i ( CACHED      ),
     .cached_end_addr_i   ( CACHED + 32'h0100_0000 ),
     .spm_start_addr_i    ( 32'h0       ),
-    .axi_llc_events_o    ( events      )
+    .axi_llc_events_o    ( events      ),
+    .qos_gate_req_i        ( '0 ),
+    .qos_gate_rcid_i       ( '0 ),
+    .qos_gate_bytes_i      ( '0 ),
+    .qos_gate_gnt_o        (    ),
+    .qos_gate_done_i       ( '0 ),
+    .qos_gate_done_rcid_i  ( '0 ),
+    .qos_gate_done_bytes_i ( '0 )
   );
 
   int unsigned fails = 0;

@@ -36,7 +36,10 @@
 //   E  best-effort DMA + aggressor   question 2: the DMA's write held behind the aggressor's parked write
 //   F  reserved DMA + aggressor      (the DMA inherits instead: no stall, the aggressor leaks)
 // Per case: loads per victim in the window and the longest, the DMA's jobs and DRAM lines (its MCID's monitor), the
-// aggressor's DRAM lines. The test reports; it checks only what must hold either way (the DMA's data, the limits).
+// aggressor's DRAM lines, and the cycles the DMA's requests waited at the admission gate in front of the coherence
+// unit (BC_GATE_WAIT; with QOS_DMA_GATE a hard-limited DMA waits there, before the coherence unit, instead of parking
+// a coherent write inside the LLC that the coherence unit and every core wait for). The test reports; it checks only
+// what must hold either way (the DMA's data, the limits).
 #include "soc_test.h"
 #include "accel.h"
 
@@ -48,6 +51,7 @@
 #define BC_CTRL     0x80
 #define BC_PERIOD   0x88
 #define BC_CAPACITY 0x90
+#define BC_GATE_WAIT 0xB0
 #define CC          0x10401800UL
 #define CC_ALLOC    0x18
 #define CC_MASK     0x20
@@ -179,7 +183,7 @@ static void wait_cycles(uint64_t n) { uint64_t t0 = soc_cycles(); while (soc_cyc
 
 enum { DMA_OFF = 0, DMA_RES = 1, DMA_BE = 2, DMA_HARD = 3 };
 static const char *dma_name[] = { "off", "reserved", "best effort", "hard-limited" };
-typedef struct { uint32_t ops[4], agg_lines, dma_lines, jobs; uint64_t lat[4]; } res_t;
+typedef struct { uint32_t ops[4], agg_lines, dma_lines, jobs, gate_wait; uint64_t lat[4]; } res_t;
 static unsigned njob;
 
 static void run_case(const char *name, int agg, uint32_t m2, uint32_t m3, int dma, res_t *r) {
@@ -206,6 +210,7 @@ static void run_case(const char *name, int agg, uint32_t m2, uint32_t m3, int dm
       for (int c = 1; c < 4; c++) { maxlat[c] = 0; p0[c] = prog[c]; }
       a0 = ctr(0) + ctr(1);
       mon_take(DMA_RCID);
+      REG32(BC + BC_GATE_WAIT) = 0;
       jobs = 0;
       open = 1;
     }
@@ -216,6 +221,7 @@ static void run_case(const char *name, int agg, uint32_t m2, uint32_t m3, int dm
   r->agg_lines = ctr(0) + ctr(1) - a0;
   r->dma_lines = (uint32_t)(mon_take(DMA_RCID) / LINE);
   r->jobs = jobs;
+  r->gate_wait = REG32(BC + BC_GATE_WAIT);
   // wind down: stop the workers, let the parked descriptors and the DMA drain unthrottled
   mode[1] = IDLE; mode[2] = IDLE; mode[3] = IDLE;
   set_bc(1, 40, 255);
@@ -232,8 +238,8 @@ static void run_case(const char *name, int agg, uint32_t m2, uint32_t m3, int dm
   wait_cycles(PERIOD);
   set_bc(1, 1, 0);
   printf("  %-2s loads core 2 / 3: %d / %d, longest %d / %d cycles | aggressor %s, %d DRAM lines | DMA %s, %d jobs,"
-         " %d DRAM lines\r\n", name, r->ops[2], r->ops[3], (int)r->lat[2], (int)r->lat[3], agg ? "on" : "off",
-         r->agg_lines, dma_name[dma], r->jobs, r->dma_lines);
+         " %d DRAM lines, %d cycles at the gate\r\n", name, r->ops[2], r->ops[3], (int)r->lat[2], (int)r->lat[3],
+         agg ? "on" : "off", r->agg_lines, dma_name[dma], r->jobs, r->dma_lines, (int)r->gate_wait);
   uart_wait_tx_done();
 }
 static int pct(uint32_t a, uint32_t b) { return b ? (int)(100ULL * a / b) : 0; }

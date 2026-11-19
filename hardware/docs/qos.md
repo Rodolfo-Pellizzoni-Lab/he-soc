@@ -329,9 +329,34 @@ one write in flight per AXI adapter, so 8 slots cover the four cores, the cohere
 With it (SoC simulation, 2026-11-18): the best-effort stores of `t_bcw` F keep normal latency (longest 1,040 cycles
 instead of 13,147; 62 % of alone, the rest being the dirty evictions their refills now cause), the hard-limited writer
 no longer leaks through the core whose write-backs used to inherit (6 DRAM lines, as alone, instead of 12),
-`t_bcd` B' loads run at 97 % (longest 812 cycles) and E at 78 % (longest 699). Still open: a held write of the DMA's own
-RCID still stalls the coherence unit, which waits for each coherent write's response (`t_bcd` D: every core at 3 %,
-longest 12,340 cycles).
+`t_bcd` B' loads run at 97 % (longest 812 cycles) and E at 78 % (longest 699). Not solved by the buffer: a held write
+of the DMA's own RCID still stalled the coherence unit, which waits for each coherent write's response (`t_bcd` D:
+every core at 3 %, longest 12,340 cycles); the admission gates below address it.
+
+**DMA admission gates** (`ip_list/axi_llc/src/axi_llc_bc_gate.sv`, one in front of each DMA port of the coherence
+unit in `host/cva6_subsystem.sv`, build knob `QOS_DMA_GATE`, default 1 with `QOS_LLC_BC`). The core's write-backs
+bypass the coherence unit's state machine (non-snooping writes take the CCU's direct path) and its reads are
+decoupled from it (`DecoupledReads`), but a coherent DMA write (WriteUnique), and a write-back the CCU issues for a
+DMA request, holds the state machine until its write response. A hard-limited DMA write parked in the controller
+therefore held every core's L1 misses until the next period. The gate moves that wait in front of the coherence unit:
+- each AR and AW of the DMA port is held at the gate and asks the controller for admission with its RCID and a
+  worst-case cost (LLC lines touched x 4 lines: a CCU write-back of a dirty L1 copy and the request itself, each a
+  refill and a dirty eviction, 64 bytes per line);
+- with regulation on and Mweight 0, the controller admits it only while the RCID's bytes used this period plus the
+  worst-case bytes of its admitted, unfinished requests (`pend`) are below its reservation (the release rule's
+  overshoot); other RCIDs, and everything with regulation off, are admitted at once (one admission per cycle,
+  round robin over the gates);
+- descriptors from a gated source (the CCU's source field, `user[QosUserLsb-1:0]` = 4 or 5, which the CCU also
+  writes on the write-backs it issues for a request) of an RCID with Mweight 0 count as inside its reservation in
+  the controller: they were admitted against it and are never parked;
+- the gate finishes a request at its B or last R beat (matched by AXI ID in order, up to 4 in flight) and returns
+  its worst-case bytes to `pend`; the controller charges the real traffic when it releases it, as before;
+- a refused request waits at the gate and holds up only its own port; `BC_GATE_WAIT` (0xB0) counts the cycles.
+The hard limit stays a limit (one admitted request per period at a 1-block reservation, about as many lines as one
+release); its overshoot is bounded by the requests admitted just before the budget ran out. Not covered: a
+best-effort DMA (Mweight > 0) is admitted at once and its descriptors are class 3 as before (they wait only while
+reserved traffic takes the bandwidth); a request that touches a line held by a parked descriptor of another RCID
+still waits for it in the coherence unit and in the LLC's lookup.
 
 | Offset | Register | |
 |---|---|---|
@@ -346,6 +371,7 @@ longest 12,340 cycles).
 | 0x98 | `BC_POOL` | RO: [7:0] descriptors in the pool, [15:8] high-water mark (a write clears it) |
 | 0xA0 | `BC_FULL` | cycles a descriptor waited because the pool was full (a write clears it) |
 | 0xA8 | `BC_RATE` | RO: pacing rate, bytes per cycle in 16.16 (`BC_CAPACITY * 2^16 / BC_PERIOD`, 48 cycles after a write of either) |
+| 0xB0 | `BC_GATE_WAIT` | cycles in which a DMA gate's request waited for admission (a write clears it) |
 
 Reset (CBQRI: "all available bandwidth to RCID 0"): RCID 0 Rbwb = MRBWB and Mweight 255, every other RCID Rbwb 0 and
 Mweight 1 (UNSPECIFIED in CBQRI), regulation off: the pool is then a FIFO and nothing changes for software that does
@@ -403,7 +429,15 @@ than four cores with several each) would stall the lookup again.
   write's).
 - **`t_bcw`** and **`t_bcd`** measure who a throttled write stops (see the write-data buffer above); `tb_llc_bc`
   (`run_llc_bc.sh`) is the controller's unit test, with cases K (buffered writes next to a hard-limited writer: 97.9 %
-  of the bandwidth, 0.3 % unbuffered) and L (a random mix of buffered and unbuffered writes, ordering checked).
+  of the bandwidth, 0.3 % unbuffered), L (a random mix of buffered and unbuffered writes, ordering checked) and M
+  (gated sources: a hard-limited RCID's descriptors from the gated port wait at most 108 cycles, from an ungated one
+  a whole period; admission granted below the reservation, refused at it, granted again after done, always for
+  Mweight > 0 and with regulation off). `t_bcd` reports the cycles the DMA waited at its gate per case.
+- **`tb_bc_gate`** (`run_bc_gate.sh`): the DMA admission gate alone, 3000 random reads and writes of 1-4 beats over 4
+  IDs to an out-of-order slave, random admission grants. Checks the data, no W beat before its AW, no request at the
+  slave before an admission, at most 4 in flight, and per RCID that the bytes done never run ahead of the
+  transactions complete at the master and equal the admitted worst cases at the end. Catches three injected bugs
+  (W not held behind its AW, forwarding without admission, finishing the youngest same-ID entry).
 
 **Simulation checkers** (both in every simulation; `sim_status` reports their errors as `qos_errors`, and
 `sim_regress` fails a test that has any):
@@ -450,9 +484,8 @@ thrash of 48 dirty lines in one LLC set pass in that mode with 0 checker errors 
 
 ## Next steps
 
-- The DMA path: a held coherent DMA write of the DMA's own RCID stalls the coherence unit (it waits for each write's
-  response): a non-coherent DMA port, write decoupling in the coherence unit, or an early write response from the
-  LLC's write-data buffer.
+- The DMA path beyond the admission gates: best-effort DMA traffic is not gated (class 3 in the pool), and write
+  decoupling in the coherence unit would also remove the wait for a parked line of another RCID.
 - Per-AT bandwidth allocation in the memory bandwidth controller, and regulation of traffic that bypasses the LLC.
 - Capacity usage monitoring (`cc_mon_ctl`), which would need an occupancy count per MCID kept with the LLC
   tags.

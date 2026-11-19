@@ -125,8 +125,17 @@ module cva6_subsystem
 
   // Token bucket AXI LITE slave cfg port
   input  axi_lite_req_t   token_bucket_cfg_req_i,
-  output axi_lite_rsp_t   token_bucket_cfg_resp_o
+  output axi_lite_rsp_t   token_bucket_cfg_resp_o,
 
+  // admission of the CCU's DMA ports at the LLC's bandwidth controller (axi_llc_bc_gate, QOS_DMA_GATE); element k
+  // is DMA port k (ariane_soc::CcuDmaAccel, CcuDmaEth). Without the gates req and done stay 0.
+  output logic [ariane_soc::NumCcuDmaPorts-1:0]                                 qos_gate_req_o,
+  output logic [ariane_soc::NumCcuDmaPorts-1:0][ariane_pkg::QOS_RCID_WIDTH-1:0] qos_gate_rcid_o,
+  output logic [ariane_soc::NumCcuDmaPorts-1:0][15:0]                           qos_gate_bytes_o,
+  input  logic [ariane_soc::NumCcuDmaPorts-1:0]                                 qos_gate_gnt_i,
+  output logic [ariane_soc::NumCcuDmaPorts-1:0]                                 qos_gate_done_o,
+  output logic [ariane_soc::NumCcuDmaPorts-1:0][ariane_pkg::QOS_RCID_WIDTH-1:0] qos_gate_done_rcid_o,
+  output logic [ariane_soc::NumCcuDmaPorts-1:0][15:0]                           qos_gate_done_bytes_o
 );
      // disable test-enable
   logic        test_en;
@@ -738,6 +747,42 @@ module cva6_subsystem
   end
   // pragma translate_on
 
+  // admission gate per DMA port (axi_llc_bc_gate): a request waits here, before the CCU, until the LLC's bandwidth
+  // controller admits it, so a hard-limited DMA holds up only its own port and never parks a coherent request that
+  // the CCU's single state machine would wait for
+  ariane_axi_soc::req_slv_t  [ariane_soc::NumCcuDmaPorts-1:0][0:0] dma_gated_req;
+  ariane_axi_soc::resp_slv_t [ariane_soc::NumCcuDmaPorts-1:0][0:0] dma_gated_resp;
+  for (genvar k = 0; k < ariane_soc::NumCcuDmaPorts; k++) begin : gen_ccu_dma_gate
+    axi_llc_bc_gate #(
+      .Enable    ( ariane_pkg::QOS_DMA_GATE                         ),
+      .IdWidth   ( ariane_soc::IdWidthSlave                         ),
+      .AddrWidth ( ariane_axi_soc::AddrWidth                        ),
+      .RcidWidth ( ariane_pkg::QOS_RCID_WIDTH                       ),
+      .RcidLsb   ( ariane_axi_soc::QosUserLsb                       ),
+      .LineBytes ( ariane_soc::LLC_NUM_BLOCKS * AXI_DATA_WIDTH / 8  ),
+      .CostLines ( 4                                                ),
+      .MaxTrans  ( 4                                                ),
+      .aw_chan_t ( ariane_axi_soc::aw_chan_slv_t                    ),
+      .ar_chan_t ( ariane_axi_soc::ar_chan_slv_t                    ),
+      .req_t     ( ariane_axi_soc::req_slv_t                        ),
+      .resp_t    ( ariane_axi_soc::resp_slv_t                       )
+    ) i_dma_gate (
+      .clk_i,
+      .rst_ni       ( ndmreset_n                  ),
+      .slv_req_i    ( dma_mst_req[k][0]           ),
+      .slv_resp_o   ( dma_mst_resp[k][0]          ),
+      .mst_req_o    ( dma_gated_req[k][0]         ),
+      .mst_resp_i   ( dma_gated_resp[k][0]        ),
+      .adm_req_o    ( qos_gate_req_o[k]           ),
+      .adm_rcid_o   ( qos_gate_rcid_o[k]          ),
+      .adm_bytes_o  ( qos_gate_bytes_o[k]         ),
+      .adm_gnt_i    ( qos_gate_gnt_i[k]           ),
+      .done_o       ( qos_gate_done_o[k]          ),
+      .done_rcid_o  ( qos_gate_done_rcid_o[k]     ),
+      .done_bytes_o ( qos_gate_done_bytes_o[k]    )
+    );
+  end
+
   for (genvar k = 0; k < ariane_soc::NumCcuDmaPorts; k++) begin : gen_ccu_dma_port
     axi_mux #(
       .SlvAxiIDWidth ( ariane_soc::IdWidthSlave      ),
@@ -754,8 +799,8 @@ module cva6_subsystem
       .clk_i,
       .rst_ni      ( ndmreset_n      ),
       .test_i      ( 1'b0            ),
-      .slv_reqs_i  ( dma_mst_req[k]  ),
-      .slv_resps_o ( dma_mst_resp[k] ),
+      .slv_reqs_i  ( dma_gated_req[k]  ),
+      .slv_resps_o ( dma_gated_resp[k] ),
       .mst_req_o   ( ccu_dma_req[k]  ),
       .mst_resp_i  ( ccu_dma_resp[k] )
     );
