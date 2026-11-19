@@ -119,6 +119,8 @@ module axi_llc_cbqri_bc #(
   logic                       div_start_q;
   logic [NumRcid-1:0][15:0]   rbwb_q;
   logic [NumRcid-1:0][7:0]    mweight_q;
+  logic [NumRcid-1:0][12:0]   stride_q;            // stride_of(mweight_q), written with it (no divider in the
+                                                   // release path)
   logic [16:0]                rbwb_sum_q;
   logic [15:0]                bw_rbwb_q;           // bc_bw_alloc
   logic [7:0]                 bw_mweight_q;
@@ -406,6 +408,7 @@ module axi_llc_cbqri_bc #(
       for (int unsigned r = 0; r < NumRcid; r++) begin
         rbwb_q[r]    <= (r == 0) ? 16'(MRBWB) : 16'd0;
         mweight_q[r] <= (r == 0) ? 8'd255 : 8'd1;
+        stride_q[r]  <= (r == 0) ? stride_of(8'd255) : stride_of(8'd1);
       end
       rbwb_sum_q   <= 17'(MRBWB);
       bw_rbwb_q    <= '0;
@@ -483,6 +486,7 @@ module axi_llc_cbqri_bc #(
                   if (w_actl[4:0] == 5'd1) begin
                     rbwb_q[a_r]    <= bw_rbwb_q;
                     mweight_q[a_r] <= bw_mweight_q;
+                    stride_q[a_r]  <= stride_of(bw_mweight_q);
                     rbwb_sum_q     <= sum_new;
                   end else begin
                     bw_rbwb_q    <= rbwb_q[a_r];
@@ -565,7 +569,8 @@ module axi_llc_cbqri_bc #(
           else if (used_q[rel_rcid] <= 32'hFFFF_FFFF - rel_bytes) used_q[rel_rcid] <= used_q[rel_rcid] + rel_bytes;
           else used_q[rel_rcid] <= 32'hFFFF_FFFF;
           if (mode == 2'd2 && !period_end)
-            pass_q[rel_rcid] <= pass_q[rel_rcid] + PassW'(stride_of(mweight_q[rel_rcid])) * PassW'(rel_lines);
+            pass_q[rel_rcid] <= pass_q[rel_rcid] + ((rel_lines == 2'd2) ? PassW'(stride_q[rel_rcid]) << 1
+                                                                        : PassW'(stride_q[rel_rcid]));
         end
         // monitoring: bytes past this point, per MCID (regulation on or off)
         if (!mon_cfg_same && mon_add != 32'd0) begin
