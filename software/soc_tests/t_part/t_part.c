@@ -173,6 +173,48 @@ int thread_entry(int cid, int nc) {
   }
 }
 
+// ---- APMU: who causes the app's LLC misses (diagnostic, printed per phase). The SPU on the LLC's memory port
+// (APMU_PORT_MEM_SPU) gives every DRAM read the source that caused it: cores 0-3, the accelerator socket's DMA, the
+// Ethernet DMA, the debug module (hardware/ip_list/apmu/README.md); core 0's EVU slots 0 and 1 count its L1 I-cache
+// and D-cache misses. Windows: "run" the measurement (the app's 8 chain passes with the aggressors running), "stop"
+// from its end to the probe (the aggressors wind down, core 0 runs the checks between them under RCID 1), "probe"
+// the app's re-walk of its chain. On the VCU118 (2026-11-18) every probe miss is core 0's and in P the app loses
+// about 1.5 lines per pass while it runs (S: about 350), but 16 to 24 in the probe: the chain fills its 8 ways
+// exactly, so core 0's own code and stack lines from the stop window displace chain lines there, and a second pass
+// still loses 5 to 9 while the replacement works them out (in S, with 16 ways, 0 or 1).
+#define A_CTR0 4                          // counters 0 .. NC-3 woke cores 2 .. NC-1 (soc_wake_all)
+#define EVU_L1I_MISS 0x01
+#define EVU_L1D_MISS 0x02
+enum { A_C0, A_C1, A_C2, A_C3, A_DMA, A_ETH, A_DBG, A_ALL, A_WR, A_IMISS, A_DMISS, A_N };
+static void a_set(int i, uint32_t sel) {
+  REG32(EVENT_SEL_BASE_ADDR  + (A_CTR0 + i) * COUNTER_BUNDLE_SIZE) = sel;
+  REG32(EVENT_INFO_BASE_ADDR + (A_CTR0 + i) * COUNTER_BUNDLE_SIZE) = 0;
+  REG32(COUNTER_BASE_ADDR    + (A_CTR0 + i) * COUNTER_BUNDLE_SIZE) = 0;
+}
+static void apmu_setup(void) {
+  REG32(EVU_EID_REG(0, 0)) = EVU_L1I_MISS;
+  REG32(EVU_EID_REG(0, 1)) = EVU_L1D_MISS;
+  (void)REG32(EVU_EID_REG(0, 1));                           // the event IDs have landed
+  for (int c = 0; c < NC; c++) a_set(A_C0 + c, MEM_SEL(APMU_EV_RD_REQ, APMU_SRC_CORE(c)));
+  a_set(A_DMA, MEM_SEL(APMU_EV_RD_REQ, APMU_SRC_ACCEL));
+  a_set(A_ETH, MEM_SEL(APMU_EV_RD_REQ, APMU_SRC_ETH));
+  a_set(A_DBG, MEM_SEL(APMU_EV_RD_REQ, APMU_SRC_DEBUG));
+  a_set(A_ALL, MEM_RD_REQ);
+  a_set(A_WR,  MEM_WR_REQ);
+  a_set(A_IMISS, EVU_SLOT_SEL(0, 0));
+  a_set(A_DMISS, EVU_SLOT_SEL(0, 1));
+}
+static void apmu_read(uint32_t *v) {
+  for (int i = 0; i < A_N; i++) v[i] = REG32(COUNTER_BASE_ADDR + (A_CTR0 + i) * COUNTER_BUNDLE_SIZE) & 0x3FFFFFFFu;  // [31] pending, [30] overflow
+}
+static void apmu_print(const char *w, const uint32_t *a, const uint32_t *b) {
+  uint32_t d[A_N];
+  for (int i = 0; i < A_N; i++) d[i] = b[i] - a[i];
+  printf("    %-5s DRAM reads: core0 %d core1 %d core2 %d core3 %d dma %d eth %d dbg %d, all %d (writes %d) | core0 L1 "
+         "misses: I %d D %d\r\n", w, d[A_C0], d[A_C1], d[A_C2], d[A_C3], d[A_DMA], d[A_ETH], d[A_DBG], d[A_ALL], d[A_WR],
+         d[A_IMISS], d[A_DMISS]);
+}
+
 // ---- one phase
 typedef struct { uint32_t app_x100, acc_x100, misses, app_probe, acc_probe, acc_probe_x100; uint64_t acc_runs; } res_t;
 static void snapshot(uint64_t *r, uint64_t *c, uint64_t *w) {
@@ -194,6 +236,8 @@ static void phase(const char *name, int use_app, int use_str, int use_acc, uint3
   set_limit(2, 0, m_str);
   set_limit(3, 0, m_acc);
   CHECK(llc_flush() == 0, "%s: LLC flush did not finish", name);
+  apmu_setup();
+  uint32_t a_run[A_N], a_stop[A_N], a_probe[A_N], a_end[A_N];
   uint64_t r0 = acc_runs, r1, c1, w1, r2, c2, w2;
   cmd = (use_str ? CMD_STREAM : 0) | (use_acc ? CMD_ACCEL : 0);
   if (use_str) CHECK(wait_flag(&str_busy, 1) == 0, "%s: the streamer did not start", name);
@@ -202,6 +246,7 @@ static void phase(const char *name, int use_app, int use_str, int use_acc, uint3
     CHECK(wait_runs(r0, WARM_RUNS) == 0, "%s: accelerator warm-up runs", name);
   }
   if (use_app) chase(NLINES);                                 // warm-up pass
+  apmu_read(a_run);
   uint32_t m0 = REG32(SOC_CTRL + LLC_RD_MISS);
   snapshot(&r1, &c1, &w1);
   uint64_t app_cycles = 0;
@@ -209,6 +254,7 @@ static void phase(const char *name, int use_app, int use_str, int use_acc, uint3
   else         CHECK(wait_runs(r1, ALONE_RUNS) == 0, "%s: accelerator runs", name);
   snapshot(&r2, &c2, &w2);
   r->misses = REG32(SOC_CTRL + LLC_RD_MISS) - m0;
+  apmu_read(a_stop);
   cmd = 0;
   if (use_str) CHECK(wait_flag(&str_busy, 0) == 0, "%s: the streamer did not stop", name);
   if (use_acc) CHECK(wait_flag(&acc_busy, 0) == 0, "%s: the accelerator driver did not stop", name);
@@ -219,9 +265,11 @@ static void phase(const char *name, int use_app, int use_str, int use_acc, uint3
   // probes, aggressors stopped: what each principal still holds in the LLC after the window
   r->app_probe = r->acc_probe = r->acc_probe_x100 = 0;
   if (use_app) {
+    apmu_read(a_probe);
     m0 = REG32(SOC_CTRL + LLC_RD_MISS);
     chase(NLINES);
     r->app_probe = REG32(SOC_CTRL + LLC_RD_MISS) - m0;
+    apmu_read(a_end);
   }
   if (use_acc) {
     m0 = REG32(SOC_CTRL + LLC_RD_MISS);
@@ -237,6 +285,11 @@ static void phase(const char *name, int use_app, int use_str, int use_acc, uint3
   printf("  %-26s app %4d.%02d cyc/hop  accel %4d.%02d cyc/word (%d runs)  misses %d | after: app %d misses, accel %d misses %d.%02d cyc/word\r\n",
          name, r->app_x100 / 100, r->app_x100 % 100, r->acc_x100 / 100, r->acc_x100 % 100, (int)r->acc_runs, r->misses,
          r->app_probe, r->acc_probe, r->acc_probe_x100 / 100, r->acc_probe_x100 % 100);
+  if (use_app) {
+    apmu_print("run", a_run, a_stop);
+    apmu_print("stop", a_stop, a_probe);
+    apmu_print("probe", a_probe, a_end);
+  }
   uart_wait_tx_done();
 }
 
