@@ -18,8 +18,12 @@ RISCV_FLAGS += -DSTATIC_IP=$(call ip2hex,$(STATIC_IP)) -DSTATIC_MASK=$(call ip2h
 endif
 # QoS IDs per privilege (netboot.c): QOS_KERNEL=<RCID | MCID << 16> for the kernel (HS mode, mqosctl[1] + hqosid),
 # QOS_USER=<hart 0's srmcfg>, hart h gets QOS_USER + h * 0x10001. Without QOS_KERNEL the loader leaves both alone.
+# QOS_FIRMWARE=<IDs> (with QOS_KERNEL): M mode (OpenSBI) gets IDs of its own too (mqosctl[0] + mqosid).
 ifdef QOS_KERNEL
 RISCV_FLAGS += -DQOS_KERNEL=$(QOS_KERNEL)
+ifdef QOS_FIRMWARE
+RISCV_FLAGS += -DQOS_FIRMWARE=$(QOS_FIRMWARE)
+endif
 ifdef QOS_USER
 RISCV_FLAGS += -DQOS_USER=$(QOS_USER)
 endif

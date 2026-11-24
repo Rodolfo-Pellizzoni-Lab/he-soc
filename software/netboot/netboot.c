@@ -257,7 +257,9 @@ static volatile uint32_t hart_go;
 // srmcfg layout, RCID | MCID << 16>: every hart enters the payload with mqosctl[1] (HS) set and hqosid = QOS_KERNEL,
 // so the kernel's accesses (HS mode) carry those IDs while U mode keeps srmcfg, which the loader sets to QOS_USER +
 // h * 0x10001 on hart h (RCID and MCID of hart 0's value plus h; QOS_USER defaults to 0, i.e. hart h gets RCID h and
-// MCID h). M mode (OpenSBI) is not associated: it carries srmcfg too. Hart 0 checks that the CSRs exist (QOS_PRIV_ASSOC
+// MCID h). M mode (OpenSBI) carries srmcfg too unless QOS_FIRMWARE=<IDs> is given as well: then mqosctl[0] is set and
+// mqosid = QOS_FIRMWARE, so SBI calls and emulated instructions are not charged to (and throttled with) the task that
+// happens to run on the hart. Hart 0 checks that the CSRs exist (QOS_PRIV_ASSOC
 // builds) and leaves everything at its reset value otherwise; nothing in OpenSBI or Linux writes these CSRs.
 #ifdef QOS_KERNEL
 #ifndef QOS_USER
@@ -267,6 +269,16 @@ static volatile uint32_t hart_go;
 #define CSR_MQOSCTL 0x7C1
 #define CSR_HQOSID  0x6C4
 #define MQOSCTL_HS  2
+#ifdef QOS_FIRMWARE
+#define CSR_MQOSID  0x7C0
+#define MQOSCTL_M   1
+#define QOS_FW_ASM                                                                             \
+    "   li   t1, " QOS_STR(QOS_FIRMWARE) "\n\t"                                                  \
+    "   csrw " QOS_STR(CSR_MQOSID) ", t1\n\t"                                                    \
+    "   csrsi " QOS_STR(CSR_MQOSCTL) ", " QOS_STR(MQOSCTL_M) "\n\t"
+#else
+#define QOS_FW_ASM ""
+#endif
 static volatile uint32_t qos_on;
 static volatile uint64_t qos_user[SOC_NUM_CORES];
 #define QOS_STR_(x) #x
@@ -288,6 +300,9 @@ static void qos_setup(void) {
   printf("netboot: QoS: kernel (HS mode) RCID %d MCID %d on every hart; user srmcfg hart h = RCID %d+h MCID %d+h\n",
          (int)(QOS_KERNEL & 0xFFF), (int)((QOS_KERNEL >> 16) & 0xFFF), (int)(QOS_USER & 0xFFF),
          (int)((QOS_USER >> 16) & 0xFFF));
+#ifdef QOS_FIRMWARE
+  printf("netboot: QoS: firmware (M mode) RCID %d MCID %d on every hart\n", (int)(QOS_FIRMWARE & 0xFFF), (int)((QOS_FIRMWARE >> 16) & 0xFFF));
+#endif
 }
 #define QOS_APPLY_ASM                                                                          \
     "   lw   t0, 0(t4)\n\t"                                                                      \
@@ -300,6 +315,7 @@ static void qos_setup(void) {
     "   li   t1, " QOS_STR(QOS_KERNEL) "\n\t"                                                    \
     "   csrw " QOS_STR(CSR_HQOSID) ", t1\n\t"                                                    \
     "   csrsi " QOS_STR(CSR_MQOSCTL) ", " QOS_STR(MQOSCTL_HS) "\n\t"                             \
+    QOS_FW_ASM                                                                                   \
     "3:\n\t"
 #define QOS_LA_ASM "   la   t4, qos_on\n\t   la   t5, qos_user\n\t"
 #else
@@ -347,6 +363,10 @@ static void __attribute__((noreturn)) jump(void) {
     __asm__ volatile("csrw " QOS_STR(CSR_SRMCFG) ", %0" :: "r"(qos_user[0]));
     __asm__ volatile("csrw " QOS_STR(CSR_HQOSID) ", %0" :: "r"((uint64_t)QOS_KERNEL));
     __asm__ volatile("csrsi " QOS_STR(CSR_MQOSCTL) ", " QOS_STR(MQOSCTL_HS));
+#ifdef QOS_FIRMWARE
+    __asm__ volatile("csrw " QOS_STR(CSR_MQOSID) ", %0" :: "r"((uint64_t)QOS_FIRMWARE));
+    __asm__ volatile("csrsi " QOS_STR(CSR_MQOSCTL) ", " QOS_STR(MQOSCTL_M));
+#endif
   }
 #endif
   REG32(0x10404000) = (uint32_t)(uintptr_t)enter_payload;                      // the boot ROM's harts jump here
