@@ -14,7 +14,7 @@
 /// During initialisation no descriptors can enter the unit.
 ///
 /// This unit keeps track of which cache lines are currently in use by descriptors
-/// downstream with the help od a bloom filter. If there is a new descriptor, which
+/// downstream with the help of an exact lock table. If there is a new descriptor, which
 /// will access a cache line currently in use, it wil be stalled untill the line is
 /// unlocked. This is to prevent data corruption.
 ///
@@ -458,10 +458,12 @@ module axi_llc_hit_miss #(
   // Lock it if a transfer happens on ether channel and no flush!
   assign lock_req = ~desc_o.flush & ((miss_valid_o & miss_ready_i) | (hit_valid_o & hit_ready_i));
 
-  axi_llc_lock_box_bloom #(
+  // an exact table of the locked lines (the bloom filter it replaces, axi_llc_lock_box_bloom, reported lines as
+  // locked that were not, and the bandwidth controller keeps a parked descriptor's line locked for a long time)
+  axi_llc_lock_box_exact #(
     .Cfg       ( Cfg    ),
     .lock_t    ( lock_t )
-  ) i_lock_box_bloom (
+  ) i_lock_box (
     .clk_i          ( clk_i      ),  // Clock
     .rst_ni         ( rst_ni     ),  // Asynchronous reset active low
     .test_i         ( test_i     ),
@@ -541,6 +543,26 @@ module axi_llc_hit_miss #(
                    qos_mask_i[r][a]);
       $display("[QOS] llc_alloc check: %0d refills, %0d outside their mask%s, %0d with no usable way in the mask",
                n_alloc, n_err, (n_err != 0) ? " ERROR" : "", n_fallback);
+    end
+  end
+  `endif
+  // pragma translate_on
+
+  // pragma translate_off
+  `ifndef SYNTHESIS
+  // Simulation monitor: a descriptor held in the lookup for 200 cycles or more because its line is locked (a
+  // descriptor that took the line has not finished) or a miss counter is full prints when the wait ends.
+  int unsigned lk_cyc, cs_cyc;
+  always @(posedge clk_i) begin
+    if (rst_ni) begin
+      if (busy_q && store_res_valid && locked)         lk_cyc = lk_cyc + 1;
+      else if (busy_q && store_res_valid && cnt_stall) cs_cyc = cs_cyc + 1;
+      else if (lk_cyc + cs_cyc != 0) begin
+        if (lk_cyc + cs_cyc >= 200)
+          $display("[LLC-LOOKUP] t=%0t id %0h user %0h addr %0h (set %0h way %0h) waited %0d cycles on a locked line, %0d on a full miss counter",
+                   $time, desc_q.a_x_id, desc_q.a_x_user, desc_q.a_x_addr, lock.index, lock.way_ind, lk_cyc, cs_cyc);
+        lk_cyc = 0; cs_cyc = 0;
+      end
     end
   end
   `endif

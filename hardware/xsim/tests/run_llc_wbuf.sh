@@ -12,7 +12,9 @@ D="$WORK/llc_wbuf${LLC_RUN:+_$LLC_RUN}"; mkdir -p "$D"
 cd "$D"
 FILES=$(tr ' ' '\n' < "$WORK/compile.sh" | grep -E "\.s?v$" |
         grep -E "ip_list/(common_cells|tech_cells_generic|axi|axi_llc)/" | grep -v "axi_test.sv" | awk '!seen[$0]++' |
-        sed "s#\(.*axi_llc/src/axi_llc_top.sv\)#$IP/axi_llc/src/axi_llc_w_buffer.sv \1#" | awk '!seen[$0]++')
+        sed "s#\(.*axi_llc/src/axi_llc_top.sv\)#$IP/axi_llc/src/axi_llc_w_buffer.sv \1#" |
+        sed "s#\(.*axi_llc/src/axi_llc_hit_miss.sv\)#$IP/axi_llc/src/hit_miss_detect/axi_llc_lock_box_exact.sv \1#" |
+        tr ' ' '\n' | awk '!seen[$0]++')
 for o in ${OVERRIDE:-}; do FILES=$(echo "$FILES" | sed "s#^.*/${o%%=*}\$#${o#*=}#"); done
 xvlog -sv -i "$IP/common_cells/include" -i "$IP/axi/include" -d COMMON_CELLS_ASSERTS_OFF \
   $FILES "$XSIM_DIR/tests/tb_llc_wbuf.sv" > xvlog.log 2>&1 || { grep -E "ERROR" xvlog.log | head -8; exit 1; }

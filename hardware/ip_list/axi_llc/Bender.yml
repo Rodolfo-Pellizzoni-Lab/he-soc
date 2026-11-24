@@ -32,6 +32,7 @@ sources:
   - src/hit_miss_detect/axi_llc_plru.sv
   - src/hit_miss_detect/axi_llc_evict_box.sv
   - src/hit_miss_detect/axi_llc_lock_box_bloom.sv
+  - src/hit_miss_detect/axi_llc_lock_box_exact.sv
   - src/hit_miss_detect/axi_llc_miss_counters.sv
   - src/hit_miss_detect/axi_llc_tag_pattern_gen.sv
   # Level 1
