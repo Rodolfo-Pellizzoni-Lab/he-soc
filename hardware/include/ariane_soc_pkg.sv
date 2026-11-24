@@ -101,8 +101,18 @@ package ariane_soc;
   // direction, and AXI ID = {source, slot}. RemapSrcWidth bits of the source fit next to the slot in IdWidth bits;
   // with fewer than CcuSrcWidth the ID keeps the source's low bits, and what needs the full source reads the user
   // field. IdWidth >= RemapSlotWidth + CcuSrcWidth would make the ID carry all of it.
+  // Defines REMAP_MAX_UNIQ_IDS / REMAP_TXNS_PER_ID override the sizes (e.g. SOC_EXTRA_DEFINES for xsim); the IDs
+  // must leave RemapSrcWidth >= 1 bit, so at most 2**(IdWidth-1) = 8.
+`ifdef REMAP_MAX_UNIQ_IDS
+  localparam int unsigned RemapMaxUniqIds = `REMAP_MAX_UNIQ_IDS;
+`else
   localparam int unsigned RemapMaxUniqIds = 4;
+`endif
+`ifdef REMAP_TXNS_PER_ID
+  localparam int unsigned RemapTxnsPerId  = `REMAP_TXNS_PER_ID;
+`else
   localparam int unsigned RemapTxnsPerId  = 1;
+`endif
   localparam int unsigned RemapSlotWidth  = cf_math_pkg::idx_width(RemapMaxUniqIds);   // as the remapper sizes it
   localparam int unsigned RemapSrcWidth   = IdWidth - RemapSlotWidth;
 

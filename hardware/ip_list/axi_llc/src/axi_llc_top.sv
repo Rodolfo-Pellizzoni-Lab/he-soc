@@ -1276,4 +1276,31 @@ module axi_llc_top #(
 `endif
 // pragma translate_on
 
+  // pragma translate_off
+  `ifndef SYNTHESIS
+  // Simulation monitor: a read that took 1000 cycles or more at the slave port (from its AR being offered to its
+  // last R beat) prints its ID, user field and address, and how long the AR waited for ready.
+  longint unsigned pm_cyc, pm_v_t;
+  logic            pm_w;
+  longint unsigned pm_t [2**AxiIdWidth], pm_arw [2**AxiIdWidth], pm_addr [2**AxiIdWidth], pm_user [2**AxiIdWidth];
+  always @(posedge clk_i) begin
+    if (!rst_ni) begin pm_cyc = 0; pm_w = 1'b0; end
+    else begin
+      pm_cyc = pm_cyc + 1;
+      if (slv_req_i.ar_valid && !pm_w) begin pm_w = 1'b1; pm_v_t = pm_cyc; end
+      if (slv_req_i.ar_valid && slv_resp_o.ar_ready) begin
+        pm_t[slv_req_i.ar.id]    = pm_v_t;
+        pm_arw[slv_req_i.ar.id]  = pm_cyc - pm_v_t;
+        pm_addr[slv_req_i.ar.id] = 64'(slv_req_i.ar.addr);
+        pm_user[slv_req_i.ar.id] = 64'(slv_req_i.ar.user);
+        pm_w = 1'b0;
+      end
+      if (slv_resp_o.r_valid && slv_req_i.r_ready && slv_resp_o.r.last && pm_cyc - pm_t[slv_resp_o.r.id] >= 1000)
+        $display("[LLC-PORT] t=%0t read id %0h user %0h addr %0h took %0d cycles at the LLC (its AR waited %0d for ready)",
+                 $time, slv_resp_o.r.id, pm_user[slv_resp_o.r.id], pm_addr[slv_resp_o.r.id],
+                 pm_cyc - pm_t[slv_resp_o.r.id], pm_arw[slv_resp_o.r.id]);
+    end
+  end
+  `endif
+  // pragma translate_on
 endmodule

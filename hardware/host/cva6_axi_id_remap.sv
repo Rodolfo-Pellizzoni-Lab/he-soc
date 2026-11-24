@@ -370,6 +370,41 @@ module cva6_axi_id_remap #(
     endcase
   end
 
+  // pragma translate_off
+  `ifndef SYNTHESIS
+  // Simulation monitor: reads held at the slave port because the read table has no room for their ID (every output
+  // ID in use, or the ID's own transactions at AxiMaxTxnsPerId). A wait of at least RemapWaitReport cycles prints
+  // one line when it ends; the totals print at the end of the simulation.
+  localparam int unsigned RemapWaitReport = 1000;
+  logic        ar_table_wait;
+  longint unsigned ar_wait_cur, ar_wait_total, ar_wait_full, ar_wait_long, ar_wait_max;
+  assign ar_table_wait = (state_q == Ready) && slv_req_i.ar_valid &&
+                         !((rd_exists && !rd_exists_full) || (!rd_exists && !rd_full));
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      ar_wait_cur <= 0; ar_wait_total <= 0; ar_wait_full <= 0; ar_wait_long <= 0; ar_wait_max <= 0;
+    end else begin
+      if (ar_table_wait) begin
+        ar_wait_cur   <= ar_wait_cur + 1;
+        ar_wait_total <= ar_wait_total + 1;
+        if (!rd_exists) ar_wait_full <= ar_wait_full + 1;   // every output ID in use (else: its own ID busy)
+      end else if (ar_wait_cur != 0) begin
+        if (ar_wait_cur >= RemapWaitReport) begin
+          ar_wait_long <= ar_wait_long + 1;
+          $display("[REMAP] t=%0t AR of source %0d waited %0d cycles: %s", $time,
+                   slv_req_i.ar.user[AxiSrcWidth-1:0], ar_wait_cur,
+                   rd_exists ? "its ID's transaction in flight" : "all output IDs in use");
+        end
+        if (ar_wait_cur > ar_wait_max) ar_wait_max <= ar_wait_cur;
+        ar_wait_cur <= 0;
+      end
+    end
+  end
+  final $display("[REMAP] summary: %0d IDs x %0d txns; ARs waited %0d cycles for the table (%0d with every ID in use, the rest behind their own ID), %0d waits >= %0d cycles, longest %0d",
+                 AxiSlvPortMaxUniqIds, AxiMaxTxnsPerId, ar_wait_total, ar_wait_full, ar_wait_long, RemapWaitReport, ar_wait_max);
+  `endif
+  // pragma translate_on
+
   // Registers
   `FFARN(ar_id_q, ar_id_d, '0, clk_i, rst_ni)
   `FFARN(ar_prio_q, ar_prio_d, 1'b0, clk_i, rst_ni)
@@ -691,4 +726,4 @@ module cva6_axi_id_remap_intf #(
     end
   `endif
   // pragma translate_on
-endmodule
+endmodule

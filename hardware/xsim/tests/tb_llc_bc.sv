@@ -580,6 +580,26 @@ module tb_llc_bc;
       $display("  M admission: granted below the reservation, refused at it (BC_GATE_WAIT %0d), again after done", w);
     end
 
+    // ---- N: a hard limit with a reservation (RCID 1: Rbwb 205 of 1024, Mweight 0) next to a best-effort RCID
+    // (RCID 2: Rbwb 1, Mweight 255). The reservation is earned at its rate over the period, so RCID 1's lines leave
+    // evenly spread and RCID 2 never waits for more than a few lines, while RCID 1 still gets its 20 %. (Released at
+    // the start of the period, the reservation kept RCID 2 waiting for a fifth of every period.)
+    set_limit(1, 1, 1); set_limit(2, 1, 1); set_limit(3, 1, 1);
+    set_limit(1, 205, 0); set_limit(2, 1, 255);
+    wr32(32'h88, PERIOD); wr32(32'h90, CAP); wr32(32'h80, 3);
+    mlp = 3;
+    traffic('{0, 1, 1, 0}, '{0, 0, 0, 0}, 0);
+    repeat (2 * PERIOD) @(posedge clk);
+    for (int k = 0; k < NR; k++) max_wait[k] = 0;
+    shares(10 * PERIOD, sh);
+    $display("  N RCID 1 (hard limit, 20 %% reserved): %5.1f %% of the traffic, longest wait %0d cycles; RCID 2 (best effort): %5.1f %%, longest wait %0d cycles (period %0d)",
+             100.0 * sh[1], max_wait[1], 100.0 * sh[2], max_wait[2], PERIOD);
+    expect_share("N", 1, sh[1], 0.18, 0.22);
+    if (max_wait[2] > PERIOD / 20) fail($sformatf("N: best-effort RCID 2 waited %0d cycles next to the reserved hard limit", max_wait[2]));
+    if (max_wait[1] > PERIOD / 4)  fail($sformatf("N: reserved RCID 1 waited %0d cycles (its lines should be spread over the period)", max_wait[1]));
+    stop_and_drain();
+    mlp = 4;
+
     if (fails == 0) $display("LLC BC UNIT PASS");
     else            $display("LLC BC UNIT FAIL: %0d failures", fails);
     $finish;

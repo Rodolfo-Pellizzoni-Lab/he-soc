@@ -9,22 +9,34 @@
 //
 // Bandwidth allocation (bc_bw_alloc per RCID): NBWBLKS = 1024 blocks stand for BC_CAPACITY bytes per accounting
 // period of BC_PERIOD cycles (implementation-defined registers below), so an RCID's reservation is
-// Rbwb * BC_CAPACITY / 1024 bytes per period. Release order, among descriptors the ordering rules allow:
+// Rbwb * BC_CAPACITY / 1024 bytes per period. The reservation is earned at a constant rate over the period: an RCID
+// is inside its reservation while the bytes it used this period are at most the share of the reservation earned so
+// far (its first line of a period is free). Reserved traffic therefore leaves evenly spread over the period and
+// interleaves with the other RCIDs'; released all at once at the start of the period, it kept every RCID without a
+// reservation waiting until the reservations were used up. Release order, among descriptors the ordering rules allow:
 //   1. descriptors that cost nothing (hits the LLC routes through the miss pipeline to keep AXI order, flushes),
 //      then descriptors that a descriptor of an RCID still inside its reservation waits for (priority inheritance,
 //      two levels), oldest first;
-//   2. descriptors of RCIDs inside their reservation (used < reserved this period), oldest first;
+//   2. descriptors of RCIDs inside their reservation (used <= earned so far, and < reserved), oldest first;
 //   3. descriptors of RCIDs past their reservation with Mweight > 0, sharing what is left in proportion to Mweight
 //      (stride scheduling: each release adds 4096 / Mweight per line to the RCID's pass; lowest pass first);
-//   RCIDs past their reservation with Mweight = 0 wait for the next period (a hard limit).
+//   RCIDs past their reservation with Mweight = 0 wait until they have earned the next line (a hard limit: a
+//   constant rate of Rbwb / 1024 of the capacity).
 // The controller hands out BC_CAPACITY bytes per period: with BC_CTRL.PACE (the reset value) a token bucket paces all
-// releases to BC_CAPACITY / BC_PERIOD bytes per cycle (bursts of up to two lines; the arbiter picks a descriptor by
-// class first and then waits for its tokens, so a two-line one is not starved by one-line ones), so that when the memory is the
+// releases to BC_CAPACITY / BC_PERIOD bytes per cycle (bursts of up to two lines, and one line more that only
+// classes 1 and 2 above take: class 3 leaves it in the bucket, so that an RCID inside its reservation finds a line's
+// tokens when its request comes; the arbiter picks a descriptor by class first and then waits for its tokens, so a
+// two-line one is not starved by one-line ones), so that when the memory is the
 // bottleneck the waiting happens here, where the arbiter orders it, and not in the in-order pipeline and memory
 // queues behind it (with one or two misses per core in flight the pool would otherwise never hold a choice). Set
 // BC_CAPACITY at or a little below what the memory sustains. Within that rate the arbiter is work-conserving:
 // whenever a release is allowed and a descriptor is eligible, one leaves. Without PACE it releases whenever the
 // pipeline takes a descriptor.
+// A release takes two cycles: one chooses a descriptor and registers the grant, the next ones release it as soon as
+// the output register takes it; no choice is made while a grant is pending (so the choice, which reads the pool,
+// classes, passes and tokens, and the accounting of the release are separate paths, and every choice sees the state
+// the release before it left). The ordering rules below are evaluated once, when a descriptor enters, against the
+// entries then in the pool.
 // Ordering rules (the LLC's own, and one the pool adds): a refill of a line does not leave before an older descriptor
 // that evicts that line (the lookup already gave the line's way to the older one, whose write-back is still to
 // come: a younger refill of the same line, into another way, would read the memory's stale copy; the in-order
@@ -38,9 +50,9 @@
 // Admission of gated sources (NumGates > 0): a request of a gated DMA port (axi_llc_bc_gate in front of the
 // coherence unit) asks the controller before it enters the coherence unit, with its RCID and its worst-case cost in
 // bytes. While regulation is on and the RCID has Mweight = 0, the request is admitted only if the RCID's bytes used
-// this period plus the worst-case bytes of its admitted, unfinished requests (pend) are below its reservation (the
-// same overshoot rule as a release); otherwise it waits at the gate, before the coherence unit, holding up only its
-// own port. Other RCIDs are always admitted. Descriptors from a gated source (GateSrcMask over the source field
+// this period plus the worst-case bytes of its admitted, unfinished requests (pend) are at most the share of its
+// reservation earned so far (the same rule as a release); otherwise it waits at the gate, before the coherence unit,
+// holding up only its own port. Other RCIDs are always admitted. Descriptors from a gated source (GateSrcMask over the source field
 // below the RCID in the user field, which the coherence unit fills in, also on the write-backs it issues for a
 // request) of an RCID with Mweight = 0 count as inside its reservation: they were admitted against it, and parking
 // one would hold the coherence unit's single state machine, and with it every core, until the next period.
@@ -169,6 +181,10 @@ module axi_llc_cbqri_bc #(
   // accounting
   logic [31:0]                per_cnt_q;
   logic [NumRcid-1:0][31:0]   used_q, resv_q;
+  logic [NumRcid-1:0][31:0]   rrate_q;             // the reservation as a rate, 16.16 bytes per cycle
+  logic [NumRcid-1:0][47:0]   earn_q;              // bytes of the reservation earned this period, 32.16 (at most
+                                                   // resv - 1: used <= earned then also means used < resv)
+  logic [NumRcid-1:0]         has_resv_q;          // resv_q != 0
   logic [NumRcid-1:0][PassW-1:0] pass_q;
   logic [NumRcid-1:0][31:0]   pend_q;              // worst-case bytes of admitted, unfinished gated requests
   rcid_t                      rc_idx_q;            // reservation recompute pointer
@@ -177,6 +193,14 @@ module axi_llc_cbqri_bc #(
   desc_t [PoolDepth-1:0]                 pool_q;
   logic  [PoolDepth-1:0]                 pv_q;
   logic  [PoolDepth-1:0][PoolDepth-1:0]  older_q;  // older_q[i][j]: entry j is older than entry i
+  logic  [PoolDepth-1:0][PoolDepth-1:0]  wait_q;   // wait_q[i][j]: entry i must not leave before entry j (the
+                                                   // ordering rules, evaluated once, when i enters, against the
+                                                   // entries then in the pool; counts while pv_q[j])
+
+  // the grant: the descriptor chosen in the cycle before, released when the output register takes it
+  logic                                  g_valid_q;
+  logic  [IdxW-1:0]                      g_idx_q;
+  logic  [1:0]                           g_mode_q;
 
   // output register
   desc_t out_q;
@@ -187,13 +211,12 @@ module axi_llc_cbqri_bc #(
   mcid_t [PoolDepth-1:0] e_mcid;
   logic  [PoolDepth-1:0] e_free, e_under, e_wgt;   // costs nothing / RCID inside its reservation / Mweight > 0
   logic  [PoolDepth-1:0] e_gated;                  // from a gated source (admitted at its gate)
-  logic  [PoolDepth-1:0][PoolDepth-1:0] dep;       // dep[i][j]: i must not leave before j if j is older
+  logic  [PoolDepth-1:0] dep_new;                  // the descriptor at the input must not leave before entry j
   logic  [PoolDepth-1:0] blocked, rdy, need1, need2;
-  logic  [PoolDepth-1:0][TagWidth+IndexWidth-1:0] rf_line, ev_line;   // the line each refills / evicts
   logic  [NumRcid-1:0]   under_r;
 
   always_comb begin
-    for (int unsigned r = 0; r < NumRcid; r++) under_r[r] = used_q[r] < resv_q[r];
+    for (int unsigned r = 0; r < NumRcid; r++) under_r[r] = has_resv_q[r] && (used_q[r] <= earn_q[r][47:16]);
     for (int unsigned i = 0; i < PoolDepth; i++) begin
       e_rcid[i]  = rcid_t'(pool_q[i].a_x_user[RcidLsb +: RcidIdxW]);
       e_mcid[i]  = mcid_t'(pool_q[i].a_x_user[McidLsb +: McidWidth]);
@@ -203,51 +226,59 @@ module axi_llc_cbqri_bc #(
       // admitted against the reservation at the gate: never parked (hard-limited RCIDs only, see the header)
       e_under[i] = under_r[e_rcid[i]] | (e_gated[i] & !e_wgt[i]);
     end
+    // the ordering rules for the descriptor at the input against every entry (all older than it): into wait_q when
+    // it enters, so the release path holds no comparator
+    for (int unsigned j = 0; j < PoolDepth; j++)
+      dep_new[j] = (desc_i.a_x_id == pool_q[j].a_x_id) |
+                   (desc_i.refill & pool_q[j].evict &
+                    ({desc_i.a_x_addr[IndexLsb + IndexWidth +: TagWidth], desc_i.a_x_addr[IndexLsb +: IndexWidth]} ==
+                     {TagWidth'(pool_q[j].evict_tag),                     pool_q[j].a_x_addr[IndexLsb +: IndexWidth]})) |
+                   (desc_i.rw & pool_q[j].rw & !(desc_i.wbuf & pool_q[j].wbuf)) |
+                   desc_i.flush | pool_q[j].flush;
     for (int unsigned i = 0; i < PoolDepth; i++) begin
-      rf_line[i] = {pool_q[i].a_x_addr[IndexLsb + IndexWidth +: TagWidth], pool_q[i].a_x_addr[IndexLsb +: IndexWidth]};
-      ev_line[i] = {TagWidth'(pool_q[i].evict_tag),                       pool_q[i].a_x_addr[IndexLsb +: IndexWidth]};
-    end
-    for (int unsigned i = 0; i < PoolDepth; i++)
-      for (int unsigned j = 0; j < PoolDepth; j++)
-        dep[i][j] = (pool_q[i].a_x_id == pool_q[j].a_x_id) |
-                    (pool_q[i].refill & pool_q[j].evict & (rf_line[i] == ev_line[j])) |
-                    (pool_q[i].rw & pool_q[j].rw & !(pool_q[i].wbuf & pool_q[j].wbuf)) |
-                    pool_q[i].flush | pool_q[j].flush;
-    for (int unsigned i = 0; i < PoolDepth; i++) begin
-      blocked[i] = |(pv_q & older_q[i] & dep[i]);
+      blocked[i] = |(pv_q & wait_q[i]);
       rdy[i]     = pv_q[i] & !blocked[i];
     end
     // priority inheritance: j is needed when a younger dependent k of an RCID inside its reservation waits for it
     for (int unsigned j = 0; j < PoolDepth; j++) begin
       need1[j] = 1'b0;
       for (int unsigned k = 0; k < PoolDepth; k++)
-        need1[j] |= pv_q[k] & older_q[k][j] & dep[k][j] & e_under[k];
+        need1[j] |= pv_q[k] & wait_q[k][j] & e_under[k];
     end
     for (int unsigned j = 0; j < PoolDepth; j++) begin
       need2[j] = 1'b0;
       for (int unsigned k = 0; k < PoolDepth; k++)
-        need2[j] |= need1[k] & pv_q[k] & older_q[k][j] & dep[k][j];
+        need2[j] |= need1[k] & pv_q[k] & wait_q[k][j];
     end
   end
 
   // ---------------------------------------------------------------------------------------------- arbiter
   logic [PoolDepth-1:0] c0, c1, c2, cand, sel;
-  logic [NumRcid-1:0]   has2;
-  rcid_t                rmin;
-  logic [1:0]           mode;                      // class of the released descriptor: 0, 1 or 2
+  logic [NumRcid-1:0]   has2, win;                 // RCIDs with a class-3 candidate; the one with the lowest pass
+  logic [1:0]           mode;                      // class of the chosen descriptor: 0, 1 or 2
   logic [IdxW-1:0]      sel_idx;
-  logic                 any_sel;
+  logic                 decide;                    // a descriptor is chosen in this cycle (and its tokens are there)
 
   // pacing: may a descriptor of 1 or 2 lines leave now
+  // The bucket holds a burst of two lines and one line more that only the reserved classes (0 and 1) take: the
+  // weighted class leaves it in the bucket. An RCID inside its reservation then finds a line's tokens when its
+  // request comes, instead of a bucket the weighted class empties as fast as it fills (a core with one miss at a
+  // time would wait a token interval per line, fall behind its reservation and never catch up). The kept line is a
+  // standing level, not a rate: the weighted class still gets every token the reserved classes do not take.
   localparam int unsigned BurstBytes = 2 * LineBytes;
-  logic pace_on, tok1, tok2;
-  logic [PoolDepth-1:0] e_tok;
+  localparam int unsigned KeepBytes  = LineBytes;
+  logic pace_on, tok1, tok2, tok1w, tok2w;
+  logic [PoolDepth-1:0] e_tok, e_tokw;
   always_comb begin
     pace_on = en_q & pace_q;
     tok1    = !pace_on || tok_q >= 40'(LineBytes) << 16;
     tok2    = !pace_on || tok_q >= 40'(2 * LineBytes) << 16;
-    for (int unsigned i = 0; i < PoolDepth; i++)
-      e_tok[i] = (pool_q[i].refill & pool_q[i].evict) ? tok2 : tok1;
+    tok1w   = !pace_on || tok_q >= 40'(LineBytes + KeepBytes) << 16;
+    tok2w   = !pace_on || tok_q >= 40'(2 * LineBytes + KeepBytes) << 16;
+    for (int unsigned i = 0; i < PoolDepth; i++) begin
+      e_tok[i]  = (pool_q[i].refill & pool_q[i].evict) ? tok2  : tok1;
+      e_tokw[i] = (pool_q[i].refill & pool_q[i].evict) ? tok2w : tok1w;
+    end
   end
 
   // the classes, chosen without regard to the tokens (a descriptor of a lower class must not take the tokens a waiting
@@ -267,27 +298,46 @@ module axi_llc_cbqri_bc #(
     end
   end
 
-  // lowest pass among the RCIDs in has2 (ties: lowest RCID), as a tree of log2(NumRcid) levels
-  localparam int unsigned Levels = RcidIdxW;
-  always_comb begin
-    logic  [NumRcid-1:0]            tv;
-    rcid_t [NumRcid-1:0]            ti;
-    logic  [NumRcid-1:0][PassW-1:0] tp;
-    for (int unsigned r = 0; r < NumRcid; r++) begin
-      tv[r] = has2[r];
-      ti[r] = rcid_t'(r);
-      tp[r] = pass_q[r];
+  // lowest pass among the RCIDs in has2 (ties: lowest RCID). Up to 16 RCIDs: every pair of passes is compared, off
+  // the release path (the passes are registers), and the winner is the RCID in has2 that is ahead of
+  // every other one in has2. More RCIDs: a tree of log2(NumRcid) compare levels behind has2.
+  if (NumRcid <= 16) begin : gen_min_pairs
+    logic [NumRcid-1:0][NumRcid-1:0] ahead;        // ahead[a][b]: a's pass is lower than b's, or equal and a < b
+    always_comb begin
+      for (int unsigned a = 0; a < NumRcid; a++)
+        for (int unsigned b = 0; b < NumRcid; b++)
+          if (a < b)      ahead[a][b] = pass_q[a] <= pass_q[b];
+          else if (a > b) ahead[a][b] = pass_q[a] <  pass_q[b];
+          else            ahead[a][b] = 1'b1;
+      for (int unsigned r = 0; r < NumRcid; r++) win[r] = has2[r] & (&(~has2 | ahead[r]));
     end
-    for (int unsigned l = 0; l < Levels; l++)
-      for (int unsigned k = 0; k < (NumRcid >> (l + 1)); k++)
-        if (tv[2*k] && (!tv[2*k+1] || tp[2*k] <= tp[2*k+1])) begin
-          tv[k] = tv[2*k];   ti[k] = ti[2*k];   tp[k] = tp[2*k];
-        end else begin
-          tv[k] = tv[2*k+1]; ti[k] = ti[2*k+1]; tp[k] = tp[2*k+1];
-        end
-    rmin = ti[0];
+  end else begin : gen_min_tree
+    localparam int unsigned Levels = RcidIdxW;
+    always_comb begin
+      logic  [NumRcid-1:0]            tv;
+      rcid_t [NumRcid-1:0]            ti;
+      logic  [NumRcid-1:0][PassW-1:0] tp;
+      for (int unsigned r = 0; r < NumRcid; r++) begin
+        tv[r] = has2[r];
+        ti[r] = rcid_t'(r);
+        tp[r] = pass_q[r];
+      end
+      for (int unsigned l = 0; l < Levels; l++)
+        for (int unsigned k = 0; k < (NumRcid >> (l + 1)); k++)
+          if (tv[2*k] && (!tv[2*k+1] || tp[2*k] <= tp[2*k+1])) begin
+            tv[k] = tv[2*k];   ti[k] = ti[2*k];   tp[k] = tp[2*k];
+          end else begin
+            tv[k] = tv[2*k+1]; ti[k] = ti[2*k+1]; tp[k] = tp[2*k+1];
+          end
+      win        = '0;
+      win[ti[0]] = tv[0];
+    end
   end
 
+  // The release takes two cycles, so that the choice (pool, classes, passes, tokens) and the accounting it causes
+  // (bytes used, pass, tokens, counters) are not one path: a cycle chooses and registers the grant, the next ones
+  // release it as soon as the output register takes it. No choice is made while a grant is pending, so every choice
+  // sees the state after the release before it; tokens only grow in between, so the grant's tokens stay there.
   logic sel_free;
   always_comb begin
     sel_free = 1'b0;
@@ -296,14 +346,14 @@ module axi_llc_cbqri_bc #(
     else if (|c1) begin cand = c1; mode = 2'd1; end
     else begin
       mode = 2'd2;
-      for (int unsigned i = 0; i < PoolDepth; i++) cand[i] = c2[i] & (e_rcid[i] == rmin);
+      for (int unsigned i = 0; i < PoolDepth; i++) cand[i] = c2[i] & win[e_rcid[i]];
     end
     // the oldest candidate
     for (int unsigned i = 0; i < PoolDepth; i++) sel[i] = cand[i] & !(|(cand & older_q[i]));
     sel_idx = '0;
     for (int unsigned i = 0; i < PoolDepth; i++) if (sel[i]) sel_idx = IdxW'(i);
-    // the chosen descriptor leaves when its tokens are there; until then nothing else that costs bandwidth does
-    any_sel = |sel && (sel_free || e_tok[sel_idx]);
+    // the chosen descriptor is granted when its tokens are there; until then nothing else that costs bandwidth is
+    decide = !g_valid_q && |sel && (sel_free || ((mode == 2'd2) ? e_tokw[sel_idx] : e_tok[sel_idx]));
   end
 
   logic        load, rel_rd, rel_wr;
@@ -311,13 +361,13 @@ module axi_llc_cbqri_bc #(
   logic [31:0] rel_bytes;
   rcid_t       rel_rcid;
   mcid_t       rel_mcid;
-  assign load      = any_sel && (!out_valid_q || ready_i);
-  assign rel_rd    = pool_q[sel_idx].refill & !pool_q[sel_idx].flush;
-  assign rel_wr    = pool_q[sel_idx].evict  & !pool_q[sel_idx].flush;
+  assign load      = g_valid_q && (!out_valid_q || ready_i);
+  assign rel_rd    = pool_q[g_idx_q].refill & !pool_q[g_idx_q].flush;
+  assign rel_wr    = pool_q[g_idx_q].evict  & !pool_q[g_idx_q].flush;
   assign rel_lines = {1'b0, rel_rd} + {1'b0, rel_wr};
   assign rel_bytes = 32'(rel_lines) * LineBytes;
-  assign rel_rcid  = e_rcid[sel_idx];
-  assign rel_mcid  = e_mcid[sel_idx];
+  assign rel_rcid  = e_rcid[g_idx_q];
+  assign rel_mcid  = e_mcid[g_idx_q];
 
   // admission of the gated ports: at most one per cycle (the pend sums stay exact), round robin among the ports
   // whose request may go now
@@ -331,7 +381,8 @@ module axi_llc_cbqri_bc #(
       logic [32:0] committed;
       committed  = {1'b0, used_q[gate_rcid_i[k]]} + {1'b0, pend_q[gate_rcid_i[k]]};
       gate_ok[k] = (NumGates > 0) && gate_req_i[k] &&
-                   (!en_q || mweight_q[gate_rcid_i[k]] != 8'd0 || committed < {1'b0, resv_q[gate_rcid_i[k]]});
+                   (!en_q || mweight_q[gate_rcid_i[k]] != 8'd0 ||
+                    (has_resv_q[gate_rcid_i[k]] && committed <= {1'b0, earn_q[gate_rcid_i[k]][47:16]}));
     end
     gate_gnt_o = '0;
     found      = 1'b0;
@@ -493,6 +544,9 @@ module axi_llc_cbqri_bc #(
       per_cnt_q    <= '0;
       used_q       <= '0;
       resv_q       <= '0;
+      rrate_q      <= '0;
+      earn_q       <= '0;
+      has_resv_q   <= '0;
       pass_q       <= '0;
       pend_q       <= '0;
       gate_rr_q    <= '0;
@@ -500,6 +554,10 @@ module axi_llc_cbqri_bc #(
       pool_q       <= '0;
       pv_q         <= '0;
       older_q      <= '0;
+      wait_q       <= '0;
+      g_valid_q    <= 1'b0;
+      g_idx_q      <= '0;
+      g_mode_q     <= '0;
       out_q        <= '0;
       out_valid_q  <= 1'b0;
     end else begin
@@ -595,17 +653,20 @@ module axi_llc_cbqri_bc #(
         if (div_cnt_q == 6'd1) rate_q <= (|quo_n[47:32]) ? 32'hFFFF_FFFF : quo_n[31:0];
       end
       if (w_take && w_ours && (w_idx == 5'd17 || w_idx == 5'd18)) div_start_q <= 1'b1;   // wins over the clear
-      // tokens: rate per cycle up to two lines; a release takes its bytes; full while pacing is off
-      if (!pace_on) tok_q <= 40'(BurstBytes) << 16;
+      // tokens: rate per cycle up to the burst and the kept line; a release takes its bytes; full while pacing is
+      // off
+      if (!pace_on) tok_q <= 40'(BurstBytes + KeepBytes) << 16;
       else begin
         logic [40:0] t;
         t = {1'b0, tok_q} + 41'(rate_q);
         if (load && rel_lines != 2'd0) t = t - (41'(rel_bytes) << 16);
-        tok_q <= (t > 41'(40'(BurstBytes) << 16)) ? 40'(BurstBytes) << 16 : t[39:0];
+        tok_q <= (t > 41'(40'(BurstBytes + KeepBytes) << 16)) ? 40'(BurstBytes + KeepBytes) << 16 : t[39:0];
       end
 
       // ---- reservations in bytes per period, one RCID per cycle
-      resv_q[rc_idx_q] <= 32'((64'(rbwb_q[rc_idx_q]) * 64'(capacity_q)) >> 10);
+      resv_q[rc_idx_q]     <= 32'((64'(rbwb_q[rc_idx_q]) * 64'(capacity_q)) >> 10);
+      has_resv_q[rc_idx_q] <= |(32'((64'(rbwb_q[rc_idx_q]) * 64'(capacity_q)) >> 10));
+      rrate_q[rc_idx_q]    <= 32'((64'(rbwb_q[rc_idx_q]) * 64'(rate_q)) >> 10);   // Rbwb / 1024 of the pacing rate
       rc_idx_q         <= (32'(rc_idx_q) == NumRcid - 1) ? rcid_t'(0) : rcid_t'(rc_idx_q + 1);
 
       // ---- admissions of the gated ports
@@ -622,8 +683,16 @@ module axi_llc_cbqri_bc #(
       // ---- output register
       if (out_valid_q && ready_i) out_valid_q <= 1'b0;
       if (load) begin
-        out_q       <= pool_q[sel_idx];
+        out_q       <= pool_q[g_idx_q];
         out_valid_q <= 1'b1;
+      end
+
+      // ---- the grant
+      if (load) g_valid_q <= 1'b0;
+      else if (decide) begin
+        g_valid_q <= 1'b1;
+        g_idx_q   <= sel_idx;
+        g_mode_q  <= mode;
       end
 
       // ---- accounting period (cleared while regulation is off, so it starts clean when it is turned on)
@@ -631,15 +700,24 @@ module axi_llc_cbqri_bc #(
         per_cnt_q <= '0;
         used_q    <= '0;
         pass_q    <= '0;
+        earn_q    <= '0;
       end else begin
         per_cnt_q <= per_cnt_q + 32'd1;
+        // every RCID earns its reservation at its rate, up to resv - 1 bytes
+        for (int unsigned r = 0; r < NumRcid; r++) begin
+          logic [48:0] e;
+          e = {1'b0, earn_q[r]} + 49'(rrate_q[r]);
+          if (!has_resv_q[r])                                       earn_q[r] <= '0;
+          else if (e[48] || e[47:16] >= resv_q[r] - 32'd1)          earn_q[r] <= {resv_q[r] - 32'd1, 16'hFFFF};
+          else                                                      earn_q[r] <= e[47:0];
+        end
       end
       if (load && rel_lines != 2'd0) begin
         if (en_q) begin
           if (period_end) used_q[rel_rcid] <= rel_bytes;
           else if (used_q[rel_rcid] <= 32'hFFFF_FFFF - rel_bytes) used_q[rel_rcid] <= used_q[rel_rcid] + rel_bytes;
           else used_q[rel_rcid] <= 32'hFFFF_FFFF;
-          if (mode == 2'd2 && !period_end)
+          if (g_mode_q == 2'd2 && !period_end)
             pass_q[rel_rcid] <= pass_q[rel_rcid] + ((rel_lines == 2'd2) ? PassW'(stride_q[rel_rcid]) << 1
                                                                         : PassW'(stride_q[rel_rcid]));
         end
@@ -651,18 +729,70 @@ module axi_llc_cbqri_bc #(
       end
 
       // ---- pool: release, then insertion (a slot freed this cycle is reused from the next one on)
-      if (load) pv_q[sel_idx] <= 1'b0;
+      if (load) pv_q[g_idx_q] <= 1'b0;
       if (insert) begin
         pool_q[free_idx] <= desc_i;
         pv_q[free_idx]   <= 1'b1;
         for (int unsigned i = 0; i < PoolDepth; i++) begin
           older_q[i][free_idx] <= 1'b0;                                    // the newcomer is the youngest
-          older_q[free_idx][i] <= pv_q[i] && !(load && sel_idx == IdxW'(i)) && (IdxW'(i) != free_idx);
+          older_q[free_idx][i] <= pv_q[i] && !(load && g_idx_q == IdxW'(i)) && (IdxW'(i) != free_idx);
+          wait_q[i][free_idx]  <= 1'b0;                                    // nobody waits for the newcomer
+          wait_q[free_idx][i]  <= pv_q[i] && !(load && g_idx_q == IdxW'(i)) && (IdxW'(i) != free_idx) && dep_new[i];
         end
       end
     end
   end
 
+  // pragma translate_off
+  `ifndef SYNTHESIS
+  // Simulation monitor: a descriptor that stayed in the pool for BcWaitReport cycles or more prints, when it leaves,
+  // where the time went: blocked behind an older descriptor it depends on (which one and why), in no class (a hard
+  // limit past its reservation), ready but another descriptor chosen first, chosen and waiting for tokens, or
+  // granted and waiting for the output register.
+  localparam int unsigned BcWaitReport = 1000;
+  int unsigned mw_tot [PoolDepth], mw_blk [PoolDepth], mw_park [PoolDepth], mw_cls [PoolDepth], mw_tok [PoolDepth],
+               mw_out [PoolDepth], mw_by_rcid [PoolDepth], mw_by_id [PoolDepth], mw_why [PoolDepth], mw_c1 [PoolDepth];
+  function automatic logic [TagWidth+IndexWidth-1:0] mw_rf(desc_t d);
+    return {d.a_x_addr[IndexLsb + IndexWidth +: TagWidth], d.a_x_addr[IndexLsb +: IndexWidth]};
+  endfunction
+  function automatic logic [TagWidth+IndexWidth-1:0] mw_ev(desc_t d);
+    return {TagWidth'(d.evict_tag), d.a_x_addr[IndexLsb +: IndexWidth]};
+  endfunction
+  always @(posedge clk_i) begin
+    if (rst_ni) begin
+      for (int unsigned i = 0; i < PoolDepth; i++) if (pv_q[i]) begin
+        mw_tot[i] = mw_tot[i] + 1;
+        if (g_valid_q && g_idx_q == IdxW'(i)) mw_out[i] = mw_out[i] + 1;
+        else if (blocked[i]) begin
+          mw_blk[i] = mw_blk[i] + 1;
+          for (int unsigned j = 0; j < PoolDepth; j++) if (pv_q[j] && wait_q[i][j]) begin
+            mw_by_rcid[i] = 32'(e_rcid[j]);
+            mw_by_id[i]   = 32'(pool_q[j].a_x_id);
+            mw_why[i]     = mw_why[i] | {28'd0, pool_q[i].flush | pool_q[j].flush,
+                                         pool_q[i].rw & pool_q[j].rw & !(pool_q[i].wbuf & pool_q[j].wbuf),
+                                         pool_q[i].refill & pool_q[j].evict & (mw_rf(pool_q[i]) == mw_ev(pool_q[j])),
+                                         pool_q[i].a_x_id == pool_q[j].a_x_id};
+          end
+        end else if (!(f0[i] | c0[i] | c1[i] | c2[i])) mw_park[i] = mw_park[i] + 1;
+        else if (!sel[i] || g_valid_q) begin
+          mw_cls[i] = mw_cls[i] + 1;
+          if (|c1 && !c1[i]) mw_c1[i] = mw_c1[i] + 1;       // a reserved-class descriptor was waiting ahead of it
+        end else if (!decide) mw_tok[i] = mw_tok[i] + 1;
+      end
+      if (load && mw_tot[g_idx_q] >= BcWaitReport)
+        $display("[BC] t=%0t rcid %0d src %0d id %0h addr %0h left the pool after %0d cycles: blocked %0d (behind rcid %0d id %0h, why %0h: 1 same id, 2 line, 4 write order, 8 flush), parked %0d, behind others %0d (%0d of them a reserved class), tokens %0d, output %0d; class at release %0d",
+                 $time, e_rcid[g_idx_q], (RcidLsb > 0) ? (32'(pool_q[g_idx_q].a_x_user) & ((32'd1 << RcidLsb) - 1)) : 0,
+                 pool_q[g_idx_q].a_x_id, pool_q[g_idx_q].a_x_addr, mw_tot[g_idx_q], mw_blk[g_idx_q], mw_by_rcid[g_idx_q],
+                 mw_by_id[g_idx_q], mw_why[g_idx_q], mw_park[g_idx_q], mw_cls[g_idx_q], mw_c1[g_idx_q], mw_tok[g_idx_q],
+                 mw_out[g_idx_q], g_mode_q);
+      if (insert) begin
+        mw_tot[free_idx] = 0; mw_blk[free_idx] = 0; mw_park[free_idx] = 0; mw_cls[free_idx] = 0; mw_tok[free_idx] = 0;
+        mw_out[free_idx] = 0; mw_why[free_idx] = 0; mw_c1[free_idx] = 0; mw_by_rcid[free_idx] = 0; mw_by_id[free_idx] = 0;
+      end
+    end
+  end
+  `endif
+  // pragma translate_on
   // pragma translate_off
   `ifndef VERILATOR
   initial begin
