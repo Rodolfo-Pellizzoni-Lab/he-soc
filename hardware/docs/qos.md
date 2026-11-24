@@ -3,7 +3,8 @@
 The cores implement the RISC-V **Ssqosid** extension, and every memory request in the SoC carries the requesting
 hart's QoS identifiers in the AXI `user` field. The LLC has a RISC-V **CBQRI capacity controller** (Capacity and
 Bandwidth QoS Register Interface v1.0): software assigns each RCID and access type a set of LLC ways it may allocate
-into (way partitioning). There is no bandwidth controller and no capacity monitoring.
+into (way partitioning), and a **CBQRI bandwidth controller**, which shares the LLC's memory traffic among the RCIDs
+and counts it per MCID. There is no capacity monitoring.
 
 ## CPU side: `srmcfg` (CSR 0x181)
 
@@ -279,9 +280,17 @@ memory port would stall every RCID's misses and, once those FIFOs fill, the look
 the waiting off the lookup: while an RCID waits for bandwidth, the others' hits and misses go on.
 
 **What it hands out.** `NBWBLKS = 1024` blocks stand for `BC_CAPACITY` bytes per accounting period of `BC_PERIOD`
-cycles, so an RCID's reservation is `Rbwb * BC_CAPACITY / 1024` bytes per period. With `BC_CTRL.PACE` (the reset value)
+cycles, so an RCID's reservation is `Rbwb * BC_CAPACITY / 1024` bytes per period. The reservation is earned at a
+constant rate over the period: an RCID is inside its reservation while the bytes it used this period are at most the
+share earned so far (its first line of a period is free). Reserved traffic leaves evenly spread over the period and
+interleaves with the other RCIDs': an RCID without a reservation waits behind it for a few lines at most, not until
+the reservations are used up (`t_bchol`). With `BC_CTRL.PACE` (the reset value)
 a token bucket paces all releases to `BC_CAPACITY / BC_PERIOD` bytes per cycle (bursts of two lines): the controller is
-then the bottleneck by construction and the waiting happens in its pool, where the arbiter orders it. Without pacing
+then the bottleneck by construction and the waiting happens in its pool, where the arbiter orders it. The bucket
+holds one line more that only release classes 1 and 2 below take; class 3 leaves it in the bucket. An RCID inside its
+reservation then finds a line's tokens when its request comes: a core with one miss at a time would otherwise meet a
+bucket that class 3 empties as fast as it fills, wait a token interval per line and never reach its reservation
+(`t_bc` R). The kept line is a standing level, not a rate: class 3 still gets every token classes 1 and 2 do not take. Without pacing
 the queues behind it (the refill path and the memory's own FIFOs) decide the order whenever memory is the bottleneck,
 because each core has only one or two misses in flight and the pool would hold no choice. Set `BC_CAPACITY` at or a
 little below what the memory sustains per period (`t_bc` hands out 90 %).
@@ -290,14 +299,21 @@ little below what the memory sustains per period (`t_bc` hands out 90 %).
 1. descriptors that cost nothing (hits the LLC routes through the miss pipeline to keep AXI order, flushes), and
    descriptors that a waiting descriptor of an RCID still inside its reservation depends on (priority inheritance, two
    levels), oldest first;
-2. descriptors of RCIDs inside their reservation this period, oldest first (the floor: CBQRI's "bandwidth made
+2. descriptors of RCIDs inside their reservation (used at most what is earned so far), oldest first (the floor: CBQRI's "bandwidth made
    available to an RCID ... even when all other RCID are using their full allocation");
 3. descriptors of RCIDs past their reservation with Mweight > 0, sharing what is left in proportion to Mweight (stride
    scheduling: each release adds `4096 / Mweight` per line to the RCID's pass, lowest pass first; reset every period);
-RCIDs past their reservation with Mweight = 0 wait for the next period: a hard limit, as CBQRI defines Mweight 0.
+RCIDs past their reservation with Mweight = 0 wait until they have earned their next line: a hard limit, as CBQRI
+defines Mweight 0, and a constant rate of `Rbwb / 1024` of the capacity.
 Within the paced rate the arbiter is work-conserving.
 
-**Ordering rules** (kept by the pool):
+A release takes two cycles: one cycle chooses a descriptor and registers the grant, and the grant is released as
+soon as the output register takes it; no choice is made while a grant is pending. The choice (pool, classes, passes,
+tokens) and the accounting of a release are then separate paths; as one path they were 46 logic levels and the
+slowest path of the SoC at 50 MHz. A descriptor stays one cycle longer in the pool than with a one-cycle release.
+
+**Ordering rules** (kept by the pool; evaluated once, when a descriptor enters, against the entries then in the
+pool):
 - descriptors of one AXI ID leave in order;
 - a refill of a line does not leave before an older descriptor that evicts that line. The lookup has already given
   the line's way to the older descriptor, and its write-back is still to come: a younger refill of the line (a miss
@@ -343,8 +359,8 @@ therefore held every core's L1 misses until the next period. The gate moves that
   worst-case cost (LLC lines touched x 4 lines: a CCU write-back of a dirty L1 copy and the request itself, each a
   refill and a dirty eviction, 64 bytes per line);
 - with regulation on and Mweight 0, the controller admits it only while the RCID's bytes used this period plus the
-  worst-case bytes of its admitted, unfinished requests (`pend`) are below its reservation (the release rule's
-  overshoot); other RCIDs, and everything with regulation off, are admitted at once (one admission per cycle,
+  worst-case bytes of its admitted, unfinished requests (`pend`) are at most the share of its reservation earned so
+  far (the release rule); other RCIDs, and everything with regulation off, are admitted at once (one admission per cycle,
   round robin over the gates);
 - descriptors from a gated source (the CCU's source field, `user[QosUserLsb-1:0]` = 4 or 5, which the CCU also
   writes on the write-backs it issues for a request) of an RCID with Mweight 0 count as inside its reservation in
@@ -380,9 +396,10 @@ Reset (CBQRI: "all available bandwidth to RCID 0"): RCID 0 Rbwb = MRBWB and Mwei
 Mweight 1 (UNSPECIFIED in CBQRI), regulation off: the pool is then a FIFO and nothing changes for software that does
 not know the controller. Software lowers RCID 0 before it gives other RCIDs blocks (the sum rule holds at every step).
 Monitoring counts the bytes of refills (read) and evictions (write) as the controller releases them, per the MCID of
-the descriptor, regulation on or off. The lock box's Bloom filter (`axi_llc_pkg::BloomHashWidth`) is 8 bits (256
-counters, was 6): parked misses keep their lines locked, and a few dozen locked lines in 64 counters gave frequent false
-lock stalls and could overflow the 3-bit counters.
+the descriptor, regulation on or off. The lookup's lock box (`axi_llc_lock_box_exact`) is an exact table of the
+locked lines, 48 entries: a parked miss keeps its line locked for as long as it waits, and the lookup, which is one
+in-order stage for every request, holds a descriptor only for a line that is really locked. (A Bloom filter cannot
+be used here: one false answer holds every core until the parked miss is released; `tb_lock_bloom` measures it.)
 
 Not covered: traffic that bypasses the LLC (uncached ranges) is not regulated; per-AT allocation (code/data) is not
 implemented (AT read-only zero, allowed by CBQRI); the pool holds 16 descriptors, so more than 16 waiting misses (more
@@ -431,11 +448,51 @@ than four cores with several each) would stall the lookup again.
   allowed past an unbuffered write miss, a deadlock (the write unit waits for beats queued behind the unbuffered
   write's).
 - **`t_bcw`** and **`t_bcd`** measure who a throttled write stops (see the write-data buffer above); `tb_llc_bc`
-  (`run_llc_bc.sh`) is the controller's unit test, with cases K (buffered writes next to a hard-limited writer: 97.9 %
-  of the bandwidth, 0.3 % unbuffered), L (a random mix of buffered and unbuffered writes, ordering checked) and M
-  (gated sources: a hard-limited RCID's descriptors from the gated port wait at most 108 cycles, from an ungated one
+  (`run_llc_bc.sh`) is the controller's unit test, with cases K (buffered writes next to a hard-limited writer: 92.8 %
+  of the bandwidth, 0.2 % unbuffered), L (a random mix of buffered and unbuffered writes, ordering checked), M
+  (gated sources: a hard-limited RCID's descriptors from the gated port wait at most 55 cycles, from an ungated one
   a whole period; admission granted below the reservation, refused at it, granted again after done, always for
-  Mweight > 0 and with regulation off). `t_bcd` reports the cycles the DMA waited at its gate per case.
+  Mweight > 0 and with regulation off) and N (a best-effort RCID next to a hard-limited one with a 20 % reservation:
+  its longest wait is 39 cycles of a 4000-cycle period, and the limited one gets its 20 %; with the reservation
+  released at the start of the period the wait was 849 cycles). `t_bcd` reports the cycles the DMA waited at its
+  gate per case.
+- **`t_bchol`** checks that a limit on one RCID does not slow another: a best-effort core reads LLC-missing lines
+  next to 1 to 3 cores of an RCID with a hard limit, with a 20 % reservation and with none. Checked: the victim keeps
+  90 % or more of its rate alone, no load of it takes 1000 cycles, and the limited RCID gets 80 % or more of its
+  reservation. Measured, victim's rate as a share of alone next to 1 / 2 / 3 limited cores:
+
+  | | reserved hard limit | hard limit, nothing reserved | longest victim load |
+  |---|---|---|---|
+  | simulation, reservation released at the start of the period, Bloom-filter lock box | 84 / 76 / 59 % | 97 / 100 / 13 % | 34,413 cycles |
+  | simulation, as built | 100 / 100 / 104 % | 100 / 103 / 101 % | 170 cycles |
+  | VCU118 (`qosfix4_4c`, 2026-11-24) | 100 / 100 / 99 % | 100 / 100 / 99 % | 118 cycles |
+
+  Under Linux 7.2 on the same bitstream (`rdtser`, 1 ms period, 47 MB/s capacity, resctrl groups): a reader alone
+  28.2 MB/s; next to 1 / 2 / 3 readers of a group with `MB_MIN` 205 and `MB_WGHT` 0, 27.5 / 27.3 / 27.2 MB/s (it was
+  24.7 / 20.2 / 18.2 on `qosgate_4c`), and the limited group gets 8.6 to 8.8 MB/s of its 9.4; with a 6 ms period
+  27.2 MB/s (was 9.0). Next to 3 readers limited to `MB_MIN` 1 the reader gets 25.4 MB/s (was 16.9) with stalls of
+  tens of milliseconds, and 28.1 MB/s from `MB_MIN` 5 on. Bare metal shows no loss at `MB_MIN` 1.
+
+  The rest is firmware traffic (2026-11-24). The loader gave only HS mode IDs of its own (`QOS_KERNEL`), so M mode
+  (OpenSBI: SBI calls, the emulated `time` CSR, the timer interrupt) carried the `srmcfg` of the task on the hart
+  and was throttled with it. On a core limited to `MB_MIN` 1 each firmware miss then waits about 4 ms, often inside
+  a kernel critical section, and the other cores spin on the lock. JTAG halts at random times: the limited harts
+  were in M mode in 29 to 33 % of the samples (2 to 7 % once M mode has its own IDs). Built with
+  `QOS_FIRMWARE=0x80008` as well (`mqosctl[0]`, `mqosid`), same bitstream, reader alone 28.0 MB/s, 6 s runs:
+
+  | Loader | 3 readers at 205 / 0 | at 5 / 0 | at 1 / 0 | limited readers at 1 / 0, of their limit |
+  |---|---|---|---|---|
+  | no IDs per privilege (kernel and firmware carry the task's) | 27.2 | 21.0 to 22.2 | 26.7 to 27.0 | 1 to 2 % (stuck in the kernel) |
+  | `QOS_KERNEL` | 27.3 | 27.3 to 27.4 | 25.2 to 25.4 | 81 to 83 % |
+  | `QOS_KERNEL` and `QOS_FIRMWARE` | 27.0 to 27.4 | 27.2 to 28.0 | 27.4 to 27.6 | 93 to 96 % |
+
+  The longest stall of the reader at 1 / 0 falls from 53 to 94 ms to 5 to 9 ms. A hard-limited group needs both:
+  without them its kernel and firmware work is throttled too and holds up everyone who shares a lock with it.
+- **`tb_lock_box`** (`run_lock_box.sh`): the lookup's lock table against a reference model, 40,000 random locks,
+  unlocks and lookups including a full table.
+- **`t_trap`** (cores): `stvec` reads back as written, and instructions the core does not decode (the absent `time`
+  CSR, `0xffffffff`, a custom, a vector and a reserved opcode, a 16-bit zero) raise an illegal-instruction exception
+  with the instruction in `mtval`.
 - **`tb_bc_gate`** (`run_bc_gate.sh`): the DMA admission gate alone, 3000 random reads and writes of 1-4 beats over 4
   IDs to an out-of-order slave, random admission grants. Checks the data, no W beat before its AW, no request at the
   slave before an admission, at most 4 in flight, and per RCID that the bytes done never run ahead of the
