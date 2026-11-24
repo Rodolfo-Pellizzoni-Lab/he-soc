@@ -387,7 +387,10 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_SIP: begin
                     csr_rdata = clic_mode_o ? '0 : ((ariane_pkg::RVH) ? (mip_q & mideleg_q & ~HS_DELEG_INTERRUPTS) : (mip_q & mideleg_q));
                 end
-                riscv::CSR_STVEC:              csr_rdata = clic_mode_o ? {stvec_q[riscv::XLEN-1:6], 6'b11} : {stvec_q[riscv::XLEN-1:6], 5'b0, stvec_q[0]};
+                // Outside CLIC mode stvec reads back as it is stored and used (the write keeps bits XLEN-1:2 and the
+                // trap vector takes them): firmware reads it to redirect a trap to S-mode (OpenSBI sbi_trap_redirect),
+                // and with bits 5:2 masked here it entered a handler that is not on a 64-byte boundary 60 bytes early.
+                riscv::CSR_STVEC:              csr_rdata = clic_mode_o ? {stvec_q[riscv::XLEN-1:6], 6'b11} : stvec_q;
                 riscv::CSR_SINTSTATUS: begin
                     if (ariane_pkg::RVSCLIC) begin
                         // sintstatus reads 0 from CLINT mode

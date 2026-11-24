@@ -24,7 +24,9 @@ package cva6_config_pkg;
     localparam CVA6ConfigF8AltEn = 0;
     localparam CVA6ConfigFVecEn = 0;
 
-    localparam CVA6ConfigCvxifEn = 1;
+    // No coprocessor on the CVXIF in AlSaqr. With the interface enabled the decoder offloads every instruction
+    // it does not decode instead of raising an illegal-instruction exception itself (decoder.sv).
+    localparam CVA6ConfigCvxifEn = 0;
     localparam CVA6ConfigCExtEn = 1;
     localparam CVA6ConfigAExtEn = 1;
     localparam CVA6ConfigBExtEn = 0;

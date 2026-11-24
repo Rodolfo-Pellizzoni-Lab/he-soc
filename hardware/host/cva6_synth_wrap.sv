@@ -381,6 +381,17 @@ module cva6_synth_wrap
   // pragma translate_on
 
 
+  // No coprocessor on the CVXIF, and the interface is off in the core's configuration (CVA6ConfigCvxifEn = 0): the
+  // decoder raises the illegal-instruction exception itself. Should a configuration turn it on, the core offloads
+  // every instruction it does not decode (decoder.sv, CVXIF_PRESENT) and waits for x_issue_ready: ready with
+  // accept = 0 makes cvxif_fu raise the exception; with the response tied to '0 the instruction never left the
+  // issue stage and the hart hung for good.
+  cvxif_pkg::cvxif_resp_t cvxif_resp_none;
+  always_comb begin
+    cvxif_resp_none               = '0;
+    cvxif_resp_none.x_issue_ready = 1'b1;
+  end
+
   for (genvar i = 0; i < ariane_soc::NumCVA6 ; i++ ) begin : gen_ariane
 
     assign hart_id[i] = i;
@@ -418,7 +429,7 @@ module cva6_synth_wrap
       .clic_kill_ack_o      (                       ),
       .rvfi_o               (                       ),
       .cvxif_req_o          (                       ),
-      .cvxif_resp_i         ( '0                    ),
+      .cvxif_resp_i         ( cvxif_resp_none       ),
       .emitter_source_o     ( emitter_source[i]     ),
       .emitter_target_o     ( emitter_target[i]     ),
       .emitter_data_o       ( emitter_data[i]       ),
