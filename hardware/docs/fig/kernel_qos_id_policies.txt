@@ -1,0 +1,461 @@
+== mode 2 tenant none cap -/0
+1:g1          27.72      1668    155131     611    8.4%   6499.5   2076.7     2     9  162443
+window 5.35 s
+mcid  0:    0.07 MB/s
+mcid  1:   28.80 MB/s
+mcid  8:    0.66 MB/s
+mcid  9:    0.03 MB/s
+oopses 0
+== mode 1 tenant user cap -/0
+1:g1          20.24      2248    252315     606    9.3%   6569.7   2097.1     1    32  118587
+window 5.74 s
+mcid  0:    0.57 MB/s
+mcid  1:   20.32 MB/s
+mcid  2:   23.05 MB/s
+mcid  9:    0.04 MB/s
+user cpu 2: 7.56 MB/s of work over 5.7 s
+user cpu 3: 7.54 MB/s of work over 5.7 s
+user cpu 0: 7.16 MB/s of work over 5.7 s
+oopses 0
+== mode 2 tenant user cap -/0
+1:g1          20.11      2248    173124     613    9.3%   6656.6   2003.9     1    47  117830
+window 5.72 s
+mcid  0:    0.08 MB/s
+mcid  1:   20.02 MB/s
+mcid  2:   22.67 MB/s
+mcid  8:    1.19 MB/s
+mcid  9:    0.04 MB/s
+user cpu 2: 7.63 MB/s of work over 5.7 s
+user cpu 3: 7.57 MB/s of work over 5.7 s
+user cpu 0: 7.06 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant user cap -/0
+1:g1          20.02      2248    174539     618    9.8%   6600.9   2097.6     1    45  117330
+window 5.73 s
+mcid  0:    0.52 MB/s
+mcid  1:   19.95 MB/s
+mcid  2:   22.72 MB/s
+mcid  8:    0.66 MB/s
+mcid  9:    0.05 MB/s
+user cpu 2: 7.51 MB/s of work over 5.7 s
+user cpu 3: 7.57 MB/s of work over 5.7 s
+user cpu 0: 7.21 MB/s of work over 5.7 s
+oopses 0
+== mode 1 tenant user cap 205/0
+1:g1          26.97      1691    171436     621    9.1%   6565.0   1982.4     1    31  158017
+window 5.73 s
+mcid  0:    0.56 MB/s
+mcid  1:   27.17 MB/s
+mcid  2:    9.13 MB/s
+mcid  9:    0.04 MB/s
+user cpu 2: 2.88 MB/s of work over 5.7 s
+user cpu 3: 2.99 MB/s of work over 5.7 s
+user cpu 0: 2.69 MB/s of work over 5.7 s
+oopses 0
+== mode 2 tenant user cap 205/0
+1:g1          26.87      1690    227152     612    9.6%   6525.6   2016.3     2    28  157469
+window 5.73 s
+mcid  0:    0.08 MB/s
+mcid  1:   27.04 MB/s
+mcid  2:    9.07 MB/s
+mcid  8:    1.10 MB/s
+mcid  9:    0.04 MB/s
+user cpu 2: 2.94 MB/s of work over 5.7 s
+user cpu 3: 3.03 MB/s of work over 5.7 s
+user cpu 0: 2.85 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant user cap 205/0
+1:g1          26.73      1692    221680     695    9.5%   6508.4   2063.2     2    14  156602
+window 5.70 s
+mcid  0:    0.50 MB/s
+mcid  1:   26.76 MB/s
+mcid  2:    9.38 MB/s
+mcid  8:    0.61 MB/s
+mcid  9:    0.04 MB/s
+user cpu 2: 3.29 MB/s of work over 5.7 s
+user cpu 3: 3.10 MB/s of work over 5.7 s
+user cpu 0: 2.70 MB/s of work over 5.7 s
+oopses 0
+== mode 1 tenant user cap 5/0
+1:g1          22.56      1671   1385616    1350   26.3%   6496.9   2283.7     1   105  132184
+window 6.01 s
+mcid  0:    0.53 MB/s
+mcid  1:   20.84 MB/s
+mcid  2:    0.26 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.02 MB/s of work over 4.0 s
+user cpu 3: 0.01 MB/s of work over 4.2 s
+user cpu 0: 0.01 MB/s of work over 3.3 s
+oopses 0
+== mode 2 tenant user cap 5/0
+1:g1          27.71      1678    146715     655    8.2%   6405.6   2175.1     1    15  162388
+window 5.71 s
+mcid  0:    0.07 MB/s
+mcid  1:   27.82 MB/s
+mcid  2:    0.26 MB/s
+mcid  8:    0.93 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.07 MB/s of work over 5.7 s
+user cpu 3: 0.06 MB/s of work over 5.7 s
+user cpu 0: 0.07 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant user cap 5/0
+1:g1          27.56      1674    162687     712    8.9%   6450.4   2163.4     1    14  161483
+window 5.87 s
+mcid  0:    0.44 MB/s
+mcid  1:   26.90 MB/s
+mcid  2:    0.26 MB/s
+mcid  8:    0.52 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.07 MB/s of work over 5.5 s
+user cpu 3: 0.07 MB/s of work over 5.7 s
+user cpu 0: 0.07 MB/s of work over 5.6 s
+oopses 0
+== mode 1 tenant user cap 1/0
+1:g1          17.70      1667   4022981     611   42.0%   6362.6   2556.9     1    62  103707
+window 6.60 s
+mcid  0:    0.31 MB/s
+mcid  1:    2.35 MB/s
+mcid  2:    0.08 MB/s
+mcid  9:    0.01 MB/s
+user cpu 2: 0.02 MB/s of work over 4.7 s
+user cpu 3: 0.02 MB/s of work over 5.4 s
+user cpu 0: 0.00 MB/s of work over 15.9 s
+oopses 0
+== mode 2 tenant user cap 1/0
+1:g1          27.27      1673    322489     663   10.0%   6512.6   2084.8     1    47  159809
+window 5.72 s
+mcid  0:    0.08 MB/s
+mcid  1:   26.69 MB/s
+mcid  2:    0.07 MB/s
+mcid  8:    0.92 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.02 MB/s of work over 5.6 s
+user cpu 3: 0.02 MB/s of work over 5.7 s
+user cpu 0: 0.02 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant user cap 1/0
+1:g1          26.04      1677   2403744     701   14.1%   6488.8   2149.7     2    42  152576
+window 6.75 s
+mcid  0:    0.36 MB/s
+mcid  1:   21.88 MB/s
+mcid  2:    0.07 MB/s
+mcid  8:    0.43 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.02 MB/s of work over 5.4 s
+user cpu 3: 0.02 MB/s of work over 5.3 s
+user cpu 0: 0.02 MB/s of work over 5.4 s
+oopses 0
+== mode 1 tenant sys cap -/0
+1:g1          16.43      2782    259555     607    9.7%   6597.0   2225.5     1    36   96290
+window 5.83 s
+mcid  0:    0.70 MB/s
+mcid  1:   20.32 MB/s
+mcid  2:   21.49 MB/s
+mcid  9:    0.05 MB/s
+sys cpu 2: 2.72 MB/s of work over 5.8 s
+sys cpu 3: 2.75 MB/s of work over 5.7 s
+sys cpu 0: 2.69 MB/s of work over 5.8 s
+oopses 0
+== mode 2 tenant sys cap -/0
+1:g1          16.42      2774    177426     610   10.4%   6513.4   2484.6     2    52   96220
+window 5.83 s
+mcid  0:    0.10 MB/s
+mcid  1:   19.46 MB/s
+mcid  2:    0.03 MB/s
+mcid  8:   22.75 MB/s
+mcid  9:    0.06 MB/s
+sys cpu 2: 2.81 MB/s of work over 5.8 s
+sys cpu 3: 2.78 MB/s of work over 5.7 s
+sys cpu 0: 2.66 MB/s of work over 5.8 s
+oopses 0
+== mode 4 tenant sys cap -/0
+1:g1          16.25      2801    225300     607    9.9%   6584.2   2254.3     1    36   95236
+window 5.73 s
+mcid  0:    0.60 MB/s
+mcid  1:   19.91 MB/s
+mcid  2:   20.99 MB/s
+mcid  8:    0.84 MB/s
+mcid  9:    0.06 MB/s
+sys cpu 2: 2.83 MB/s of work over 5.7 s
+sys cpu 3: 2.74 MB/s of work over 5.7 s
+sys cpu 0: 2.60 MB/s of work over 5.7 s
+oopses 0
+== mode 1 tenant sys cap 205/0
+1:g1          24.24      1850    182872     608    9.3%   6466.1   2238.3     1    35  142050
+window 5.78 s
+mcid  0:    0.60 MB/s
+mcid  1:   26.98 MB/s
+mcid  2:    9.16 MB/s
+mcid  9:    0.05 MB/s
+sys cpu 2: 1.26 MB/s of work over 5.6 s
+sys cpu 3: 1.25 MB/s of work over 5.9 s
+sys cpu 0: 1.19 MB/s of work over 5.7 s
+oopses 0
+== mode 2 tenant sys cap 205/0
+1:g1          16.55      2772    179865     609   10.1%   6566.7   2414.1     1    45   96964
+window 5.88 s
+mcid  0:    0.10 MB/s
+mcid  1:   19.42 MB/s
+mcid  2:    0.03 MB/s
+mcid  8:   22.78 MB/s
+mcid  9:    0.06 MB/s
+sys cpu 2: 2.80 MB/s of work over 5.9 s
+sys cpu 3: 2.75 MB/s of work over 5.9 s
+sys cpu 0: 2.69 MB/s of work over 5.8 s
+oopses 0
+== mode 3 tenant sys cap 205/0
+1:g1          24.33      1849    166646     620    9.1%   6469.1   2246.2     1    19  142570
+window 5.71 s
+mcid  0:    0.50 MB/s
+mcid  1:   26.92 MB/s
+mcid  2:    8.71 MB/s
+mcid  8:    0.68 MB/s
+mcid  9:    0.06 MB/s
+sys cpu 2: 1.27 MB/s of work over 5.8 s
+sys cpu 3: 1.24 MB/s of work over 5.7 s
+sys cpu 0: 1.13 MB/s of work over 5.8 s
+oopses 0
+== mode 4 tenant sys cap 205/0
+1:g1          24.10      1850    180883     608    9.9%   6584.6   2148.5     1    36  141213
+window 5.81 s
+mcid  0:    0.55 MB/s
+mcid  1:   26.45 MB/s
+mcid  2:    8.72 MB/s
+mcid  8:    0.73 MB/s
+mcid  9:    0.06 MB/s
+sys cpu 2: 1.21 MB/s of work over 5.8 s
+sys cpu 3: 1.23 MB/s of work over 5.7 s
+sys cpu 0: 1.17 MB/s of work over 5.8 s
+oopses 0
+== mode 1 tenant pf cap -/0
+1:g1          15.84      2735    181418     632   12.1%   6568.4   2359.1     1   132   92801
+window 5.86 s
+mcid  0:    0.77 MB/s
+mcid  1:   21.85 MB/s
+mcid  2:   16.81 MB/s
+mcid  9:    0.15 MB/s
+pf cpu 2: 3.72 MB/s of work over 5.6 s
+pf cpu 3: 3.60 MB/s of work over 5.8 s
+pf cpu 0: 3.55 MB/s of work over 5.9 s
+oopses 0
+== mode 2 tenant pf cap -/0
+1:g1          16.31      2703    186259     606   10.4%   6602.6   2437.7     1    87   95564
+window 5.90 s
+mcid  0:    0.11 MB/s
+mcid  1:   21.63 MB/s
+mcid  2:    0.03 MB/s
+mcid  8:   17.93 MB/s
+mcid  9:    0.08 MB/s
+pf cpu 2: 3.67 MB/s of work over 5.7 s
+pf cpu 3: 3.67 MB/s of work over 5.7 s
+pf cpu 0: 3.57 MB/s of work over 5.9 s
+oopses 0
+== mode 4 tenant pf cap -/0
+1:g1          16.61      2650    150294     620    9.7%   6496.4   2452.2     2    57   97339
+window 5.77 s
+mcid  0:    0.56 MB/s
+mcid  1:   22.39 MB/s
+mcid  2:   15.98 MB/s
+mcid  8:    0.96 MB/s
+mcid  9:    0.10 MB/s
+pf cpu 2: 3.65 MB/s of work over 5.7 s
+pf cpu 3: 3.60 MB/s of work over 5.8 s
+pf cpu 0: 3.46 MB/s of work over 5.5 s
+oopses 0
+== mode 1 tenant pf cap 205/0
+1:g1          22.72      1987    163006     620    9.8%   6465.1   2261.3     1    30  133121
+window 5.84 s
+mcid  0:    0.66 MB/s
+mcid  1:   26.86 MB/s
+mcid  2:    8.62 MB/s
+mcid  9:    0.10 MB/s
+pf cpu 2: 2.04 MB/s of work over 5.1 s
+pf cpu 3: 1.99 MB/s of work over 5.3 s
+pf cpu 0: 1.93 MB/s of work over 6.5 s
+oopses 0
+== mode 2 tenant pf cap 205/0
+1:g1          16.58      2678    157090     619    9.7%   6521.3   2403.1     1    19   97144
+window 5.75 s
+mcid  0:    0.10 MB/s
+mcid  1:   22.49 MB/s
+mcid  2:    0.04 MB/s
+mcid  8:   17.67 MB/s
+mcid  9:    0.11 MB/s
+pf cpu 2: 3.67 MB/s of work over 5.7 s
+pf cpu 3: 3.66 MB/s of work over 5.7 s
+pf cpu 0: 3.50 MB/s of work over 5.4 s
+oopses 0
+== mode 4 tenant pf cap 205/0
+1:g1          22.56      1994    160539     621    9.9%   6522.2   2253.5     1    38  132174
+window 5.75 s
+mcid  0:    0.52 MB/s
+mcid  1:   27.07 MB/s
+mcid  2:    8.45 MB/s
+mcid  8:    0.79 MB/s
+mcid  9:    0.10 MB/s
+pf cpu 2: 2.06 MB/s of work over 6.1 s
+pf cpu 3: 2.01 MB/s of work over 5.2 s
+pf cpu 0: 1.91 MB/s of work over 5.5 s
+oopses 0
+== mode 1 tenant loop cap -/0
+1:g1          16.64      2585    293046     618   11.8%   6622.5   2233.8     1   121   97500
+window 5.97 s
+mcid  0:   11.16 MB/s
+mcid  1:   18.09 MB/s
+mcid  2:    9.18 MB/s
+mcid  9:    0.08 MB/s
+loop cpu 2: 1.11 MB/s of work over 6.2 s
+loop cpu 3: 1.06 MB/s of work over 6.6 s
+loop cpu 0: 1.02 MB/s of work over 6.2 s
+oopses 0
+== mode 2 tenant loop cap -/0
+1:g1          17.65      2561    265239     613   10.7%   6511.4   2391.1     1    74  103441
+window 5.98 s
+mcid  0:    0.09 MB/s
+mcid  1:   21.18 MB/s
+mcid  2:    0.04 MB/s
+mcid  8:   19.19 MB/s
+mcid  9:    0.07 MB/s
+loop cpu 2: 0.93 MB/s of work over 6.2 s
+loop cpu 3: 1.13 MB/s of work over 6.2 s
+loop cpu 0: 1.13 MB/s of work over 6.4 s
+oopses 0
+== mode 3 tenant loop cap -/0
+1:g1          16.67      2606    252219     613   10.8%   6718.6   2157.1     1    69   97670
+window 5.93 s
+mcid  0:    0.55 MB/s
+mcid  1:   20.39 MB/s
+mcid  2:    8.99 MB/s
+mcid  8:   10.48 MB/s
+mcid  9:    0.07 MB/s
+loop cpu 2: 1.12 MB/s of work over 6.1 s
+loop cpu 3: 1.03 MB/s of work over 6.2 s
+loop cpu 0: 1.16 MB/s of work over 6.1 s
+oopses 0
+== mode 4 tenant loop cap -/0
+1:g1          17.46      2558    239763     619   11.5%   6574.4   2289.7     1    98  102293
+window 5.84 s
+mcid  0:    0.58 MB/s
+mcid  1:   20.58 MB/s
+mcid  2:   17.84 MB/s
+mcid  8:    1.15 MB/s
+mcid  9:    0.06 MB/s
+loop cpu 2: 1.16 MB/s of work over 6.1 s
+loop cpu 3: 1.01 MB/s of work over 6.2 s
+loop cpu 0: 1.03 MB/s of work over 6.0 s
+oopses 0
+== mode 1 tenant loop cap 205/0
+1:g1          19.82      2187    189217     616   10.4%   6606.2   2172.5     2    59  116156
+window 5.91 s
+mcid  0:    8.42 MB/s
+mcid  1:   22.96 MB/s
+mcid  2:    7.48 MB/s
+mcid  9:    0.07 MB/s
+loop cpu 2: 0.82 MB/s of work over 6.1 s
+loop cpu 3: 0.99 MB/s of work over 6.0 s
+loop cpu 0: 0.83 MB/s of work over 6.1 s
+oopses 0
+== mode 2 tenant loop cap 205/0
+1:g1          17.68      2533    280167     616   11.3%   6579.8   2331.0     1    97  103587
+window 5.83 s
+mcid  0:    0.10 MB/s
+mcid  1:   20.59 MB/s
+mcid  2:    0.04 MB/s
+mcid  8:   19.34 MB/s
+mcid  9:    0.07 MB/s
+loop cpu 2: 1.09 MB/s of work over 6.0 s
+loop cpu 3: 1.13 MB/s of work over 6.0 s
+loop cpu 0: 0.95 MB/s of work over 6.0 s
+oopses 0
+== mode 3 tenant loop cap 205/0
+1:g1          19.47      2197    157469     615   10.6%   6741.3   2078.8     1    65  114081
+window 5.77 s
+mcid  0:    0.53 MB/s
+mcid  1:   22.53 MB/s
+mcid  2:    7.24 MB/s
+mcid  8:    8.48 MB/s
+mcid  9:    0.07 MB/s
+loop cpu 2: 0.86 MB/s of work over 5.9 s
+loop cpu 3: 0.88 MB/s of work over 5.9 s
+loop cpu 0: 0.95 MB/s of work over 6.1 s
+oopses 0
+== mode 4 tenant loop cap 205/0
+1:g1          23.67      1866    175099     617   10.9%   6531.4   2246.1     1    84  138716
+window 5.81 s
+mcid  0:    0.51 MB/s
+mcid  1:   26.37 MB/s
+mcid  2:    8.49 MB/s
+mcid  8:    0.89 MB/s
+mcid  9:    0.07 MB/s
+loop cpu 2: 0.51 MB/s of work over 6.4 s
+loop cpu 3: 0.50 MB/s of work over 6.3 s
+loop cpu 0: 0.48 MB/s of work over 6.5 s
+oopses 0
+== mode 2 tenant user cap 5/0
+1:g1          27.56      1672    164239     672    8.9%   6572.1   2032.1     1    47  161491
+window 5.70 s
+mcid  0:    0.07 MB/s
+mcid  1:   27.74 MB/s
+mcid  2:    0.26 MB/s
+mcid  8:    1.00 MB/s
+mcid  9:    0.04 MB/s
+user cpu 2: 0.07 MB/s of work over 5.7 s
+user cpu 3: 0.07 MB/s of work over 5.7 s
+user cpu 0: 0.06 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant user cap 5/0
+1:g1          27.49      1671    221034     700    9.3%   6489.0   2133.1     2    19  161066
+window 5.78 s
+mcid  0:    0.45 MB/s
+mcid  1:   27.25 MB/s
+mcid  2:    0.26 MB/s
+mcid  8:    0.51 MB/s
+mcid  9:    0.04 MB/s
+user cpu 2: 0.07 MB/s of work over 5.6 s
+user cpu 3: 0.07 MB/s of work over 5.6 s
+user cpu 0: 0.06 MB/s of work over 5.6 s
+oopses 0
+== mode 2 tenant user cap 1/0
+1:g1          27.30      1679    207531     705    9.7%   6542.4   2048.2     2    20  159974
+window 5.79 s
+mcid  0:    0.08 MB/s
+mcid  1:   26.31 MB/s
+mcid  2:    0.07 MB/s
+mcid  8:    0.91 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.02 MB/s of work over 5.7 s
+user cpu 3: 0.01 MB/s of work over 5.7 s
+user cpu 0: 0.02 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant user cap 1/0
+1:g1          25.23      1675    998112     756   16.8%   6433.0   2250.1     1    44  147838
+window 6.76 s
+mcid  0:    0.38 MB/s
+mcid  1:   21.07 MB/s
+mcid  2:    0.07 MB/s
+mcid  8:    0.40 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.02 MB/s of work over 5.1 s
+user cpu 3: 0.02 MB/s of work over 5.6 s
+user cpu 0: 0.02 MB/s of work over 3.9 s
+oopses 0
+== mode 1 tenant user cap 5/0
+1:g1          21.87      1674   3037006    1269   28.4%   6548.1   2195.8     1   133  128580
+window 5.81 s
+mcid  0:    0.51 MB/s
+mcid  1:   18.34 MB/s
+mcid  2:    0.26 MB/s
+mcid  9:    0.03 MB/s
+user cpu 2: 0.01 MB/s of work over 4.9 s
+user cpu 3: 0.02 MB/s of work over 5.0 s
+user cpu 0: 0.02 MB/s of work over 3.4 s
+oopses 0
+== mode 2 tenant none cap -/0
+1:g1          27.68      1670    129807     604    8.4%   6457.3   2129.1     2     9  162196
+window 5.34 s
+mcid  0:    0.07 MB/s
+mcid  1:   28.79 MB/s
+mcid  8:    0.72 MB/s
+mcid  9:    0.03 MB/s
+oopses 0

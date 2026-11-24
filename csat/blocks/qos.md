@@ -110,6 +110,13 @@ The source-port field is `ceil(log2(cores + 2))` bits wide, so the position of t
 - The capacity controller has no occupancy monitoring and no `FLUSH_RCID`. The bandwidth controller has no per-AT
   allocation and does not regulate traffic that bypasses the LLC.
 - More waiting misses than the pool holds stall the LLC lookup.
+- A dirty line is written back under the tag of the request that evicts it, not of the RCID that wrote it. The
+  LLC keeps no owner per line. A writer's write-backs therefore escape its hard limit and are charged to, and take
+  memory slots from, whoever misses next. Measured under Linux 7.2 (VCU118, capacity 47 MB/s, three tenants
+  hard-limited to 9.4 MB/s together, a reader of another RCID alone at 27.7 MB/s): next to user-mode readers the
+  reader keeps 97 %; next to user-mode writers 82 %, with its MCID counter at 28 MB/s while it reads 22.9; next to
+  a user-mode copy 89 %; next to `pread` callers 87 %. The writers do 7.2 MB/s of work, about 14 MB/s of memory
+  traffic, of which their RCID is charged 9.0.
 
 ## Code
 

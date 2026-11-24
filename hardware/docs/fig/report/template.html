@@ -1,0 +1,241 @@
+<title>Memory-Tagged QoS on AlSaqr</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (about 70 characters) for the story; charts and tables break out to a wider measure. */
+:root {
+  --bg: #fbfbfa; --surface: #f2f3f5; --fg: #15181d; --muted: #565c66; --line: #dcdfe4; --accent: #2a78d6;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --sn: #6b7078;
+  --display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #16181b; --surface: #1f2226; --fg: #eceef1; --muted: #a6acb6; --line: #33373d; --accent: #5a9cec;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --sn: #9aa0a9; color-scheme: dark }
+}
+:root[data-theme="dark"] { --bg: #16181b; --surface: #1f2226; --fg: #eceef1; --muted: #a6acb6; --line: #33373d; --accent: #5a9cec;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --sn: #9aa0a9; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; }
+.wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+.col { max-width: 700px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+section { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; margin: 0; line-height: 1.2; }
+h1 { font-size: 2.1rem; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; padding-top: 20px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.08rem; font-weight: 600; }
+h4 { font-size: 1rem; font-weight: 600; }
+p, ul, ol { margin: 0; }
+ul, ol { padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.lede { font-size: 1.1rem; color: var(--muted); }
+.eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+.sub { color: var(--muted); font-size: 0.88rem; }
+.note { color: var(--muted); font-size: 0.9rem; max-width: 700px; }
+figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+figcaption { font-weight: 600; font-family: var(--display); }
+.chart { max-width: 660px; }
+.chart.wide { max-width: 900px; } .chart.wide .sx { overflow-x: auto; } .chart.wide .sx svg { min-width: 720px; }
+svg { width: 100%; height: auto; display: block; font-family: var(--body); }
+svg .grid { stroke: var(--line); stroke-width: 1; } svg .axis { stroke: var(--muted); stroke-width: 1; }
+svg .ref { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 4 3; }
+svg .tick { fill: var(--muted); font-size: 10.5px; } svg .xl { fill: var(--muted); font-size: 10.5px; }
+svg .val { fill: var(--fg); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+svg .s1 { fill: var(--s1); } svg .s2 { fill: var(--s2); } svg .s3 { fill: var(--s3); } svg .sn { fill: var(--sn); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.86rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.sw.s1 { background: var(--s1); } .sw.s2 { background: var(--s2); } .sw.s3 { background: var(--s3); } .sw.sn { background: var(--sn); }
+.panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 28px 20px; }
+.panel { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.panel .sub { min-height: 2.9em; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 0.92rem; min-width: 560px; width: 100%; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.path { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; font-size: 0.86rem; }
+.path div { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); max-width: 190px; }
+.path div.hot { border-color: var(--accent); background: var(--surface); }
+.path div b { display: block; font-family: var(--display); font-size: 0.92rem; }
+.path span { align-self: center; color: var(--muted); }
+.findings { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px 28px; }
+.findings div { display: flex; flex-direction: column; gap: 4px; }
+.findings b { font-family: var(--display); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.findings span { color: var(--muted); font-size: 0.92rem; }
+</style>
+
+<div class="wrap">
+  <header class="col">
+    <p class="eyebrow">AlSaqr · VCU118 · Linux 7.2 with resctrl · 24 November 2026</p>
+    <h1>Memory-Tagged QoS on AlSaqr</h1>
+    <p class="lede">A memory bandwidth cap is only as good as the tag on each request. Giving the kernel a QoS ID of its own, as AMD PLZA does, is not enough: it fixes one failure and opens another. This report shows where each tagging policy fails on real hardware and which one holds.</p>
+  </header>
+
+  <section>
+    <div class="findings">
+      <div><b>Stock: 80 %</b><span>of its solo bandwidth is what the victim keeps next to a tightly capped tenant. The tenant's timer ticks are throttled and stall the kernel for 28 to 61 ms.</span></div>
+      <div><b>PLZA: 22.2 MB/s</b><span>of traffic from a tenant capped at 9.4, made through system calls. It is all charged to the kernel, and the victim drops to 60 %.</span></div>
+      <div><b>Selective: 15.5 MB/s</b><span>from the same tenant doing buffered writes. Kernel threads do the copies later under the kernel's ID.</span></div>
+      <div><b>Selective + tag: 9.1 MB/s</b><span>in that case, and at or under the cap in every case tested. The victim keeps 85 to 99 %.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The memory regulator</h2>
+    <div class="col">
+      <p>Every memory request from a core carries a tag: a control ID (RCID), which says whose budget it spends, and a monitoring ID (MCID), which says whose counter it adds to. Linux sets the tag per task through resctrl, so a resctrl group is an RCID.</p>
+      <p>The regulator sits inside the last-level cache (LLC), on the path from the cache to DRAM. Only cache misses and write-backs reach it, so it regulates real memory traffic and leaves cache hits alone.</p>
+    </div>
+    <div class="path" aria-label="Path of a memory request">
+      <div><b>Core</b>tags the request with RCID and MCID</div><span>→</span>
+      <div><b>Coherence unit</b>keeps the L1 caches consistent</div><span>→</span>
+      <div><b>LLC lookup</b>hit: answered here</div><span>→</span>
+      <div class="hot"><b>Bandwidth controller</b>miss: parked until its group may send</div><span>→</span>
+      <div><b>DRAM</b></div>
+    </div>
+    <div class="col">
+      <h3>The rules it applies</h3>
+      <ul>
+        <li><b>Period and capacity.</b> Time is cut into periods (1 ms here). The capacity is how many bytes may go to DRAM per period: 47,000 bytes, which is 47 MB/s.</li>
+        <li><b>Reservation</b> (<code>MB_MIN</code>). A share of the capacity that a group is guaranteed. A request inside its group's reservation goes ahead of everything that is not.</li>
+        <li><b>Weight</b> (<code>MB_WGHT</code>). What is left after reservations is shared between groups in proportion to their weights.</li>
+        <li><b>Hard limit.</b> Weight 0 means the group gets its reservation and nothing more. This is the cap used throughout this report: <code>MB_MIN</code> 205 with weight 0 is 9.4 MB/s.</li>
+        <li><b>Counting.</b> Bytes sent to DRAM are counted per MCID. The "who is charged" charts below read these counters.</li>
+      </ul>
+      <h3>How a capped group is kept from slowing the others</h3>
+      <ul>
+        <li><b>Parking off the main path.</b> A miss that may not go yet waits in a 16-entry pool. The requesting core stalls on that load; other groups' requests pass it.</li>
+        <li><b>Smooth release.</b> A reservation is earned at a constant rate across the period, so a capped group cannot take every DRAM slot at the start of each period.</li>
+        <li><b>Exact line locks.</b> A parked request keeps its cache line locked. The lock table is exact, so the lookup stage waits only for lines that really are locked.</li>
+        <li><b>Writes and device traffic.</b> A write buffer and admission gates on the DMA ports keep a throttled writer or device from holding the shared path.</li>
+      </ul>
+      <p>The register interface follows the RISC-V CBQRI specification, so the Linux resctrl driver drives it with <code>MB_MIN</code> and <code>MB_WGHT</code> files.</p>
+      <h3>Baseline: the cap itself isolates</h3>
+      <p>When the tenants are plain user-mode readers and privileged code has IDs of its own, the victim keeps 27.2 of 28.2 MB/s next to three readers capped at 9.4 MB/s. On bare metal it keeps 99 to 100 %. Everything the victim loses in the rest of this report comes from how privileged work is tagged.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Which ID should privileged work carry?</h2>
+    <div class="col">
+      <p>Stock resctrl changes a core's ID only on a context switch, so kernel and firmware work runs under whatever task happens to be on the core. AMD's PLZA and Arm's MPAM can give kernel mode its own ID, but the setting is all or nothing. Neither answer is right for every kind of privileged work.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Privileged work</th><th>Who caused it</th><th>Stock</th><th>PLZA</th><th>Selective</th><th>Selective + tag</th></tr></thead>
+        <tbody>
+          <tr><td>System call</td><td>the caller</td><td>caller</td><td>kernel</td><td>caller</td><td>caller</td></tr>
+          <tr><td>Page fault</td><td>the caller</td><td>caller</td><td>kernel</td><td>caller</td><td>caller</td></tr>
+          <tr><td>Timer tick, interrupt, firmware</td><td>the system</td><td>task on the core</td><td>kernel</td><td>kernel</td><td>kernel</td></tr>
+          <tr><td>Kernel thread, shared work</td><td>the system</td><td>default group</td><td>kernel</td><td>kernel</td><td>kernel</td></tr>
+          <tr><td>Kernel thread, queued work</td><td>the task that queued it</td><td>default group</td><td>kernel</td><td>kernel</td><td>the queuing task</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="col">
+      <h3>The four policies</h3>
+      <p>AlSaqr's cores extend Ssqosid with an ID per privilege level. Machine mode has one, set at boot. Kernel mode has one in a register (<code>hqosid</code>) that the kernel itself may write, which makes the kernel's policy a pure software choice. A patch to the 7.2 kernel adds a runtime switch, so all four policies are measured on the same boot and the same hardware.</p>
+      <ul>
+        <li><b>Stock.</b> Kernel work carries the running task's ID.</li>
+        <li><b>PLZA.</b> All kernel work carries the kernel's ID.</li>
+        <li><b>Selective.</b> The kernel's ID by default. Inside a system call or a page fault the caller's ID. An interrupt that arrives there switches back to the kernel's ID until it returns.</li>
+        <li><b>Selective + tag.</b> As selective, and every queued work item records the ID of the task that queued it. The worker thread runs the item under that ID. A worker that queues further work passes the tag on, so a chain of workers keeps its origin.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Where each policy fails</h2>
+    <div class="col">
+      <p>A victim streams through memory on one core. Three tenant processes in one group run on the other cores under a hard cap. Each column below is a different way for the tenant to make memory traffic. The top row is what the victim keeps. The bottom row is how much memory traffic the tenant causes and which group it is charged to; anything above the dashed line has escaped the cap.</p>
+    </div>
+    <div class="panels">{{PANELS}}</div>
+    {{LEGEND_D}}
+    <p class="note">Victim alone: {{ALONE}} MB/s. Capacity 47 MB/s. One or two 6-second runs per bar. Plain selective was not run for page faults. Kernel worker threads are kept off the victim's core, so the charts show memory interference and not lost CPU time. Firmware has its own ID in every setting.</p>
+    <div class="col">
+      <ul>
+        <li><b>Stock fails when system work lands on a capped core.</b> With a user-mode tenant at a tight cap, its timer ticks are throttled with it. The victim stalls for 28 to 61 ms and keeps 80 %, and the tenant gets a fifth of its allowance.</li>
+        <li><b>PLZA fails when the kernel works for the tenant.</b> With system calls or page faults, all of the tenant's traffic is charged to the kernel's group. The cap does nothing and the victim drops to 60 %.</li>
+        <li><b>Selective fails when the work is deferred.</b> With buffered writes, kernel threads do the copies later, outside the system call. Stock, PLZA and plain selective all let 15 to 19 MB/s through a 9.4 MB/s cap.</li>
+        <li><b>Selective with work tags holds.</b> It is the only policy that keeps the tenant at its cap in every column, and the victim at 85 to 99 %.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>With memory as the bottleneck</h2>
+    <div class="col">
+      <p>In the runs above the board's DDR4 was not a bottleneck. Four readers together got 107 MB/s, so an uncapped neighbour cost the victim almost nothing, and a tenant that escaped its cap took little from anyone. To show contention at the memory itself, these runs turn on the DRAM timing model, which holds each response until a slower, modelled memory would have delivered it.</p>
+      <p>The setting is a latency of 100 cycles and 20 cycles per 8-byte beat, a 20 MB/s memory bus. It is the first setting tried where memory clearly limits the cores and the model reports no late reads, meaning the real memory always answers before the modelled time.</p>
+    </div>
+    <figure class="chart">
+      <figcaption>Choosing the model setting</figcaption>
+      {{CHART_E}}
+    </figure>
+    <div class="col">
+      <p>The regulator's capacity is set to 17 MB/s, just under what the modelled bus sustains, and the tenant's group is hard-capped at 20 % of it, 3.4 MB/s. The victim alone reads 8.45 MB/s.</p>
+    </div>
+    <figure class="chart wide">
+      <figcaption>What the victim keeps</figcaption>
+      {{CHART_F}}
+    </figure>
+    <figure class="chart wide">
+      <figcaption>Memory traffic the tenant causes, by the group it is charged to</figcaption>
+      {{CHART_G}}
+    </figure>
+    <p class="note">Three tenant processes next to the victim. Reader and writer tenants run in user mode under selective + tag. The first two bars were run twice and agree within 0.05 MB/s; the others are single 6-second runs. The uncapped bars are with the regulator sharing capacity between the two groups by weight. Write-backs charged to the victim's group are not shown in the lower chart.</p>
+    <div class="col">
+      <ul>
+        <li><b>The cap works for readers.</b> The victim keeps 79 % next to uncapped readers and 95 % once they are capped.</li>
+        <li><b>PLZA's escape now costs the victim half its bandwidth.</b> The system-call tenant sends 10.4 MB/s under the kernel's ID, three times its cap, and the victim keeps 47 %. With selective + tag the tenant stays at its cap and the victim keeps 78 %.</li>
+        <li><b>Deferred work needs the tag.</b> With plain selective, more than half of the buffered-write tenant's traffic goes out under the kernel's ID and the victim keeps 60 %. With the tag it keeps 74 %.</li>
+        <li><b>Writes are the largest remaining loss.</b> Uncapped writers leave the victim 29 %; capped, 71 %, against 95 % for capped readers. A written line needs a read and later a write-back on the same bus, and the write-back is charged to whoever evicts the line. This is a gap in the cache, described under the limits below, and it is why even the best policy stops at 74 to 78 % for tenants that copy.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>The same failure one level down: firmware</h2>
+    <div class="col">
+      <p>The stock failure does not stop at the kernel. With the kernel on its own ID and three readers at the smallest cap, the victim still lost about 10 %, with stalls of tens of milliseconds. On bare metal it lost nothing.</p>
+      <p>We halted all four cores over JTAG at random moments during the run and recorded where each one was. The capped cores were inside OpenSBI, the machine-mode firmware, in about a third of the samples.</p>
+    </div>
+    <figure class="chart">
+      <figcaption>How often a core was found inside the firmware</figcaption>
+      {{CHART_B}}
+    </figure>
+    <div class="col">
+      <p>Firmware work on a core (timer interrupts, the emulated time register, calls from the kernel) carried the ID of whatever task was running there. On a capped core each firmware cache miss then waited about 4 ms. Much of that work happens inside kernel critical sections, so the other cores waited on the lock. Giving machine mode its own ID removes the stalls. An association for kernel mode alone, which is what PLZA offers, leaves this open on a system with a firmware layer below the kernel.</p>
+    </div>
+    <figure class="chart">
+      <figcaption>Victim bandwidth by how privileged code is tagged</figcaption>
+      {{CHART_C}}
+    </figure>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Privileged IDs</th><th>Capped readers get, of their limit, at the smallest cap</th><th>Longest victim stall there</th></tr></thead>
+        <tbody>
+          <tr><td>None</td><td class="num">1–2 % (stuck in the kernel)</td><td class="num">15–83 ms</td></tr>
+          <tr><td>Kernel</td><td class="num">81–83 %</td><td class="num">53–94 ms</td></tr>
+          <tr><td>Kernel + firmware</td><td class="num">93–96 %</td><td class="num">5–9 ms</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Three capped user-mode readers next to the victim, 6-second runs, one to three per cell. The smallest cap is about 0.05 MB/s. Without any privileged ID the capped tasks' own kernel work is throttled, so they barely run at all.</p>
+  </section>
+
+  <section>
+    <h2>Limits of the evidence</h2>
+    <div class="col">
+      <ul>
+        <li><b>Sample size.</b> Most bars are one or two short runs. Differences of a few tenths of a MB/s are noise. The memory-bound set is missing the stock policy and the page-fault tenant.</li>
+        <li><b>Dirty lines are charged to whoever evicts them.</b> Next to capped tenants that write, the victim keeps 82 to 89 %, against 97 % next to a capped reader (fast memory; 71 % against 95 % when memory is the bottleneck). A user-mode writer and a user-mode copy give the same loss as the system-call tenant, so kernel tagging is not the cause. The cache writes a dirty line back under the tag of the request that evicts it. The victim's group is charged 28 MB/s while the victim itself reads 23: about 5 MB/s of the tenant's write-backs are paid from the victim's traffic and never count against the tenant's cap.</li>
+        <li><b>Smallest cap under selective.</b> At 0.05 MB/s the victim gets 25.2 to 26.0 MB/s under selective against 27.3 under PLZA, with stalls of 20 to 48 ms. The cause is not found.</li>
+        <li><b>Shared deferred work.</b> A tag follows the first task that triggers a shared writeback pass. Two tenants writing through the same device would be mixed. Here each tenant had its own loop device.</li>
+        <li><b>I/O.</b> Device interrupts and completions are not attributed to the task that issued the request. They run under the kernel's ID.</li>
+      </ul>
+    </div>
+  </section>
+</div>
