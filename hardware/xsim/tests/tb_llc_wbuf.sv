@@ -18,6 +18,7 @@
 
 module tb_llc_wbuf #(
   parameter int unsigned WBUF = 8,
+  parameter int unsigned PEND = 0,   // EvictPendDepth: write-backs that may wait for their response (tb_llc_wbpend)
   parameter int unsigned NT   = 8,
   parameter int unsigned NOPS = 400
 );
@@ -72,6 +73,7 @@ module tb_llc_wbuf #(
     .QosBc            ( 1'b1         ),
     .QosBcPoolDepth   ( 16           ),
     .QosWBufSlots     ( WBUF         ),
+    .EvictPendDepth   ( PEND         ),
     .QosCcOffset      ( 32'h800      )
   ) i_dut (
     .clk_i               ( clk         ),
