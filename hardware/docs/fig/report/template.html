@@ -273,6 +273,23 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
         <li><b>Capped writers still cost more than capped readers,</b> 84 % against 94 % for a reader victim with a partitioned cache. A write-back still occupies the memory bus for longer than a read.</li>
       </ul>
     </div>
+    <div class="col">
+      <h3>Is the remaining loss the tenants' allowance, or something stuck?</h3>
+      <p>At a 3.4 MB/s cap the victim still loses 6 to 21 %. If that were a request blocked behind the tenants regardless of how little they send, it would stay as the cap is lowered. It does not.</p>
+    </div>
+    <figure class="chart wide">
+      <figcaption>The loss follows the traffic the tenants are allowed</figcaption>
+      <div class="sx">{{CHART_J}}</div>
+    </figure>
+    <p class="note">Partitioned cache, same setting, two passes that agree within 0.1 MB/s. The 3.4 MB/s bars repeat the baselines above.</p>
+    <div class="col">
+      <ul>
+        <li><b>At 0.05 MB/s the victim keeps 95 to 98 %.</b> The loss at 3.4 MB/s is the cost of sharing one memory bus with traffic the tenants are entitled to: each of their transfers holds the bus while a victim request waits.</li>
+        <li><b>Writers still cost more than readers at every cap,</b> but the gap narrows from 7 to 10 points to 2 to 3.</li>
+        <li><b>The last few percent are not explained.</b> With tenants running, the default group, the kernel and the firmware together send about 1 MB/s that no cap covers; that is the likely cause, untested.</li>
+        <li><b>The lowest cap is slightly exceeded:</b> 0.07 MB/s charged to readers and 0.13 to writers against 0.05. That is one and two lines per regulator period, which looks like the regulator's granularity; not confirmed in the design.</li>
+      </ul>
+    </div>
   </section>
 
   <section>

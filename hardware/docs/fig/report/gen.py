@@ -111,6 +111,13 @@ for t_, tl in (("user", "Readers"), ("uwr", "Writers"), ("sys", "System-call cop
         rows.append('          <tr><td>%s</td><td>%s</td>%s</tr>' % (tl if cn == "shared" else "", cn, "".join('<td class="num">%.2f</td>' % ten(c, (v, t_, "cap")) for v in ("none", "user", "uwr"))))
 # I: bare metal t_wbhol, before / after the write-stage change (board, model 100/100/320)
 chI = chart([(g_, [("%d %%" % b_, [(b_, "s2", "write stage waits for each acknowledgement: %d %% of alone" % b_)]), ("%d %%" % a_, [(a_, "s1", "write stage moves on: %d %% of alone" % a_)])]) for g_, b_, a_ in (("next to readers", 92, 93), ("next to writers", 77, 87))], 118, [0, 50, 100], w=460, h=220, ylabel="victim, % of alone", title="Bare-metal reader next to paced readers and writers, before and after the write-stage change")
+# J: cap sweep (partitioned): what the victim keeps as the tenants' cap goes down
+SW = load("baseline_cap_sweep_wbpend.txt")
+CL = [("cap", "s2", "3.4 MB/s"), ("cap51", "s3", "0.85 MB/s"), ("cap3", "s1", "0.05 MB/s")]
+def swp(v, t_, lv): return 100 * vic(SW, (v, t_, lv)) / vic(SW, (v, "none", "fair"))
+chJ = chart([(gl, [("%d %%" % round(swp(v, t_, lv)), [(swp(v, t_, lv), cls, "tenants capped at %s: victim %.2f MB/s, %d %% of alone" % (ln, vic(SW, (v, t_, lv)), round(swp(v, t_, lv))))]) for lv, cls, ln in CL])
+             for v, t_, gl in (("user", "user", "reader\nnext to readers"), ("user", "uwr", "reader\nnext to writers"), ("uwr", "user", "writer\nnext to readers"), ("uwr", "uwr", "writer\nnext to writers"))],
+            118, [0, 50, 100], w=700, h=240, ylabel="victim, % of itself alone", title="What the victim keeps as the cap on the three tenants is lowered")
 LB = legend([(cls, ln) for _, cls, ln in LV])
 tpl = open(S + "/report/template.html").read()
 out = tpl.replace("{{CHART_A}}", chA + legend([("s2", "before (bitstream <code>qosgate_4c</code>)"), ("s1", "after (<code>qosfix4_4c</code>)")])) \
@@ -120,6 +127,7 @@ out = tpl.replace("{{CHART_A}}", chA + legend([("s2", "before (bitstream <code>q
          .replace("{{CHART_F}}", '<div class="sx">' + chF + "</div>").replace("{{CHART_G}}", '<div class="sx">' + chG + "</div>" + legend([("s1", "charged to the tenant's group (capped)"), ("s2", "charged to the kernel's group"), ("s3", "charged to the default group")])) \
          .replace("{{CHART_H}}", chH + legend([("s2", "shared cache"), ("s1", "victim and tenants in separate ways")])) \
          .replace("{{CHART_I}}", chI + legend([("s2", "write stage waits for each acknowledgement"), ("s1", "write stage moves on (table of four)")])) \
+         .replace("{{CHART_J}}", chJ + legend([(cls, "tenants capped at " + ln) for _, cls, ln in CL])) \
          .replace("{{PANELS_BP}}", bpanels(BP)).replace("{{PANELS_BS}}", bpanels(BS)).replace("{{LEGEND_B}}", LB).replace("{{TENANT_ROWS}}", "\n".join(rows)) \
          .replace("{{PANELS}}", "".join(panels) ) \
          .replace("{{LEGEND_D}}", legend([("sn", "victim"), ("s1", "charged to the tenant's group (capped)"), ("s2", "charged to the kernel's group"), ("s3", "charged to the default group")])) \
