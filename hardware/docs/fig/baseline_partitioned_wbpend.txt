@@ -1,0 +1,169 @@
+RES rep=1 v=none t=none reg=off part=1 model=100/320 cap=17000 | victim= t2= t3= t0= | mcid 0: 0.29 MB/s;mcid 8: 0.04 MB/s;mcid 9: 0.00 MB/s; ready=0 oops=0
+RES rep=1 v=user t=none reg=off part=1 model=100/320 cap=17000 | victim=8.93 t2= t3= t0= | mcid 0: 0.38 MB/s;mcid 1: 8.93 MB/s;mcid 8: 0.09 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=1 v=user t=none reg=fair part=1 model=100/320 cap=17000 | victim=8.90 t2= t3= t0= | mcid 0: 0.39 MB/s;mcid 1: 8.90 MB/s;mcid 8: 0.11 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=1 v=uwr t=none reg=off part=1 model=100/320 cap=17000 | victim=5.82 t2= t3= t0= | mcid 0: 0.40 MB/s;mcid 1: 11.45 MB/s;mcid 8: 0.11 MB/s;mcid 9: 0.09 MB/s; ready=1 oops=0
+RES rep=1 v=uwr t=none reg=fair part=1 model=100/320 cap=17000 | victim=5.77 t2= t3= t0= | mcid 0: 0.40 MB/s;mcid 1: 11.35 MB/s;mcid 8: 0.11 MB/s;mcid 9: 0.08 MB/s; ready=1 oops=0
+RES rep=1 v=sys t=none reg=off part=1 model=100/320 cap=17000 | victim=2.27 t2= t3= t0= | mcid 0: 0.41 MB/s;mcid 1: 6.81 MB/s;mcid 8: 0.13 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=1 v=sys t=none reg=fair part=1 model=100/320 cap=17000 | victim=2.25 t2= t3= t0= | mcid 0: 0.41 MB/s;mcid 1: 6.77 MB/s;mcid 8: 0.11 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=1 v=none t=user reg=off part=1 model=100/320 cap=17000 | victim= t2=5.86 t3=5.99 t0=5.80 | mcid 0: 0.55 MB/s;mcid 2: 17.72 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=1 v=none t=user reg=fair part=1 model=100/320 cap=17000 | victim= t2=5.02 t3=5.14 t0=4.94 | mcid 0: 0.51 MB/s;mcid 2: 15.12 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=1 v=none t=user reg=cap part=1 model=100/320 cap=17000 | victim= t2=1.10 t3=1.07 t0=1.06 | mcid 0: 0.50 MB/s;mcid 2: 3.26 MB/s;mcid 8: 0.19 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=1 v=none t=uwr reg=off part=1 model=100/320 cap=17000 | victim= t2=3.05 t3=2.95 t0=2.91 | mcid 0: 0.57 MB/s;mcid 2: 17.55 MB/s;mcid 8: 0.27 MB/s;mcid 9: 0.25 MB/s; ready=3 oops=0
+RES rep=1 v=none t=uwr reg=fair part=1 model=100/320 cap=17000 | victim= t2=2.56 t3=2.57 t0=2.38 | mcid 0: 0.59 MB/s;mcid 2: 14.76 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.25 MB/s; ready=3 oops=0
+RES rep=1 v=none t=uwr reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.61 t3=0.61 t0=0.55 | mcid 0: 0.59 MB/s;mcid 2: 3.28 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.25 MB/s; ready=3 oops=0
+RES rep=1 v=none t=sys reg=off part=1 model=100/320 cap=17000 | victim= t2=1.77 t3=1.71 t0=1.70 | mcid 0: 0.50 MB/s;mcid 2: 15.70 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=1 v=none t=sys reg=fair part=1 model=100/320 cap=17000 | victim= t2=1.60 t3=1.57 t0=1.50 | mcid 0: 0.51 MB/s;mcid 2: 14.14 MB/s;mcid 8: 0.18 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=1 v=none t=sys reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.36 t3=0.39 t0=0.36 | mcid 0: 0.49 MB/s;mcid 2: 3.41 MB/s;mcid 8: 0.15 MB/s;mcid 9: 0.01 MB/s; ready=3 oops=0
+RES rep=1 v=none t=loop reg=off part=1 model=100/320 cap=17000 | victim= t2=0.62 t3=0.61 t0=0.63 | mcid 0: 0.50 MB/s;mcid 2: 13.07 MB/s;mcid 8: 0.32 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=1 v=none t=loop reg=fair part=1 model=100/320 cap=17000 | victim= t2=0.62 t3=0.64 t0=0.60 | mcid 0: 0.50 MB/s;mcid 2: 12.23 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=1 v=none t=loop reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.13 t3=0.13 t0=0.15 | mcid 0: 0.50 MB/s;mcid 2: 3.24 MB/s;mcid 8: 0.18 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=1 v=user t=user reg=off part=1 model=100/320 cap=17000 | victim=4.59 t2=4.53 t3=4.50 t0=4.23 | mcid 0: 0.51 MB/s;mcid 1: 4.61 MB/s;mcid 2: 13.32 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=1 v=user t=user reg=fair part=1 model=100/320 cap=17000 | victim=7.27 t2=2.57 t3=2.66 t0=2.50 | mcid 0: 0.57 MB/s;mcid 1: 7.30 MB/s;mcid 2: 7.76 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=1 v=user t=user reg=cap part=1 model=100/320 cap=17000 | victim=8.32 t2=1.11 t3=1.10 t0=1.05 | mcid 0: 0.58 MB/s;mcid 1: 8.36 MB/s;mcid 2: 3.29 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=1 v=user t=uwr reg=off part=1 model=100/320 cap=17000 | victim=2.73 t2=2.48 t3=2.60 t0=2.48 | mcid 0: 0.62 MB/s;mcid 1: 2.75 MB/s;mcid 2: 14.90 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=1 v=user t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=5.06 t2=1.71 t3=1.71 t0=1.59 | mcid 0: 0.62 MB/s;mcid 1: 5.10 MB/s;mcid 2: 9.78 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=1 v=user t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=7.44 t2=0.60 t3=0.61 t0=0.58 | mcid 0: 0.61 MB/s;mcid 1: 7.48 MB/s;mcid 2: 3.33 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=1 v=user t=sys reg=off part=1 model=100/320 cap=17000 | victim=4.39 t2=1.46 t3=1.42 t0=1.39 | mcid 0: 0.52 MB/s;mcid 1: 4.42 MB/s;mcid 2: 13.00 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=1 v=user t=sys reg=fair part=1 model=100/320 cap=17000 | victim=5.96 t2=1.01 t3=0.98 t0=0.95 | mcid 0: 0.51 MB/s;mcid 1: 5.99 MB/s;mcid 2: 8.94 MB/s;mcid 8: 0.19 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=1 v=user t=sys reg=cap part=1 model=100/320 cap=17000 | victim=7.80 t2=0.37 t3=0.36 t0=0.34 | mcid 0: 0.51 MB/s;mcid 1: 7.84 MB/s;mcid 2: 3.29 MB/s;mcid 8: 0.17 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=1 v=user t=loop reg=off part=1 model=100/320 cap=17000 | victim=5.02 t2=0.54 t3=0.52 t0=0.51 | mcid 0: 0.51 MB/s;mcid 1: 5.05 MB/s;mcid 2: 11.36 MB/s;mcid 8: 0.32 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=1 v=user t=loop reg=fair part=1 model=100/320 cap=17000 | victim=6.03 t2=0.45 t3=0.37 t0=0.38 | mcid 0: 0.50 MB/s;mcid 1: 6.06 MB/s;mcid 2: 8.41 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=1 v=user t=loop reg=cap part=1 model=100/320 cap=17000 | victim=7.72 t2=0.12 t3=0.14 t0=0.12 | mcid 0: 0.49 MB/s;mcid 1: 7.75 MB/s;mcid 2: 3.25 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=user reg=off part=1 model=100/320 cap=17000 | victim=3.64 t2=3.52 t3=3.63 t0=3.47 | mcid 0: 0.55 MB/s;mcid 1: 7.19 MB/s;mcid 2: 10.67 MB/s;mcid 8: 0.24 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=user reg=fair part=1 model=100/320 cap=17000 | victim=3.67 t2=2.61 t3=2.64 t0=2.42 | mcid 0: 0.61 MB/s;mcid 1: 7.26 MB/s;mcid 2: 7.71 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=user reg=cap part=1 model=100/320 cap=17000 | victim=4.92 t2=1.14 t3=1.19 t0=1.05 | mcid 0: 0.59 MB/s;mcid 1: 9.77 MB/s;mcid 2: 3.41 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=uwr reg=off part=1 model=100/320 cap=17000 | victim=2.32 t2=2.29 t3=2.21 t0=2.07 | mcid 0: 0.59 MB/s;mcid 1: 4.58 MB/s;mcid 2: 12.92 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.32 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=3.65 t2=1.30 t3=1.33 t0=1.26 | mcid 0: 0.63 MB/s;mcid 1: 7.23 MB/s;mcid 2: 7.53 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.33 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=4.50 t2=0.62 t3=0.64 t0=0.57 | mcid 0: 0.63 MB/s;mcid 1: 8.94 MB/s;mcid 2: 3.40 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.33 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=sys reg=off part=1 model=100/320 cap=17000 | victim=3.09 t2=1.17 t3=1.27 t0=1.22 | mcid 0: 0.55 MB/s;mcid 1: 6.11 MB/s;mcid 2: 11.35 MB/s;mcid 8: 0.23 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=sys reg=fair part=1 model=100/320 cap=17000 | victim=3.72 t2=0.85 t3=0.78 t0=0.79 | mcid 0: 0.54 MB/s;mcid 1: 7.36 MB/s;mcid 2: 7.49 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=sys reg=cap part=1 model=100/320 cap=17000 | victim=4.73 t2=0.37 t3=0.38 t0=0.34 | mcid 0: 0.53 MB/s;mcid 1: 9.37 MB/s;mcid 2: 3.33 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=loop reg=off part=1 model=100/320 cap=17000 | victim=3.40 t2=0.45 t3=0.51 t0=0.51 | mcid 0: 0.52 MB/s;mcid 1: 6.76 MB/s;mcid 2: 10.17 MB/s;mcid 8: 0.33 MB/s;mcid 9: 0.11 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=loop reg=fair part=1 model=100/320 cap=17000 | victim=3.73 t2=0.35 t3=0.36 t0=0.31 | mcid 0: 0.53 MB/s;mcid 1: 7.38 MB/s;mcid 2: 7.17 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.11 MB/s; ready=4 oops=0
+RES rep=1 v=uwr t=loop reg=cap part=1 model=100/320 cap=17000 | victim=4.72 t2=0.14 t3=0.13 t0=0.12 | mcid 0: 0.51 MB/s;mcid 1: 9.35 MB/s;mcid 2: 3.22 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.10 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=user reg=off part=1 model=100/320 cap=17000 | victim=1.56 t2=4.30 t3=4.46 t0=4.26 | mcid 0: 0.53 MB/s;mcid 1: 4.75 MB/s;mcid 2: 13.08 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=user reg=fair part=1 model=100/320 cap=17000 | victim=1.71 t2=3.36 t3=3.27 t0=3.18 | mcid 0: 0.55 MB/s;mcid 1: 5.22 MB/s;mcid 2: 9.87 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=user reg=cap part=1 model=100/320 cap=17000 | victim=2.11 t2=1.12 t3=1.12 t0=1.02 | mcid 0: 0.53 MB/s;mcid 1: 6.44 MB/s;mcid 2: 3.29 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=uwr reg=off part=1 model=100/320 cap=17000 | victim=1.06 t2=2.50 t3=2.39 t0=2.38 | mcid 0: 0.56 MB/s;mcid 1: 3.24 MB/s;mcid 2: 14.34 MB/s;mcid 8: 0.27 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=1.58 t2=1.73 t3=1.70 t0=1.68 | mcid 0: 0.57 MB/s;mcid 1: 4.83 MB/s;mcid 2: 9.99 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.26 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=2.03 t2=0.59 t3=0.61 t0=0.57 | mcid 0: 0.58 MB/s;mcid 1: 6.19 MB/s;mcid 2: 3.28 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=sys reg=off part=1 model=100/320 cap=17000 | victim=1.47 t2=1.42 t3=1.36 t0=1.35 | mcid 0: 0.55 MB/s;mcid 1: 4.39 MB/s;mcid 2: 12.62 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=sys reg=fair part=1 model=100/320 cap=17000 | victim=1.68 t2=1.06 t3=1.00 t0=1.03 | mcid 0: 0.53 MB/s;mcid 1: 5.10 MB/s;mcid 2: 9.50 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=sys reg=cap part=1 model=100/320 cap=17000 | victim=2.05 t2=0.37 t3=0.38 t0=0.35 | mcid 0: 0.51 MB/s;mcid 1: 6.16 MB/s;mcid 2: 3.33 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=loop reg=off part=1 model=100/320 cap=17000 | victim=1.58 t2=0.53 t3=0.57 t0=0.51 | mcid 0: 0.51 MB/s;mcid 1: 4.77 MB/s;mcid 2: 11.00 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=loop reg=fair part=1 model=100/320 cap=17000 | victim=1.71 t2=0.42 t3=0.44 t0=0.42 | mcid 0: 0.53 MB/s;mcid 1: 5.15 MB/s;mcid 2: 8.79 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=1 v=sys t=loop reg=cap part=1 model=100/320 cap=17000 | victim=2.02 t2=0.12 t3=0.13 t0=0.12 | mcid 0: 0.49 MB/s;mcid 1: 6.09 MB/s;mcid 2: 3.17 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+REPDONE 1
+RES rep=2 v=none t=none reg=off part=1 model=100/320 cap=17000 | victim= t2= t3= t0= | mcid 0: 0.47 MB/s;mcid 8: 0.11 MB/s;mcid 9: 0.01 MB/s; ready=0 oops=0
+RES rep=2 v=user t=none reg=off part=1 model=100/320 cap=17000 | victim=8.88 t2= t3= t0= | mcid 0: 0.47 MB/s;mcid 1: 8.92 MB/s;mcid 8: 0.14 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=2 v=user t=none reg=fair part=1 model=100/320 cap=17000 | victim=8.82 t2= t3= t0= | mcid 0: 0.50 MB/s;mcid 1: 8.85 MB/s;mcid 8: 0.17 MB/s;mcid 9: 0.02 MB/s; ready=1 oops=0
+RES rep=2 v=uwr t=none reg=off part=1 model=100/320 cap=17000 | victim=5.79 t2= t3= t0= | mcid 0: 0.49 MB/s;mcid 1: 11.45 MB/s;mcid 8: 0.15 MB/s;mcid 9: 0.09 MB/s; ready=1 oops=0
+RES rep=2 v=uwr t=none reg=fair part=1 model=100/320 cap=17000 | victim=5.73 t2= t3= t0= | mcid 0: 0.50 MB/s;mcid 1: 11.33 MB/s;mcid 8: 0.15 MB/s;mcid 9: 0.09 MB/s; ready=1 oops=0
+RES rep=2 v=sys t=none reg=off part=1 model=100/320 cap=17000 | victim=2.25 t2= t3= t0= | mcid 0: 0.51 MB/s;mcid 1: 6.79 MB/s;mcid 8: 0.17 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=2 v=sys t=none reg=fair part=1 model=100/320 cap=17000 | victim=2.24 t2= t3= t0= | mcid 0: 0.48 MB/s;mcid 1: 6.77 MB/s;mcid 8: 0.16 MB/s;mcid 9: 0.02 MB/s; ready=1 oops=0
+RES rep=2 v=none t=user reg=off part=1 model=100/320 cap=17000 | victim= t2=6.03 t3=5.80 t0=5.81 | mcid 0: 0.55 MB/s;mcid 2: 17.72 MB/s;mcid 8: 0.24 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=2 v=none t=user reg=fair part=1 model=100/320 cap=17000 | victim= t2=4.94 t3=5.16 t0=4.95 | mcid 0: 0.54 MB/s;mcid 2: 15.08 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=2 v=none t=user reg=cap part=1 model=100/320 cap=17000 | victim= t2=1.12 t3=1.13 t0=1.05 | mcid 0: 0.57 MB/s;mcid 2: 3.30 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=2 v=none t=uwr reg=off part=1 model=100/320 cap=17000 | victim= t2=2.94 t3=3.05 t0=2.89 | mcid 0: 0.60 MB/s;mcid 2: 17.46 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.24 MB/s; ready=3 oops=0
+RES rep=2 v=none t=uwr reg=fair part=1 model=100/320 cap=17000 | victim= t2=2.48 t3=2.58 t0=2.45 | mcid 0: 0.60 MB/s;mcid 2: 14.73 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.25 MB/s; ready=3 oops=0
+RES rep=2 v=none t=uwr reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.59 t3=0.62 t0=0.57 | mcid 0: 0.59 MB/s;mcid 2: 3.30 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.25 MB/s; ready=3 oops=0
+RES rep=2 v=none t=sys reg=off part=1 model=100/320 cap=17000 | victim= t2=1.70 t3=1.76 t0=1.70 | mcid 0: 0.51 MB/s;mcid 2: 15.68 MB/s;mcid 8: 0.19 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=2 v=none t=sys reg=fair part=1 model=100/320 cap=17000 | victim= t2=1.48 t3=1.60 t0=1.50 | mcid 0: 0.51 MB/s;mcid 2: 14.15 MB/s;mcid 8: 0.18 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=2 v=none t=sys reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.39 t3=0.40 t0=0.35 | mcid 0: 0.49 MB/s;mcid 2: 3.40 MB/s;mcid 8: 0.16 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=2 v=none t=loop reg=off part=1 model=100/320 cap=17000 | victim= t2=0.64 t3=0.65 t0=0.62 | mcid 0: 0.49 MB/s;mcid 2: 13.21 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=2 v=none t=loop reg=fair part=1 model=100/320 cap=17000 | victim= t2=0.61 t3=0.63 t0=0.55 | mcid 0: 0.50 MB/s;mcid 2: 12.24 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=2 v=none t=loop reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.13 t3=0.14 t0=0.12 | mcid 0: 0.51 MB/s;mcid 2: 3.19 MB/s;mcid 8: 0.19 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=2 v=user t=user reg=off part=1 model=100/320 cap=17000 | victim=4.59 t2=4.37 t3=4.53 t0=4.33 | mcid 0: 0.53 MB/s;mcid 1: 4.61 MB/s;mcid 2: 13.29 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=2 v=user t=user reg=fair part=1 model=100/320 cap=17000 | victim=7.28 t2=2.68 t3=2.62 t0=2.43 | mcid 0: 0.57 MB/s;mcid 1: 7.32 MB/s;mcid 2: 7.77 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=user t=user reg=cap part=1 model=100/320 cap=17000 | victim=8.25 t2=1.14 t3=1.16 t0=1.07 | mcid 0: 0.61 MB/s;mcid 1: 8.29 MB/s;mcid 2: 3.40 MB/s;mcid 8: 0.24 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=user t=uwr reg=off part=1 model=100/320 cap=17000 | victim=2.75 t2=2.55 t3=2.48 t0=2.51 | mcid 0: 0.61 MB/s;mcid 1: 2.77 MB/s;mcid 2: 14.86 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=2 v=user t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=5.04 t2=1.73 t3=1.67 t0=1.63 | mcid 0: 0.63 MB/s;mcid 1: 5.07 MB/s;mcid 2: 9.81 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=2 v=user t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=7.38 t2=0.64 t3=0.61 t0=0.59 | mcid 0: 0.63 MB/s;mcid 1: 7.41 MB/s;mcid 2: 3.42 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=2 v=user t=sys reg=off part=1 model=100/320 cap=17000 | victim=4.38 t2=1.43 t3=1.44 t0=1.40 | mcid 0: 0.53 MB/s;mcid 1: 4.41 MB/s;mcid 2: 12.99 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=user t=sys reg=fair part=1 model=100/320 cap=17000 | victim=5.94 t2=1.00 t3=0.99 t0=0.94 | mcid 0: 0.54 MB/s;mcid 1: 5.98 MB/s;mcid 2: 8.90 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=user t=sys reg=cap part=1 model=100/320 cap=17000 | victim=7.84 t2=0.37 t3=0.37 t0=0.35 | mcid 0: 0.52 MB/s;mcid 1: 7.88 MB/s;mcid 2: 3.27 MB/s;mcid 8: 0.18 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=2 v=user t=loop reg=off part=1 model=100/320 cap=17000 | victim=5.02 t2=0.58 t3=0.56 t0=0.48 | mcid 0: 0.53 MB/s;mcid 1: 5.05 MB/s;mcid 2: 11.29 MB/s;mcid 8: 0.34 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=2 v=user t=loop reg=fair part=1 model=100/320 cap=17000 | victim=6.00 t2=0.37 t3=0.43 t0=0.38 | mcid 0: 0.53 MB/s;mcid 1: 6.03 MB/s;mcid 2: 8.35 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=2 v=user t=loop reg=cap part=1 model=100/320 cap=17000 | victim=7.72 t2=0.16 t3=0.14 t0=0.12 | mcid 0: 0.50 MB/s;mcid 1: 7.75 MB/s;mcid 2: 3.21 MB/s;mcid 8: 0.19 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=user reg=off part=1 model=100/320 cap=17000 | victim=3.62 t2=3.61 t3=3.66 t0=3.36 | mcid 0: 0.56 MB/s;mcid 1: 7.17 MB/s;mcid 2: 10.68 MB/s;mcid 8: 0.24 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=user reg=fair part=1 model=100/320 cap=17000 | victim=3.63 t2=2.59 t3=2.61 t0=2.49 | mcid 0: 0.65 MB/s;mcid 1: 7.19 MB/s;mcid 2: 7.74 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=user reg=cap part=1 model=100/320 cap=17000 | victim=4.89 t2=1.16 t3=1.17 t0=1.01 | mcid 0: 0.63 MB/s;mcid 1: 9.68 MB/s;mcid 2: 3.37 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=uwr reg=off part=1 model=100/320 cap=17000 | victim=2.34 t2=2.14 t3=2.23 t0=2.19 | mcid 0: 0.61 MB/s;mcid 1: 4.59 MB/s;mcid 2: 12.89 MB/s;mcid 8: 0.32 MB/s;mcid 9: 0.32 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=3.60 t2=1.29 t3=1.35 t0=1.27 | mcid 0: 0.65 MB/s;mcid 1: 7.14 MB/s;mcid 2: 7.56 MB/s;mcid 8: 0.33 MB/s;mcid 9: 0.33 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=4.47 t2=0.64 t3=0.64 t0=0.55 | mcid 0: 0.67 MB/s;mcid 1: 8.86 MB/s;mcid 2: 3.41 MB/s;mcid 8: 0.34 MB/s;mcid 9: 0.33 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=sys reg=off part=1 model=100/320 cap=17000 | victim=3.09 t2=1.29 t3=1.32 t0=1.20 | mcid 0: 0.56 MB/s;mcid 1: 6.11 MB/s;mcid 2: 11.35 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=sys reg=fair part=1 model=100/320 cap=17000 | victim=3.70 t2=0.85 t3=0.81 t0=0.80 | mcid 0: 0.56 MB/s;mcid 1: 7.31 MB/s;mcid 2: 7.50 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=sys reg=cap part=1 model=100/320 cap=17000 | victim=4.73 t2=0.36 t3=0.37 t0=0.34 | mcid 0: 0.55 MB/s;mcid 1: 9.37 MB/s;mcid 2: 3.26 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=loop reg=off part=1 model=100/320 cap=17000 | victim=3.42 t2=0.49 t3=0.45 t0=0.51 | mcid 0: 0.53 MB/s;mcid 1: 6.76 MB/s;mcid 2: 10.15 MB/s;mcid 8: 0.32 MB/s;mcid 9: 0.11 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=loop reg=fair part=1 model=100/320 cap=17000 | victim=3.74 t2=0.33 t3=0.36 t0=0.31 | mcid 0: 0.52 MB/s;mcid 1: 7.39 MB/s;mcid 2: 7.18 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.11 MB/s; ready=4 oops=0
+RES rep=2 v=uwr t=loop reg=cap part=1 model=100/320 cap=17000 | victim=4.67 t2=0.13 t3=0.13 t0=0.13 | mcid 0: 0.56 MB/s;mcid 1: 9.27 MB/s;mcid 2: 3.24 MB/s;mcid 8: 0.23 MB/s;mcid 9: 0.11 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=user reg=off part=1 model=100/320 cap=17000 | victim=1.57 t2=4.29 t3=4.46 t0=4.25 | mcid 0: 0.55 MB/s;mcid 1: 4.74 MB/s;mcid 2: 13.06 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=user reg=fair part=1 model=100/320 cap=17000 | victim=1.72 t2=3.33 t3=3.37 t0=3.07 | mcid 0: 0.55 MB/s;mcid 1: 5.22 MB/s;mcid 2: 9.82 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=user reg=cap part=1 model=100/320 cap=17000 | victim=2.12 t2=1.10 t3=1.07 t0=1.06 | mcid 0: 0.55 MB/s;mcid 1: 6.40 MB/s;mcid 2: 3.26 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=uwr reg=off part=1 model=100/320 cap=17000 | victim=1.05 t2=2.50 t3=2.40 t0=2.39 | mcid 0: 0.57 MB/s;mcid 1: 3.21 MB/s;mcid 2: 14.35 MB/s;mcid 8: 0.27 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=1.58 t2=1.70 t3=1.75 t0=1.67 | mcid 0: 0.59 MB/s;mcid 1: 4.83 MB/s;mcid 2: 9.98 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=2.01 t2=0.64 t3=0.61 t0=0.58 | mcid 0: 0.62 MB/s;mcid 1: 6.14 MB/s;mcid 2: 3.41 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=sys reg=off part=1 model=100/320 cap=17000 | victim=1.46 t2=1.42 t3=1.32 t0=1.33 | mcid 0: 0.54 MB/s;mcid 1: 4.40 MB/s;mcid 2: 12.62 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=sys reg=fair part=1 model=100/320 cap=17000 | victim=1.69 t2=1.04 t3=1.06 t0=1.01 | mcid 0: 0.54 MB/s;mcid 1: 5.07 MB/s;mcid 2: 9.52 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=sys reg=cap part=1 model=100/320 cap=17000 | victim=2.03 t2=0.39 t3=0.39 t0=0.35 | mcid 0: 0.54 MB/s;mcid 1: 6.14 MB/s;mcid 2: 3.39 MB/s;mcid 8: 0.18 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=loop reg=off part=1 model=100/320 cap=17000 | victim=1.59 t2=0.48 t3=0.58 t0=0.52 | mcid 0: 0.53 MB/s;mcid 1: 4.77 MB/s;mcid 2: 10.95 MB/s;mcid 8: 0.32 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=loop reg=fair part=1 model=100/320 cap=17000 | victim=1.71 t2=0.41 t3=0.45 t0=0.38 | mcid 0: 0.53 MB/s;mcid 1: 5.17 MB/s;mcid 2: 8.77 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=2 v=sys t=loop reg=cap part=1 model=100/320 cap=17000 | victim=2.03 t2=0.12 t3=0.12 t0=0.13 | mcid 0: 0.53 MB/s;mcid 1: 6.10 MB/s;mcid 2: 3.16 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+REPDONE 2
+RES rep=3 v=none t=none reg=off part=1 model=100/320 cap=17000 | victim= t2= t3= t0= | mcid 0: 0.49 MB/s;mcid 8: 0.12 MB/s;mcid 9: 0.01 MB/s; ready=0 oops=0
+RES rep=3 v=user t=none reg=off part=1 model=100/320 cap=17000 | victim=8.90 t2= t3= t0= | mcid 0: 0.49 MB/s;mcid 1: 8.93 MB/s;mcid 8: 0.14 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=3 v=user t=none reg=fair part=1 model=100/320 cap=17000 | victim=8.83 t2= t3= t0= | mcid 0: 0.50 MB/s;mcid 1: 8.87 MB/s;mcid 8: 0.13 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=3 v=uwr t=none reg=off part=1 model=100/320 cap=17000 | victim=5.77 t2= t3= t0= | mcid 0: 0.57 MB/s;mcid 1: 11.41 MB/s;mcid 8: 0.17 MB/s;mcid 9: 0.09 MB/s; ready=1 oops=0
+RES rep=3 v=uwr t=none reg=fair part=1 model=100/320 cap=17000 | victim=5.69 t2= t3= t0= | mcid 0: 0.55 MB/s;mcid 1: 11.26 MB/s;mcid 8: 0.16 MB/s;mcid 9: 0.09 MB/s; ready=1 oops=0
+RES rep=3 v=sys t=none reg=off part=1 model=100/320 cap=17000 | victim=2.26 t2= t3= t0= | mcid 0: 0.52 MB/s;mcid 1: 6.76 MB/s;mcid 8: 0.15 MB/s;mcid 9: 0.01 MB/s; ready=1 oops=0
+RES rep=3 v=sys t=none reg=fair part=1 model=100/320 cap=17000 | victim=2.26 t2= t3= t0= | mcid 0: 0.50 MB/s;mcid 1: 6.72 MB/s;mcid 8: 0.16 MB/s;mcid 9: 0.02 MB/s; ready=1 oops=0
+RES rep=3 v=none t=user reg=off part=1 model=100/320 cap=17000 | victim= t2=6.00 t3=6.04 t0=5.60 | mcid 0: 0.57 MB/s;mcid 2: 17.70 MB/s;mcid 8: 0.24 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=3 v=none t=user reg=fair part=1 model=100/320 cap=17000 | victim= t2=5.16 t3=4.98 t0=4.88 | mcid 0: 0.59 MB/s;mcid 2: 15.01 MB/s;mcid 8: 0.24 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=3 v=none t=user reg=cap part=1 model=100/320 cap=17000 | victim= t2=1.15 t3=1.17 t0=1.03 | mcid 0: 0.59 MB/s;mcid 2: 3.36 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=3 v=none t=uwr reg=off part=1 model=100/320 cap=17000 | victim= t2=3.05 t3=2.93 t0=2.92 | mcid 0: 0.60 MB/s;mcid 2: 17.52 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.24 MB/s; ready=3 oops=0
+RES rep=3 v=none t=uwr reg=fair part=1 model=100/320 cap=17000 | victim= t2=2.54 t3=2.58 t0=2.39 | mcid 0: 0.61 MB/s;mcid 2: 14.74 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.25 MB/s; ready=3 oops=0
+RES rep=3 v=none t=uwr reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.63 t3=0.62 t0=0.56 | mcid 0: 0.63 MB/s;mcid 2: 3.36 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.25 MB/s; ready=3 oops=0
+RES rep=3 v=none t=sys reg=off part=1 model=100/320 cap=17000 | victim= t2=1.76 t3=1.64 t0=1.66 | mcid 0: 0.55 MB/s;mcid 2: 15.66 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=3 v=none t=sys reg=fair part=1 model=100/320 cap=17000 | victim= t2=1.60 t3=1.56 t0=1.57 | mcid 0: 0.55 MB/s;mcid 2: 14.11 MB/s;mcid 8: 0.19 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=3 v=none t=sys reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.35 t3=0.37 t0=0.36 | mcid 0: 0.52 MB/s;mcid 2: 3.28 MB/s;mcid 8: 0.15 MB/s;mcid 9: 0.02 MB/s; ready=3 oops=0
+RES rep=3 v=none t=loop reg=off part=1 model=100/320 cap=17000 | victim= t2=0.67 t3=0.62 t0=0.58 | mcid 0: 0.54 MB/s;mcid 2: 13.10 MB/s;mcid 8: 0.35 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=3 v=none t=loop reg=fair part=1 model=100/320 cap=17000 | victim= t2=0.59 t3=0.57 t0=0.55 | mcid 0: 0.52 MB/s;mcid 2: 12.14 MB/s;mcid 8: 0.31 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=3 v=none t=loop reg=cap part=1 model=100/320 cap=17000 | victim= t2=0.14 t3=0.12 t0=0.15 | mcid 0: 0.51 MB/s;mcid 2: 3.27 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.03 MB/s; ready=3 oops=0
+RES rep=3 v=user t=user reg=off part=1 model=100/320 cap=17000 | victim=4.60 t2=4.45 t3=4.54 t0=4.21 | mcid 0: 0.55 MB/s;mcid 1: 4.61 MB/s;mcid 2: 13.26 MB/s;mcid 8: 0.23 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=user t=user reg=fair part=1 model=100/320 cap=17000 | victim=7.30 t2=2.53 t3=2.64 t0=2.50 | mcid 0: 0.61 MB/s;mcid 1: 7.32 MB/s;mcid 2: 7.70 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=user t=user reg=cap part=1 model=100/320 cap=17000 | victim=8.26 t2=1.16 t3=1.14 t0=1.07 | mcid 0: 0.61 MB/s;mcid 1: 8.30 MB/s;mcid 2: 3.39 MB/s;mcid 8: 0.24 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=user t=uwr reg=off part=1 model=100/320 cap=17000 | victim=2.75 t2=2.50 t3=2.57 t0=2.48 | mcid 0: 0.63 MB/s;mcid 1: 2.77 MB/s;mcid 2: 14.88 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=3 v=user t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=5.10 t2=1.69 t3=1.66 t0=1.63 | mcid 0: 0.65 MB/s;mcid 1: 5.13 MB/s;mcid 2: 9.73 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=3 v=user t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=7.39 t2=0.65 t3=0.63 t0=0.56 | mcid 0: 0.63 MB/s;mcid 1: 7.42 MB/s;mcid 2: 3.41 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.24 MB/s; ready=4 oops=0
+RES rep=3 v=user t=sys reg=off part=1 model=100/320 cap=17000 | victim=4.41 t2=1.43 t3=1.44 t0=1.40 | mcid 0: 0.55 MB/s;mcid 1: 4.43 MB/s;mcid 2: 12.95 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=3 v=user t=sys reg=fair part=1 model=100/320 cap=17000 | victim=5.94 t2=0.99 t3=1.00 t0=0.94 | mcid 0: 0.56 MB/s;mcid 1: 5.98 MB/s;mcid 2: 8.88 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=user t=sys reg=cap part=1 model=100/320 cap=17000 | victim=7.71 t2=0.38 t3=0.38 t0=0.36 | mcid 0: 0.56 MB/s;mcid 1: 7.76 MB/s;mcid 2: 3.38 MB/s;mcid 8: 0.18 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=3 v=user t=loop reg=off part=1 model=100/320 cap=17000 | victim=5.04 t2=0.51 t3=0.53 t0=0.63 | mcid 0: 0.53 MB/s;mcid 1: 5.06 MB/s;mcid 2: 11.27 MB/s;mcid 8: 0.34 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=3 v=user t=loop reg=fair part=1 model=100/320 cap=17000 | victim=6.05 t2=0.44 t3=0.36 t0=0.38 | mcid 0: 0.53 MB/s;mcid 1: 6.08 MB/s;mcid 2: 8.35 MB/s;mcid 8: 0.26 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=3 v=user t=loop reg=cap part=1 model=100/320 cap=17000 | victim=7.69 t2=0.13 t3=0.13 t0=0.13 | mcid 0: 0.54 MB/s;mcid 1: 7.72 MB/s;mcid 2: 3.23 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=user reg=off part=1 model=100/320 cap=17000 | victim=3.60 t2=3.65 t3=3.53 t0=3.45 | mcid 0: 0.60 MB/s;mcid 1: 7.13 MB/s;mcid 2: 10.67 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=user reg=fair part=1 model=100/320 cap=17000 | victim=3.67 t2=2.66 t3=2.53 t0=2.51 | mcid 0: 0.62 MB/s;mcid 1: 7.26 MB/s;mcid 2: 7.74 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=user reg=cap part=1 model=100/320 cap=17000 | victim=4.91 t2=1.10 t3=1.10 t0=1.03 | mcid 0: 0.64 MB/s;mcid 1: 9.75 MB/s;mcid 2: 3.26 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=uwr reg=off part=1 model=100/320 cap=17000 | victim=2.31 t2=2.25 t3=2.16 t0=2.15 | mcid 0: 0.62 MB/s;mcid 1: 4.56 MB/s;mcid 2: 12.89 MB/s;mcid 8: 0.33 MB/s;mcid 9: 0.32 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=3.59 t2=1.34 t3=1.28 t0=1.28 | mcid 0: 0.65 MB/s;mcid 1: 7.12 MB/s;mcid 2: 7.55 MB/s;mcid 8: 0.32 MB/s;mcid 9: 0.34 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=4.52 t2=0.63 t3=0.59 t0=0.58 | mcid 0: 0.66 MB/s;mcid 1: 8.96 MB/s;mcid 2: 3.35 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.34 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=sys reg=off part=1 model=100/320 cap=17000 | victim=3.07 t2=1.28 t3=1.26 t0=1.20 | mcid 0: 0.56 MB/s;mcid 1: 6.08 MB/s;mcid 2: 11.36 MB/s;mcid 8: 0.23 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=sys reg=fair part=1 model=100/320 cap=17000 | victim=3.74 t2=0.82 t3=0.84 t0=0.78 | mcid 0: 0.55 MB/s;mcid 1: 7.39 MB/s;mcid 2: 7.44 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=sys reg=cap part=1 model=100/320 cap=17000 | victim=4.72 t2=0.37 t3=0.37 t0=0.34 | mcid 0: 0.56 MB/s;mcid 1: 9.35 MB/s;mcid 2: 3.27 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.09 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=loop reg=off part=1 model=100/320 cap=17000 | victim=3.41 t2=0.48 t3=0.52 t0=0.48 | mcid 0: 0.55 MB/s;mcid 1: 6.75 MB/s;mcid 2: 10.15 MB/s;mcid 8: 0.33 MB/s;mcid 9: 0.11 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=loop reg=fair part=1 model=100/320 cap=17000 | victim=3.73 t2=0.34 t3=0.37 t0=0.32 | mcid 0: 0.55 MB/s;mcid 1: 7.38 MB/s;mcid 2: 7.16 MB/s;mcid 8: 0.29 MB/s;mcid 9: 0.11 MB/s; ready=4 oops=0
+RES rep=3 v=uwr t=loop reg=cap part=1 model=100/320 cap=17000 | victim=4.70 t2=0.13 t3=0.14 t0=0.13 | mcid 0: 0.54 MB/s;mcid 1: 9.31 MB/s;mcid 2: 3.24 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.10 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=user reg=off part=1 model=100/320 cap=17000 | victim=1.53 t2=4.41 t3=4.48 t0=4.11 | mcid 0: 0.57 MB/s;mcid 1: 4.69 MB/s;mcid 2: 13.06 MB/s;mcid 8: 0.22 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=user reg=fair part=1 model=100/320 cap=17000 | victim=1.71 t2=3.35 t3=3.25 t0=3.16 | mcid 0: 0.58 MB/s;mcid 1: 5.19 MB/s;mcid 2: 9.81 MB/s;mcid 8: 0.23 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=user reg=cap part=1 model=100/320 cap=17000 | victim=2.12 t2=1.13 t3=1.13 t0=1.02 | mcid 0: 0.56 MB/s;mcid 1: 6.44 MB/s;mcid 2: 3.30 MB/s;mcid 8: 0.21 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=uwr reg=off part=1 model=100/320 cap=17000 | victim=1.06 t2=2.48 t3=2.50 t0=2.30 | mcid 0: 0.59 MB/s;mcid 1: 3.23 MB/s;mcid 2: 14.35 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=uwr reg=fair part=1 model=100/320 cap=17000 | victim=1.58 t2=1.72 t3=1.69 t0=1.67 | mcid 0: 0.60 MB/s;mcid 1: 4.87 MB/s;mcid 2: 9.93 MB/s;mcid 8: 0.27 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=uwr reg=cap part=1 model=100/320 cap=17000 | victim=2.01 t2=0.64 t3=0.62 t0=0.58 | mcid 0: 0.61 MB/s;mcid 1: 6.12 MB/s;mcid 2: 3.42 MB/s;mcid 8: 0.25 MB/s;mcid 9: 0.25 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=sys reg=off part=1 model=100/320 cap=17000 | victim=1.46 t2=1.43 t3=1.40 t0=1.26 | mcid 0: 0.55 MB/s;mcid 1: 4.42 MB/s;mcid 2: 12.58 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=sys reg=fair part=1 model=100/320 cap=17000 | victim=1.68 t2=1.04 t3=1.08 t0=1.05 | mcid 0: 0.56 MB/s;mcid 1: 5.11 MB/s;mcid 2: 9.48 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=sys reg=cap part=1 model=100/320 cap=17000 | victim=2.03 t2=0.37 t3=0.38 t0=0.34 | mcid 0: 0.55 MB/s;mcid 1: 6.17 MB/s;mcid 2: 3.31 MB/s;mcid 8: 0.17 MB/s;mcid 9: 0.01 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=loop reg=off part=1 model=100/320 cap=17000 | victim=1.58 t2=0.58 t3=0.51 t0=0.49 | mcid 0: 0.54 MB/s;mcid 1: 4.80 MB/s;mcid 2: 10.95 MB/s;mcid 8: 0.30 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=loop reg=fair part=1 model=100/320 cap=17000 | victim=1.71 t2=0.44 t3=0.41 t0=0.41 | mcid 0: 0.55 MB/s;mcid 1: 5.14 MB/s;mcid 2: 8.80 MB/s;mcid 8: 0.28 MB/s;mcid 9: 0.03 MB/s; ready=4 oops=0
+RES rep=3 v=sys t=loop reg=cap part=1 model=100/320 cap=17000 | victim=1.99 t2=0.14 t3=0.14 t0=0.11 | mcid 0: 0.53 MB/s;mcid 1: 6.09 MB/s;mcid 2: 3.23 MB/s;mcid 8: 0.20 MB/s;mcid 9: 0.02 MB/s; ready=4 oops=0
+REPDONE 3
+ALLDONE

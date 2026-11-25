@@ -1,0 +1,12 @@
+== t_wbhol in xsim, current RTL (run wbhol_b4)
+18:27:09 Mock uart 0 t=3938110000:   S     model 100/100/320 | victim    160 ops in 60212 cycles, mean  328, longest    331, 172 lines counted | aggressors: 0 lines (0 write-backs), 0 core requests
+18:30:45 Mock uart 0 t=5156530000:   R     model 100/100/320 | victim    144 ops in 60172 cycles, mean  388, longest    488, 142 lines counted | aggressors: 159 lines (0 write-backs), 157 core requests
+18:34:23 Mock uart 0 t=6373320000:   W     model 100/100/320 | victim     96 ops in 60172 cycles, mean  585, longest   1190, 99 lines counted | aggressors: 188 lines (77 write-backs), 112 core requests
+18:34:50 Mock uart 0 t=6506580000:   model 100/100/320: the victim does 90 % of alone next to readers, 60 % next to writers; extra victim cycles per aggressor transfer 54 (R) / 131 (W)
+[WBHOL] t=6142690000 128 write-backs, the unit busy 54492 cycles (53349 of them only waiting for B); a descriptor stood behind one for 30193 cycles in 120 waits (30004 cycles while only B was awaited)
+== t_wbhol in xsim, +define LLC_EVICT_NOWAIT_B (run wbhol_nowait2)
+18:57:20 Mock uart 0 t=3938110000:   S     model 100/100/320 | victim    160 ops in 60212 cycles, mean  328, longest    331, 172 lines counted | aggressors: 0 lines (0 write-backs), 0 core requests
+19:00:56 Mock uart 0 t=5156530000:   R     model 100/100/320 | victim    144 ops in 60172 cycles, mean  388, longest    488, 142 lines counted | aggressors: 159 lines (0 write-backs), 157 core requests
+19:04:39 Mock uart 0 t=6375020000:   W     model 100/100/320 | victim    120 ops in 60172 cycles, mean  461, longest    791, 122 lines counted | aggressors: 180 lines (74 write-backs), 107 core requests
+19:05:06 Mock uart 0 t=6507630000:   model 100/100/320: the victim does 90 % of alone next to readers, 75 % next to writers; extra victim cycles per aggressor transfer 54 (R) / 88 (W)
+[WBHOL] t=6075130000 128 write-backs, the unit busy 1145 cycles (0 of them only waiting for B); a descriptor stood behind one for 0 cycles in 0 waits (0 cycles while only B was awaited)

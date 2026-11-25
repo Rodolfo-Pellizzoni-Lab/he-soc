@@ -1,0 +1,317 @@
+== mode 4 tenant none cap -/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           8.47      5238    221866     602    9.4%   6777.5   3633.3     2    10   49631
+window 5.55 s
+mcid  0:    0.41 MB/s
+mcid  1:    8.91 MB/s
+mcid  8:    0.14 MB/s
+mcid  9:    0.02 MB/s
+model reads 0x00154186 late 0x00000000 latecyc 0x00000000 holdcyc 0x08323DC2
+oopses 0
+== mode 4 tenant user cap 205/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           7.82      5473    368181     614   12.1%   6983.8   3808.4     1    80   45823
+window 6.31 s
+mcid  0:    0.84 MB/s
+mcid  1:    6.83 MB/s
+mcid  2:    3.39 MB/s
+mcid  8:    0.45 MB/s
+mcid  9:    0.05 MB/s
+model reads 0x0030493F late 0x00000000 latecyc 0x00000000 holdcyc 0x15F0D7BB
+user cpu 2: 1.19 MB/s of work over 6.2 s
+user cpu 3: 1.17 MB/s of work over 6.3 s
+user cpu 0: 1.00 MB/s of work over 6.3 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           6.65      6417    263740     617   12.0%   6981.4   3851.1     1    78   38968
+window 6.45 s
+mcid  0:    0.88 MB/s
+mcid  1:    5.43 MB/s
+mcid  2:    3.32 MB/s
+mcid  8:    0.49 MB/s
+mcid  9:    0.25 MB/s
+model reads 0x0029361C late 0x00000000 latecyc 0x00000000 holdcyc 0x126D5AE0
+uwr cpu 2: 0.65 MB/s of work over 6.4 s
+uwr cpu 3: 0.64 MB/s of work over 6.4 s
+uwr cpu 0: 0.49 MB/s of work over 6.4 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 100 occ16 320 capacity 17000 partition 0 (g1 L3:0=ffff g2 L3:0=ffff)
+1:g1           5.78      7645    235852     615   11.8%   6964.5   3896.6     1   100   33887
+window 6.35 s
+mcid  0:    0.80 MB/s
+mcid  1:    6.27 MB/s
+mcid  2:    3.36 MB/s
+mcid  8:    0.34 MB/s
+mcid  9:    0.22 MB/s
+model reads 0x00249E52 late 0x00000000 latecyc 0x00000000 holdcyc 0x0FA8C8A3
+uwr cpu 2: 0.90 MB/s of work over 6.3 s
+uwr cpu 3: 0.89 MB/s of work over 6.3 s
+uwr cpu 0: 0.76 MB/s of work over 6.3 s
+oopses 0
+== mode 4 tenant uwr cap -/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           2.51     17572    421977     260   10.9%   7578.1   6559.9     1   205   14719
+window 7.06 s
+mcid  0:    1.29 MB/s
+mcid  1:    1.86 MB/s
+mcid  2:   10.68 MB/s
+mcid  8:    0.63 MB/s
+mcid  9:    0.24 MB/s
+model reads 0x00393EFE late 0x00000000 latecyc 0x00000000 holdcyc 0x1CA78C1C
+uwr cpu 2: 1.83 MB/s of work over 6.9 s
+uwr cpu 3: 1.83 MB/s of work over 7.0 s
+uwr cpu 0: 1.78 MB/s of work over 6.9 s
+oopses 0
+== mode 4 tenant ucp cap 205/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           6.71      6208    231365     618   13.6%   7094.8   3828.6     1   123   39333
+window 6.31 s
+mcid  0:    1.31 MB/s
+mcid  1:    5.91 MB/s
+mcid  2:    3.31 MB/s
+mcid  8:    0.61 MB/s
+mcid  9:    0.08 MB/s
+model reads 0x003414D6 late 0x00000000 latecyc 0x00000000 holdcyc 0x182DA4D6
+ucp cpu 2: 0.40 MB/s of work over 5.9 s
+ucp cpu 3: 0.41 MB/s of work over 6.4 s
+ucp cpu 0: 0.31 MB/s of work over 5.9 s
+oopses 0
+== mode 4 tenant sys cap 205/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           6.98      6168    228212     609   11.8%   7097.5   4071.4     1   129   40879
+window 6.45 s
+mcid  0:    0.78 MB/s
+mcid  1:    5.65 MB/s
+mcid  2:    3.28 MB/s
+mcid  8:    0.37 MB/s
+mcid  9:    0.04 MB/s
+model reads 0x0046DCF1 late 0x00000000 latecyc 0x00000000 holdcyc 0x260439DB
+sys cpu 2: 0.37 MB/s of work over 6.3 s
+sys cpu 3: 0.36 MB/s of work over 6.5 s
+sys cpu 0: 0.33 MB/s of work over 6.3 s
+oopses 0
+== mode 4 tenant loop cap 205/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           6.54      6136    274125     724   18.3%   7238.8   3900.1     2   369   38322
+window 6.56 s
+mcid  0:    1.19 MB/s
+mcid  1:    3.61 MB/s
+mcid  2:    3.15 MB/s
+mcid  8:    0.53 MB/s
+mcid  9:    0.06 MB/s
+model reads 0x0048E337 late 0x00000000 latecyc 0x00000000 holdcyc 0x24AD6AAB
+loop cpu 2: 0.13 MB/s of work over 8.6 s
+loop cpu 3: 0.12 MB/s of work over 9.3 s
+loop cpu 0: 0.13 MB/s of work over 7.7 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 100 occ16 320 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           6.65      6414    277788     619   12.0%   6958.1   3893.0     1    83   38990
+window 6.49 s
+mcid  0:    0.92 MB/s
+mcid  1:    5.43 MB/s
+mcid  2:    3.33 MB/s
+mcid  8:    0.51 MB/s
+mcid  9:    0.25 MB/s
+model reads 0x0028A3AD late 0x00000000 latecyc 0x00000000 holdcyc 0x1274C443
+uwr cpu 2: 0.61 MB/s of work over 6.4 s
+uwr cpu 3: 0.58 MB/s of work over 6.4 s
+uwr cpu 0: 0.59 MB/s of work over 6.4 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 100 occ16 320 capacity 17000 partition 0 (g1 L3:0=ffff g2 L3:0=ffff)
+1:g1           5.92      7532    302417     608   10.9%   6990.3   3842.7     2    63   34683
+window 6.36 s
+mcid  0:    0.80 MB/s
+mcid  1:    6.65 MB/s
+mcid  2:    3.29 MB/s
+mcid  8:    0.33 MB/s
+mcid  9:    0.22 MB/s
+model reads 0x0023DE35 late 0x00000000 latecyc 0x00000000 holdcyc 0x0F375C97
+uwr cpu 2: 0.75 MB/s of work over 6.4 s
+uwr cpu 3: 0.92 MB/s of work over 6.4 s
+uwr cpu 0: 0.83 MB/s of work over 6.4 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 100 occ16 320 latwr 1 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           6.81      6327    223197     616   11.6%   7076.8   3706.4     2    76   39898
+window 6.41 s
+mcid  0:    0.87 MB/s
+mcid  1:    5.77 MB/s
+mcid  2:    3.34 MB/s
+mcid  8:    0.50 MB/s
+mcid  9:    0.25 MB/s
+model reads 0x0028BF0A late 0x00000000 latecyc 0x00000000 holdcyc 0x11F1663A
+uwr cpu 2: 0.58 MB/s of work over 6.4 s
+uwr cpu 3: 0.62 MB/s of work over 6.4 s
+uwr cpu 0: 0.59 MB/s of work over 6.4 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 100 occ16 320 latwr 100 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           6.72      6359    238413     617   11.8%   6987.7   3883.2     1    74   39362
+window 6.42 s
+mcid  0:    0.87 MB/s
+mcid  1:    5.59 MB/s
+mcid  2:    3.37 MB/s
+mcid  8:    0.48 MB/s
+mcid  9:    0.25 MB/s
+model reads 0x00291502 late 0x00000000 latecyc 0x00000000 holdcyc 0x1250151D
+uwr cpu 2: 0.59 MB/s of work over 6.4 s
+uwr cpu 3: 0.62 MB/s of work over 6.4 s
+uwr cpu 0: 0.60 MB/s of work over 6.4 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 100 occ16 320 latwr 300 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           5.56      7585    286112     623   12.7%   7140.4   4457.8     1   102   32562
+window 6.75 s
+mcid  0:    1.31 MB/s
+mcid  1:    4.38 MB/s
+mcid  2:    3.24 MB/s
+mcid  8:    0.62 MB/s
+mcid  9:    0.24 MB/s
+model reads 0x0027A1F1 late 0x00000000 latecyc 0x00000000 holdcyc 0x1303AA2B
+uwr cpu 2: 0.59 MB/s of work over 6.7 s
+uwr cpu 3: 0.58 MB/s of work over 6.8 s
+uwr cpu 0: 0.55 MB/s of work over 6.8 s
+oopses 0
+== mode 4 tenant user cap 205/0 model lat 100 occ16 320 latwr 300 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           7.53      5482    230012     618   13.3%   7005.4   4333.8     1   130   44131
+window 6.56 s
+mcid  0:    0.85 MB/s
+mcid  1:    6.26 MB/s
+mcid  2:    3.35 MB/s
+mcid  8:    0.45 MB/s
+mcid  9:    0.05 MB/s
+model reads 0x00306F15 late 0x00000000 latecyc 0x00000000 holdcyc 0x184DD6E1
+user cpu 2: 1.19 MB/s of work over 6.5 s
+user cpu 3: 1.10 MB/s of work over 6.5 s
+user cpu 0: 1.03 MB/s of work over 6.5 s
+oopses 0
+== mode 4 tenant user cap 205/0 model lat 100 occ16 320 latwr 1 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           7.93      5483    200139     612   11.0%   7024.9   3701.0     1    56   46483
+window 6.29 s
+mcid  0:    0.83 MB/s
+mcid  1:    6.87 MB/s
+mcid  2:    3.39 MB/s
+mcid  8:    0.42 MB/s
+mcid  9:    0.04 MB/s
+model reads 0x0030E663 late 0x00000000 latecyc 0x00000000 holdcyc 0x15A84D0F
+user cpu 2: 1.21 MB/s of work over 6.3 s
+user cpu 3: 1.22 MB/s of work over 6.3 s
+user cpu 0: 0.93 MB/s of work over 6.3 s
+oopses 0
+== mode 4 tenant sys cap 205/0 model lat 100 occ16 320 latwr 1 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           7.04      6084    322291     613   12.4%   6981.8   4077.7     1   150   41260
+window 6.41 s
+mcid  0:    0.81 MB/s
+mcid  1:    5.82 MB/s
+mcid  2:    3.29 MB/s
+mcid  8:    0.39 MB/s
+mcid  9:    0.04 MB/s
+model reads 0x0045EB25 late 0x00000000 latecyc 0x00000000 holdcyc 0x244A079B
+sys cpu 2: 0.36 MB/s of work over 6.6 s
+sys cpu 3: 0.38 MB/s of work over 6.1 s
+sys cpu 0: 0.33 MB/s of work over 6.3 s
+oopses 0
+== mode 4 tenant none cap -/0 model lat 0 occ16 0 latwr 0 capacity 47000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1          27.67      1671    136109     603    8.4%   6698.9   1909.7     2     9  162132
+window 5.36 s
+mcid  0:    0.42 MB/s
+mcid  1:   28.90 MB/s
+mcid  8:    0.29 MB/s
+mcid  9:    0.05 MB/s
+model reads 0x004A466D late 0x00000000 latecyc 0x00000000 holdcyc 0x26035FB3
+oopses 0
+== mode 4 tenant user cap 205/0 model lat 0 occ16 0 latwr 0 capacity 47000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1          26.71      1691    162496     705    9.6%   6473.3   2207.5     1    38  156497
+window 5.76 s
+mcid  0:    0.61 MB/s
+mcid  1:   26.43 MB/s
+mcid  2:    9.39 MB/s
+mcid  8:    0.45 MB/s
+mcid  9:    0.06 MB/s
+model reads 0x004A466D late 0x00000000 latecyc 0x00000000 holdcyc 0x26035FB3
+user cpu 2: 3.29 MB/s of work over 5.7 s
+user cpu 3: 3.21 MB/s of work over 5.7 s
+user cpu 0: 2.86 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 0 occ16 0 latwr 0 capacity 47000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1          25.32      1795    145598     625    9.5%   6537.3   2179.1     1    36  148374
+window 5.83 s
+mcid  0:    0.64 MB/s
+mcid  1:   24.97 MB/s
+mcid  2:    8.97 MB/s
+mcid  8:    0.51 MB/s
+mcid  9:    0.32 MB/s
+model reads 0x004A466D late 0x00000000 latecyc 0x00000000 holdcyc 0x26035FB3
+uwr cpu 2: 1.58 MB/s of work over 5.8 s
+uwr cpu 3: 1.56 MB/s of work over 5.8 s
+uwr cpu 0: 1.46 MB/s of work over 5.8 s
+oopses 0
+== mode 4 tenant urh cap -/0 model lat 0 occ16 0 latwr 0 capacity 47000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1          26.49      1742    242520     605    9.1%   6679.1   2060.5     1    27  155239
+window 5.75 s
+mcid  0:    0.47 MB/s
+mcid  1:   26.20 MB/s
+mcid  2:    0.02 MB/s
+mcid  8:    0.36 MB/s
+mcid  9:    0.05 MB/s
+model reads 0x004A466D late 0x00000000 latecyc 0x00000000 holdcyc 0x26035FB3
+urh cpu 2: 48.60 MB/s of work over 5.7 s
+urh cpu 3: 47.32 MB/s of work over 5.7 s
+urh cpu 0: 46.27 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant uwh cap -/0 model lat 0 occ16 0 latwr 0 capacity 47000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1          26.14      1733    187874     611    9.3%   6524.6   2201.3     1    51  153168
+window 5.72 s
+mcid  0:    0.51 MB/s
+mcid  1:   26.28 MB/s
+mcid  2:    2.86 MB/s
+mcid  8:    0.35 MB/s
+mcid  9:    0.05 MB/s
+model reads 0x004A466D late 0x00000000 latecyc 0x00000000 holdcyc 0x26035FB3
+uwh cpu 2: 37.02 MB/s of work over 5.7 s
+uwh cpu 3: 37.56 MB/s of work over 5.7 s
+uwh cpu 0: 37.05 MB/s of work over 5.7 s
+oopses 0
+== mode 4 tenant urh cap -/0 model lat 100 occ16 320 latwr 100 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           8.06      5569    223866     607   10.2%   6946.2   3950.8     2    90   47239
+window 6.01 s
+mcid  0:    0.41 MB/s
+mcid  1:    7.42 MB/s
+mcid  2:    2.40 MB/s
+mcid  8:    0.20 MB/s
+mcid  9:    0.03 MB/s
+model reads 0x00246A22 late 0x00000000 latecyc 0x00000000 holdcyc 0x0F14C68B
+urh cpu 2: 41.63 MB/s of work over 6.0 s
+urh cpu 3: 46.61 MB/s of work over 6.0 s
+urh cpu 0: 42.57 MB/s of work over 6.0 s
+oopses 0
+== mode 4 tenant uwh cap -/0 model lat 100 occ16 320 latwr 100 capacity 17000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1           8.42      5262    188528     610   10.7%   6819.4   3702.5     1    46   49349
+window 5.99 s
+mcid  0:    0.44 MB/s
+mcid  1:    7.87 MB/s
+mcid  2:    0.01 MB/s
+mcid  8:    0.25 MB/s
+mcid  9:    0.03 MB/s
+model reads 0x00182106 late 0x00000000 latecyc 0x00000000 holdcyc 0x09BB5A98
+uwh cpu 2: 37.86 MB/s of work over 5.9 s
+uwh cpu 3: 38.65 MB/s of work over 5.9 s
+uwh cpu 0: 37.95 MB/s of work over 5.9 s
+oopses 0
+== mode 4 tenant user cap 205/0 model lat 0 occ16 0 latwr 0 capacity 47000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1          26.61      1689    190431     675   10.2%   6543.3   2138.2     2    42  155907
+window 5.81 s
+mcid  0:    0.63 MB/s
+mcid  1:   26.56 MB/s
+mcid  2:    9.32 MB/s
+mcid  8:    0.50 MB/s
+mcid  9:    0.07 MB/s
+model reads 0x001C9883 late 0x00000000 latecyc 0x00000000 holdcyc 0x0AF81738
+user cpu 2: 3.27 MB/s of work over 5.8 s
+user cpu 3: 3.21 MB/s of work over 5.8 s
+user cpu 0: 2.80 MB/s of work over 5.8 s
+oopses 0
+== mode 4 tenant uwr cap 205/0 model lat 0 occ16 0 latwr 0 capacity 47000 partition 1 (g1 L3:0=f g2 L3:0=ff0)
+1:g1          25.47      1795    158536     645    8.7%   6481.0   2223.5     1    21  149253
+window 5.79 s
+mcid  0:    0.61 MB/s
+mcid  1:   25.24 MB/s
+mcid  2:    9.07 MB/s
+mcid  8:    0.48 MB/s
+mcid  9:    0.30 MB/s
+model reads 0x001C9883 late 0x00000000 latecyc 0x00000000 holdcyc 0x0AF81738
+uwr cpu 2: 1.62 MB/s of work over 5.8 s
+uwr cpu 3: 1.53 MB/s of work over 5.8 s
+uwr cpu 0: 1.50 MB/s of work over 5.8 s
+oopses 0

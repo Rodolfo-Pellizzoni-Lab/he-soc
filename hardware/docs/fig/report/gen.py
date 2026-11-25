@@ -76,12 +76,51 @@ Md = [("readers\nno cap", 6.70, 9.02, 0.20, 0.07), ("readers\ncapped", 8.05, 3.3
       ("system calls\nPLZA", 3.95, 0.01, 10.43, 0.0), ("system calls\nselective + tag", 6.58, 3.32, 0.17, 0.32), ("buffered writes\nselective", 5.09, 2.92, 3.37, 0.43), ("buffered writes\nselective + tag", 6.27, 3.16, 0.15, 0.31)]
 chF = chart([(d[0], [("%.0f %%" % (100 * d[1] / MA), [(100 * d[1] / MA, "sn", "victim: %.2f MB/s" % d[1])])]) for d in Md], 118, [0, 50, 100], w=880, h=230, ylabel="victim, % of alone", title="Memory-bound: what the victim keeps")
 chG = chart([(d[0], [("%.1f" % sum(d[2:]), [(d[2], "s1", "tenant's group: %.1f MB/s" % d[2]), (d[3], "s2", "kernel's group: %.1f MB/s" % d[3]), (d[4], "s3", "default group: %.1f MB/s" % d[4])])]) for d in Md], 13, [0, 4, 8, 12], w=880, h=250, ref=(3.4, "cap"), ylabel="traffic the tenant causes, MB/s", title="Memory-bound: who is charged")
+
+# Clean baselines (baseline.sh on bitstream wbpend_4c): medians per (victim, tenants, level)
+import re, statistics as st
+FIG = "/home/mhassen/he-soc/hardware/docs/fig/"
+def load(fn):
+    c = collections.defaultdict(list)
+    for l in open(FIG + fn):
+        m = re.match(r"RES rep=(\d+) v=(\S+) t=(\S+) reg=(\S+) part=(\d) model=(\S+) cap=(\d+) \| victim=(\S*) t2=(\S*) t3=(\S*) t0=(\S*) \| (.*)", l)
+        if not m: continue
+        f = lambda s: float(s) if s else None
+        ten = [f(m.group(i)) for i in (9, 10, 11)]
+        c[(m.group(2), m.group(3), m.group(4))].append((f(m.group(8)), sum(x for x in ten if x is not None) if any(x is not None for x in ten) else None))
+    return c
+BP, BS = load("baseline_partitioned_wbpend.txt"), load("baseline_shared_wbpend.txt")
+vic = lambda c, k: st.median([r[0] for r in c[k]])
+ten = lambda c, k: st.median([r[1] for r in c[k]])
+TN = [("user", "readers"), ("uwr", "writers"), ("sys", "system\ncalls"), ("loop", "buffered\nwrites")]
+VN = [("user", "Reader", "MB/s read"), ("uwr", "Writer", "MB/s of lines written"), ("sys", "System-call copier", "MB/s copied")]
+LV = [("off", "sn", "no regulator"), ("fair", "s2", "regulator, equal shares"), ("cap", "s1", "tenants capped")]
+def bpanels(c):
+    o = []
+    for v, vname, unit in VN:
+        base = {"off": vic(c, (v, "none", "off")), "fair": vic(c, (v, "none", "fair")), "cap": vic(c, (v, "none", "fair"))}
+        g = [(tl, [("%d" % round(100 * vic(c, (v, t_, lv)) / base[lv]), [(100 * vic(c, (v, t_, lv)) / base[lv], cls, "%s: %.2f MB/s, %d %% of alone" % (ln, vic(c, (v, t_, lv)), round(100 * vic(c, (v, t_, lv)) / base[lv])))]) for lv, cls, ln in LV]) for t_, tl in TN]
+        o.append('<div class="panel"><h4>Victim: %s</h4><p class="sub">Alone: %.2f %s. Bars by the kind of the three tenants.</p>%s</div>' % (vname.lower(), base["off"], unit, chart(g, 118, [0, 50, 100], w=440, h=230, ylabel="victim, % of itself alone", title="%s victim, share of its solo rate by tenant kind and protection level" % vname)))
+    return "".join(o)
+# H: shared cache against partitioned cache, capped tenants, reader victim
+pct = lambda c, t_: 100 * vic(c, ("user", t_, "cap")) / vic(c, ("user", "none", "fair"))
+chH = chart([(tl.replace("\n", " "), [("%.0f %%" % pct(BS, t_), [(pct(BS, t_), "s2", "shared cache: %.2f MB/s" % vic(BS, ("user", t_, "cap")))]), ("%.0f %%" % pct(BP, t_), [(pct(BP, t_), "s1", "partitioned cache: %.2f MB/s" % vic(BP, ("user", t_, "cap")))])]) for t_, tl in TN], 118, [0, 50, 100], w=640, h=230, ylabel="victim, % of alone", title="Reader victim next to capped tenants, shared cache against partitioned cache")
+rows = []
+for t_, tl in (("user", "Readers"), ("uwr", "Writers"), ("sys", "System-call copiers"), ("loop", "Buffered writers")):
+    for c, cn in ((BS, "shared"), (BP, "partitioned")):
+        rows.append('          <tr><td>%s</td><td>%s</td>%s</tr>' % (tl if cn == "shared" else "", cn, "".join('<td class="num">%.2f</td>' % ten(c, (v, t_, "cap")) for v in ("none", "user", "uwr"))))
+# I: bare metal t_wbhol, before / after the write-stage change (board, model 100/100/320)
+chI = chart([(g_, [("%d %%" % b_, [(b_, "s2", "write stage waits for each acknowledgement: %d %% of alone" % b_)]), ("%d %%" % a_, [(a_, "s1", "write stage moves on: %d %% of alone" % a_)])]) for g_, b_, a_ in (("next to readers", 92, 93), ("next to writers", 77, 87))], 118, [0, 50, 100], w=460, h=220, ylabel="victim, % of alone", title="Bare-metal reader next to paced readers and writers, before and after the write-stage change")
+LB = legend([(cls, ln) for _, cls, ln in LV])
 tpl = open(S + "/report/template.html").read()
 out = tpl.replace("{{CHART_A}}", chA + legend([("s2", "before (bitstream <code>qosgate_4c</code>)"), ("s1", "after (<code>qosfix4_4c</code>)")])) \
          .replace("{{CHART_B}}", chB + legend([("s2", "kernel ID only"), ("s1", "kernel + firmware IDs")])) \
          .replace("{{CHART_C}}", chC + legend([("s1", names[0]), ("s2", names[1]), ("s3", names[2])])) \
          .replace("{{CHART_E}}", chE + legend([("s1", "victim alone"), ("s2", "victim next to three uncapped readers")])) \
          .replace("{{CHART_F}}", '<div class="sx">' + chF + "</div>").replace("{{CHART_G}}", '<div class="sx">' + chG + "</div>" + legend([("s1", "charged to the tenant's group (capped)"), ("s2", "charged to the kernel's group"), ("s3", "charged to the default group")])) \
+         .replace("{{CHART_H}}", chH + legend([("s2", "shared cache"), ("s1", "victim and tenants in separate ways")])) \
+         .replace("{{CHART_I}}", chI + legend([("s2", "write stage waits for each acknowledgement"), ("s1", "write stage moves on (table of four)")])) \
+         .replace("{{PANELS_BP}}", bpanels(BP)).replace("{{PANELS_BS}}", bpanels(BS)).replace("{{LEGEND_B}}", LB).replace("{{TENANT_ROWS}}", "\n".join(rows)) \
          .replace("{{PANELS}}", "".join(panels) ) \
          .replace("{{LEGEND_D}}", legend([("sn", "victim"), ("s1", "charged to the tenant's group (capped)"), ("s2", "charged to the kernel's group"), ("s3", "charged to the default group")])) \
          .replace("{{ALONE}}", "%.1f" % alone)

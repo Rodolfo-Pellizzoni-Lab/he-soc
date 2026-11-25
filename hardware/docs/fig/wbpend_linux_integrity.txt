@@ -1,0 +1,63 @@
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 2 L3 way(s), write latency 800 occ16 16, cap ''
+memrace own cpu 1: 3000000 ops in 63.1 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace own cpu 2: 3000000 ops in 65.0 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace cpu 3: 5500000 ops in 60.2 s (275 bursts), 135328 words checked at the end, 0 mismatches
+memrace cpu 0: 5420000 ops in 60.1 s (271 bursts), 133296 words checked at the end, 0 mismatches
+model writes 0x00373161 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 1 L3 way(s), write latency 800 occ16 16, cap ''
+memrace own cpu 1: 2000000 ops in 70.9 s (2 moves), 32 words checked at the end, 0 mismatches
+memrace own cpu 2: 2000000 ops in 94.2 s (2 moves), 32 words checked at the end, 0 mismatches
+memrace cpu 3: 4660000 ops in 60.2 s (233 bursts), 115224 words checked at the end, 0 mismatches
+memrace cpu 0: 4880000 ops in 60.0 s (244 bursts), 120496 words checked at the end, 0 mismatches
+model writes 0x00383F80 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 2 L3 way(s), write latency 0 occ16 0, cap ''
+memrace own cpu 1: 3000000 ops in 66.9 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace own cpu 2: 3000000 ops in 65.0 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace cpu 3: 12220000 ops in 60.0 s (611 bursts), 288768 words checked at the end, 0 mismatches
+memrace cpu 0: 11860000 ops in 60.1 s (593 bursts), 280456 words checked at the end, 0 mismatches
+model writes 0x00385796 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 2 L3 way(s), write latency 100 occ16 320, cap ''
+memrace own cpu 1: 3000000 ops in 62.9 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace own cpu 2: 3000000 ops in 77.3 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace cpu 3: 6460000 ops in 60.1 s (323 bursts), 158152 words checked at the end, 0 mismatches
+memrace cpu 0: 6380000 ops in 60.0 s (319 bursts), 156272 words checked at the end, 0 mismatches
+model writes 0x00420880 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 1 L3 way(s), write latency 3000 occ16 16, cap ''
+memrace own cpu 1: 2000000 ops in 117.9 s (2 moves), 32 words checked at the end, 0 mismatches
+memrace own cpu 2: 1000000 ops in 99.6 s (1 moves), 16 words checked at the end, 0 mismatches
+memrace cpu 3: 2560000 ops in 60.2 s (128 bursts), 64008 words checked at the end, 0 mismatches
+memrace cpu 0: 2740000 ops in 60.4 s (137 bursts), 68504 words checked at the end, 0 mismatches
+model writes 0x001C127A late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+sh: write error: Invalid argument
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 2 L3 way(s), write latency 800 occ16 16, cap '300 0'
+memrace own cpu 2: 3000000 ops in 77.3 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace cpu 3: 300000 ops in 60.5 s (15 bursts), 7584 words checked at the end, 0 mismatches
+memrace cpu 0: 340000 ops in 61.7 s (17 bursts), 8616 words checked at the end, 0 mismatches
+model writes 0x00180CC5 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 2 L3 way(s), write latency 800 occ16 16, cap '300 0'
+memrace own cpu 1: 2655360 ops in 60.2 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace own cpu 2: 2180224 ops in 60.2 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace cpu 3: 5440000 ops in 60.2 s (272 bursts), 133896 words checked at the end, 0 mismatches
+memrace cpu 0: 5540000 ops in 60.1 s (277 bursts), 136208 words checked at the end, 0 mismatches
+model writes 0x003778E7 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+== memrace 60s, 2 owners + 2 evictors of 16MB in one group with 2 L3 way(s), write latency 800 occ16 16, cap ''
+memrace own cpu 1: 2819200 ops in 60.2 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace own cpu 2: 2720896 ops in 60.2 s (3 moves), 48 words checked at the end, 0 mismatches
+memrace cpu 3: 5520000 ops in 60.1 s (276 bursts), 135792 words checked at the end, 0 mismatches
+memrace cpu 0: 5660000 ops in 60.2 s (283 bursts), 139184 words checked at the end, 0 mismatches
+model writes 0x003823C5 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0
+== memrace 600s, 2 owners + 2 evictors of 16MB in one group with 2 L3 way(s), write latency 800 occ16 16, cap ''
+memrace own cpu 1: 24802816 ops in 600.1 s (25 moves), 400 words checked at the end, 0 mismatches
+memrace own cpu 2: 20393216 ops in 600.7 s (21 moves), 328 words checked at the end, 0 mismatches
+memrace cpu 3: 55100000 ops in 600.1 s (2755 bursts), 1021096 words checked at the end, 0 mismatches
+memrace cpu 0: 55100000 ops in 600.1 s (2755 bursts), 1021560 words checked at the end, 0 mismatches
+model writes 0x01CF0905 late reads 0x00000000
+kernel complaints (Oops, BUG, panic, Bad page, segfault) in dmesg before / after the run: 0 / 0

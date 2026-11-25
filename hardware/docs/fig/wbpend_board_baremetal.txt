@@ -1,0 +1,42 @@
+== t_wbrace on the board, bitstream wbpend_4c (br1124_212309_t_wbrace_fpga)
+TEST t_wbrace
+  S owners and evictors, write latency 800: ops 316634 / 122135 / 122403 / 302598 (cores 0-3), write bursts at the memory 368692, mismatches 0
+  T owners and evictors, model off: ops 1603426 / 387798 / 387985 / 1283398 (cores 0-3), LLC flushed before the check, write bursts at the memory 0, mismatches 0
+  A model off: ops 1600512 / 1439776 / 1462064 / 1471616 (cores 0-3), write bursts at the memory 0, mismatches 0
+  B long write latency: ops 383672 / 349584 / 356040 / 374320 (cores 0-3), write bursts at the memory 580498, mismatches 0
+  C long write latency, core 3 hard-limited: ops 254112 / 236944 / 235512 / 88312 (cores 0-3), LLC flushed before the check, write bursts at the memory 323948, mismatches 0
+  D slow data bus: ops 282536 / 269088 / 272184 / 281152 (cores 0-3), write bursts at the memory 438394, mismatches 0
+  E ping-pong, write latency 800: ops 206963 / 195093 / 195476 / 199356 (cores 0-3), write bursts at the memory 471597, mismatches 0
+  F ping-pong, model off: ops 383396 / 363852 / 364106 / 363236 (cores 0-3), LLC flushed before the check, write bursts at the memory 0, mismatches 0
+  G ping-pong, write latency 800, core 3 hard-limited: ops 191884 / 179647 / 178386 / 83915 (cores 0-3), LLC flushed before the check, write bursts at the memory 375187, mismatches 0
+  H ping-pong, slow data bus: ops 234054 / 220991 / 221266 / 228212 (cores 0-3), write bursts at the memory 536125, mismatches 0
+TEST PASS 169 checks
+
+== t_wbhol on the board (br1124_213709_t_wbhol_fpga; the later run is bitstream qosfix4_4c, the earlier one wbpend_4c)
+TEST t_wbhol
+  S     model   0/  0/  0 | victim  27368 ops in 4000209 cycles, mean  108, longest    122, 27375 lines counted | aggressors: 0 lines (0 write-backs), 0 core requests
+  R     model   0/  0/  0 | victim  27472 ops in 4000171 cycles, mean  107, longest    131, 27313 lines counted | aggressors: 15533 lines (0 write-backs), 15531 core requests
+  W     model   0/  0/  0 | victim  27032 ops in 4000171 cycles, mean  110, longest    216, 27004 lines counted | aggressors: 19030 lines (0 write-backs), 11223 core requests
+  model off: the victim does 100 % of alone next to readers, 98 % next to writers; extra victim cycles per aggressor transfer 0 (R) / 2 (W)
+  S     model 100/100/320 | victim  11016 ops in 4000172 cycles, mean  326, longest    335, 10923 lines counted | aggressors: 0 lines (0 write-backs), 0 core requests
+  R     model 100/100/320 | victim  10216 ops in 4000174 cycles, mean  353, longest    487, 10144 lines counted | aggressors: 5173 lines (0 write-backs), 5173 core requests
+  W     model 100/100/320 | victim   8504 ops in 4000173 cycles, mean  432, longest   1358, 8509 lines counted | aggressors: 6324 lines (2667 write-backs), 3723 core requests
+  model 100/100/320: the victim does 92 % of alone next to readers, 77 % next to writers; extra victim cycles per aggressor transfer 53 (R) / 142 (W)
+  Wf    model 100/  1/320 | victim   9112 ops in 4000171 cycles, mean  401, longest    939, 9107 lines counted | aggressors: 6343 lines (2665 write-backs), 3740 core requests
+  Ws    model 100/300/320 | victim   7872 ops in 4000171 cycles, mean  470, longest   1566, 7857 lines counted | aggressors: 6314 lines (2665 write-backs), 3717 core requests
+  writers with write latency 1 / 100 / 300: the victim does 82 / 77 / 71 % of alone, extra cycles per transfer 107 / 142 / 179
+TEST PASS 55 checks
+== t_wbhol on the board (br1124_213018_t_wbhol_fpga; the later run is bitstream qosfix4_4c, the earlier one wbpend_4c)
+TEST t_wbhol
+  S     model   0/  0/  0 | victim  27376 ops in 4000210 cycles, mean  108, longest    126, 27374 lines counted | aggressors: 0 lines (0 write-backs), 0 core requests
+  R     model   0/  0/  0 | victim  27456 ops in 4000177 cycles, mean  107, longest    132, 27293 lines counted | aggressors: 15525 lines (0 write-backs), 15524 core requests
+  W     model   0/  0/  0 | victim  27400 ops in 4000171 cycles, mean  108, longest    148, 27385 lines counted | aggressors: 19012 lines (0 write-backs), 11212 core requests
+  model off: the victim does 100 % of alone next to readers, 100 % next to writers; extra victim cycles per aggressor transfer 0 (R) / 0 (W)
+  S     model 100/100/320 | victim  10952 ops in 4000174 cycles, mean  328, longest    335, 10944 lines counted | aggressors: 0 lines (0 write-backs), 0 core requests
+  R     model 100/100/320 | victim  10192 ops in 4000171 cycles, mean  354, longest    487, 10139 lines counted | aggressors: 5174 lines (0 write-backs), 5174 core requests
+  W     model 100/100/320 | victim   9624 ops in 4000171 cycles, mean  377, longest    937, 9612 lines counted | aggressors: 6330 lines (2663 write-backs), 3732 core requests
+  model 100/100/320: the victim does 93 % of alone next to readers, 87 % next to writers; extra victim cycles per aggressor transfer 51 (R) / 74 (W)
+  Wf    model 100/  1/320 | victim   9824 ops in 4000171 cycles, mean  369, longest    943, 9819 lines counted | aggressors: 6346 lines (2665 write-backs), 3743 core requests
+  Ws    model 100/300/320 | victim   8968 ops in 4000171 cycles, mean  408, longest    969, 8960 lines counted | aggressors: 6337 lines (2664 write-backs), 3738 core requests
+  writers with write latency 1 / 100 / 300: the victim does 89 / 87 / 81 % of alone, extra cycles per transfer 63 / 74 / 113
+TEST PASS 55 checks

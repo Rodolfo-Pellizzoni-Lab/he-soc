@@ -349,6 +349,100 @@ no longer leaks through the core whose write-backs used to inherit (6 DRAM lines
 of the DMA's own RCID still stalled the coherence unit, which waits for each coherent write's response (`t_bcd` D:
 every core at 3 %, longest 12,340 cycles); the admission gates below address it.
 
+**Write-backs and their write responses** (`ip_list/axi_llc/src/eviction_refill/axi_llc_w_master.sv`, `axi_llc_top`
+parameter `EvictPendDepth`, build knob `QOS_LLC_WBPEND`, default 4, 0 restores the original unit). Every miss passes
+the eviction unit's write stage in order. The original stage sent a dirty victim's eight W beats and then waited for
+the memory's write response before it passed the descriptor on, so every miss behind a write-back, of any RCID,
+stood still for as long as the memory took to answer a write it did not depend on. With the DRAM timing model that
+is the write latency plus the line's bus time: in `t_wbhol` (two paced cores next to a reader of another RCID, the
+LLC partitioned, no regulation, model 100/100/320) the stage was busy about 430 cycles per write-back, 98 % of them
+only waiting for the response, with another miss standing behind it in 94 % of the write-backs; the reader did 60 %
+of alone next to writers, against 90 % next to readers that moved as many lines.
+
+What the wait protects is one case: a miss on a line whose write-back is still unanswered. The lookup gives the
+victim's way away when it picks it, so the line's next access misses and reads the line back from the memory, and
+AXI orders nothing between the read and the write channels: a read sent after the W beats and before the response
+may be served first (the slowdown regulator behind the LLC queues reads and writes apart) and returns the stale
+line. The stage now keeps exactly that case:
+- the descriptor goes on once its last W beat is sent, and the write-back stays in a table (line address, AXI ID)
+  until its response comes; a write-back needs a free entry to start, so at most `QOS_LLC_WBPEND` are unanswered;
+- a descriptor that refills a line that is in the table waits for that line's response; everything else passes;
+- a flush descriptor is destroyed, and the flush reported done, only when the table is empty;
+- a response removes the oldest entry with its ID (entries are kept oldest first): right for every slave that keeps
+  AXI's per-ID order. A response with an ID that is not in the table (one under way through a reset) changes
+  nothing.
+A line cannot be in the table twice: it comes back into the cache only through a refill, which waits. The pool's
+rule above (a refill does not leave before an older eviction of its line) still holds the order up to this stage.
+
+Checked (2026-11-24). The aim was to break it:
+- `tests/tb_llc_wbpend.sv` (`run_llc_wbpend.sh`): the whole LLC in front of a memory that applies a write only when
+  it hands over the write response, answers late and out of order across IDs, and serves a read from what it held
+  when the AR came; eight threads with reference memories, small regions or lines of one set (`HOT`), bypass traffic
+  on the same memory port (`BYP`), a limit on unanswered writes (`AWLIM`), held and then back-to-back responses
+  (`BBURST`), flushes during the traffic (`FLUSHMID`), regulation with a hard-limited RCID, a final flush after
+  which the memory must hold every byte. 460 runs with random parameters (table depths 1 to 8): none failed; 1.17 M
+  write-backs, 34,199 refills that waited for the write-back of their own line, 115,485 responses out of order,
+  2,917 flushes. The unit without the wait of the refill, without the wait of the flush, or with responses matched
+  without their ID fails it with wrong data (`MUTANT=`).
+- `tests/tb_llc_wmaster.sv` (`run_llc_wmaster.sh`): the stage alone against a model, every cycle: order, W data, no
+  refill of a line with an unanswered write-back, no flush report with one outstanding, the bound, progress; also
+  with descriptors and responses a real cache never makes (`LEGAL=0`). 240 runs with random parameters: none
+  failed; 19.8 M write-backs, 3.1 M refills that waited. `run_llc_wmaster_netlist.sh` runs the same on the netlist
+  of an out-of-context Vivado synthesis of the stage (depths 1, 2, 4, 8; 20 runs, none failed).
+- `t_wbhol`, simulation: the stage is busy 9 cycles per write-back instead of about 430 and nothing stands behind
+  one; the reader does 75 % of alone next to the writers (461 cycles per read instead of 585; 388 next to readers).
+  On the board (bitstream `wbpend_4c` against `qosfix4_4c`, model 100/100/320): 87 % next to writers instead of
+  77 % (93 and 92 % next to readers); the reader's extra cycles per aggressor transfer 51 (read) / 74 (write-back)
+  instead of 53 / 142; its longest read 937 cycles instead of 1,358.
+- `t_wbrace` (SoC and board): every core rewrites and checks words of lines that leave the LLC dirty and are read
+  back. A core alone cannot make the case with the timing model on, because its own read waits behind the
+  write-back it caused; phases S and T therefore put all cores in one RCID with two ways: two own one hot line
+  each and come round every few hundred cycles, two push lines out of that set. In simulation the stage then holds
+  refills for their own line's write-back (7 in a short run). On the board: ten phases, 169 checks, no word wrong;
+  phase S alone makes 369,000 write-backs in 5 s. A SoC built without the wait passes this test in simulation too:
+  the simulated memory path did not let those reads pass the writes, so this test shows the case occurs and stays
+  right under real timing; that the wait is needed is shown by the benches above.
+- Board, bare metal, `wbpend_4c`: `t_mem`, `t_atomics`, `t_smp`, `t_chk`, `t_storm`, `t_dma`, `t_eth`, `t_cbqri`,
+  `t_dram`, `t_bc`, `t_bcw`, `t_bcd`, `t_bchol`, `t_trap`, `t_stopm`, `t_iotag`, `t_qos`, `t_irq`, `t_socket` pass;
+  `t_part` fails its sharing-against-partitioning noise check as on the bitstreams before.
+- Board, Linux 7.2: `memrace` (alsaqr-software `linux/resctrl`, `wb_integrity.sh`: two owners and two evictors in
+  one resctrl group with one or two L3 ways) with write latencies 0 to 3000 cycles, a slow bus and the group
+  hard-limited: no word wrong, no kernel complaint.
+- Timing: `wbpend_4c` closes 50 MHz with WNS +0.663 ns (`qosfix4_4c`: +0.364), 588k LUTs.
+
+Under Linux on `wbpend_4c` (2026-11-25; memory-bound setting of the kernel QoS-ID tests: model 100/320, capacity
+17 MB/s, selective + tag, three tenants on the other cores). Every workload is compared with itself: alone, next to
+the tenants without the controller, with it and equal weights, and with the tenants hard-limited to 3.4 MB/s
+together (`MB_MIN` 205, `MB_WGHT` 0). MB/s of work of the victim, share of the same victim alone in brackets;
+medians of three passes (partitioned: victim 4 ways, tenants 8, kernel and default 4) and two (shared), every cell
+within 0.15 MB/s over its passes:
+
+| Victim (alone) | Tenants | Partitioned: off / equal / limited | Shared: off / equal / limited |
+|---|---|---|---|
+| reader (8.9) | readers | 4.59 (52 %) / 7.28 (82 %) / 8.26 (94 %) | 4.53 (51 %) / 7.21 (82 %) / 8.31 (94 %) |
+| | writers | 2.75 (31 %) / 5.06 (57 %) / 7.39 (84 %) | 2.71 (31 %) / 4.51 (51 %) / 6.89 (78 %) |
+| | system calls | 4.39 (49 %) / 5.94 (67 %) / 7.80 (88 %) | 4.26 (48 %) / 5.27 (60 %) / 7.42 (84 %) |
+| | buffered writes | 5.02 (56 %) / 6.03 (68 %) / 7.72 (87 %) | 4.78 (54 %) / 5.36 (61 %) / 7.38 (83 %) |
+| writer (5.8) | readers | 3.62 (63 %) / 3.67 (64 %) / 4.91 (86 %) | 3.62 (63 %) / 4.61 (81 %) / 5.27 (92 %) |
+| | writers | 2.32 (40 %) / 3.60 (63 %) / 4.50 (79 %) | 2.30 (40 %) / 3.64 (64 %) / 4.60 (80 %) |
+| | system calls | 3.09 (53 %) / 3.72 (65 %) / 4.73 (83 %) | 3.23 (56 %) / 4.06 (71 %) / 4.83 (85 %) |
+| | buffered writes | 3.41 (59 %) / 3.73 (65 %) / 4.70 (82 %) | 3.54 (61 %) / 4.09 (72 %) / 4.85 (85 %) |
+| system-call copy (2.26 partitioned, 3.32 shared) | readers | 1.56 (69 %) / 1.71 (76 %) / 2.12 (94 %) | 1.59 (48 %) / 1.96 (59 %) / 2.83 (85 %) |
+| | writers | 1.06 (47 %) / 1.58 (70 %) / 2.01 (89 %) | 1.05 (32 %) / 1.56 (47 %) / 2.51 (76 %) |
+| | system calls | 1.46 (65 %) / 1.68 (75 %) / 2.03 (90 %) | 1.45 (44 %) / 1.71 (51 %) / 2.54 (77 %) |
+| | buffered writes | 1.58 (70 %) / 1.71 (76 %) / 2.02 (90 %) | 1.60 (48 %) / 1.74 (52 %) / 2.42 (73 %) |
+
+The limited group is charged 3.2 to 3.4 MB/s in every cell. In the shared cache the work it gets for that depends
+on its neighbour (limited readers 3.25 MB/s alone, 1.98 next to a writer: they pay for its dirty lines), and the
+reader next to limited writers is charged 8.9 MB/s while it reads 6.9; partitioned, neither happens. Lower limits
+(partitioned, two passes; limited to 3.4 / 0.85 / 0.05 MB/s): reader next to readers 94 / 97 / 98 %, next to
+writers 84 / 95 / 96 %; writer next to readers 86 / 95 / 98 %, next to writers 79 / 93 / 95 %. The loss follows
+the traffic the tenants may send; at `MB_MIN` 3 the group is charged 0.07 (readers) and 0.13 MB/s (writers), one
+and two lines per period. The same matrix was not run on `qosfix4_4c`: under Linux there is no before and after
+on equal terms (earlier single runs, taken with ssh logins inside the windows, are not kept). Raw results and the
+table script: `docs/fig/baseline_*_wbpend.txt`, `baseline_tables.py`; the board script is alsaqr-software
+`linux/resctrl/baseline.sh`, which runs without logins (board-side, pinned, progress on the serial console).
+
 **DMA admission gates** (`ip_list/axi_llc/src/axi_llc_bc_gate.sv`, one in front of each DMA port of the coherence
 unit in `host/cva6_subsystem.sv`, build knob `QOS_DMA_GATE`, default 1 with `QOS_LLC_BC`). The core's write-backs
 bypass the coherence unit's state machine (non-snooping writes take the CCU's direct path) and its reads are

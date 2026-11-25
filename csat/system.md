@@ -138,8 +138,8 @@ Hardware build variables, also settable through the FPGA build environment or si
 - `QOS_RCID_WIDTH`, `QOS_MCID_WIDTH`: QoS ID bits (4).
 - `QOS_PRIV_ASSOC`, `QOS_NUM_VRCID`, `QOS_NUM_VMCID`: per-privilege IDs, guest ID translation (16 entries).
 - `SOCK_QOS_RANGES`, `ACCEL_JOB_DEPTH`: socket range tags (16), per-job queue (4).
-- `QOS_LLC_BC`, `QOS_LLC_BC_POOL`, `QOS_LLC_WBUF`, `QOS_DMA_GATE`: bandwidth controller (16-entry pool), write
-  buffer (8), DMA gates.
+- `QOS_LLC_BC`, `QOS_LLC_BC_POOL`, `QOS_LLC_WBUF`, `QOS_LLC_WBPEND`, `QOS_DMA_GATE`: bandwidth controller (16-entry
+  pool), write buffer (8), write-backs with their response outstanding (4), DMA gates.
 - `xilinx-ethernet`: the AMD Ethernet and its DMA (set in the simulation and FPGA flows). `exclude-llc`: no LLC. `OPENDRAM=1` (FPGA): OpenDRAM.
 
 ## Repository

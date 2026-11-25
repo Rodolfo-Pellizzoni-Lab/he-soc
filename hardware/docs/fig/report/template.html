@@ -50,6 +50,7 @@ svg .s1 { fill: var(--s1); } svg .s2 { fill: var(--s2); } svg .s3 { fill: var(--
 .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 28px 20px; }
 .panel { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .panel .sub { min-height: 2.9em; }
+.panels.big { grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); } .panels.big .panel .sub { min-height: 0; }
 .tablewrap { overflow-x: auto; }
 table { border-collapse: collapse; font-size: 0.92rem; min-width: 560px; width: 100%; }
 th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -68,7 +69,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 <div class="wrap">
   <header class="col">
-    <p class="eyebrow">AlSaqr · VCU118 · Linux 7.2 with resctrl · 24 November 2026</p>
+    <p class="eyebrow">AlSaqr · VCU118 · Linux 7.2 with resctrl · 25 November 2026</p>
     <h1>Memory-Tagged QoS on AlSaqr</h1>
     <p class="lede">A memory bandwidth cap is only as good as the tag on each request. Giving the kernel a QoS ID of its own, as AMD PLZA does, is not enough: it fixes one failure and opens another. This report shows where each tagging policy fails on real hardware and which one holds.</p>
   </header>
@@ -185,13 +186,91 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
       <figcaption>Memory traffic the tenant causes, by the group it is charged to</figcaption>
       {{CHART_G}}
     </figure>
-    <p class="note">Three tenant processes next to the victim. Reader and writer tenants run in user mode under selective + tag. The first two bars were run twice and agree within 0.05 MB/s; the others are single 6-second runs. The uncapped bars are with the regulator sharing capacity between the two groups by weight. Write-backs charged to the victim's group are not shown in the lower chart.</p>
+    <p class="note">Three tenant processes next to the victim. Reader and writer tenants run in user mode under selective + tag. The first two bars were run twice and agree within 0.05 MB/s; the others are single 6-second runs. The uncapped bars are with the regulator sharing capacity between the two groups by weight. Write-backs charged to the victim's group are not shown in the lower chart. These runs predate the write-stage change described below and were taken while status checks over ssh were running on the board, so they show which policy leaks, not exact levels. The baselines at the end repeat the capped and uncapped cases cleanly.</p>
     <div class="col">
       <ul>
         <li><b>The cap works for readers.</b> The victim keeps 79 % next to uncapped readers and 95 % once they are capped.</li>
         <li><b>PLZA's escape now costs the victim half its bandwidth.</b> The system-call tenant sends 10.4 MB/s under the kernel's ID, three times its cap, and the victim keeps 47 %. With selective + tag the tenant stays at its cap and the victim keeps 78 %.</li>
         <li><b>Deferred work needs the tag.</b> With plain selective, more than half of the buffered-write tenant's traffic goes out under the kernel's ID and the victim keeps 60 %. With the tag it keeps 74 %.</li>
-        <li><b>Writes are the largest remaining loss.</b> Uncapped writers leave the victim 29 %; capped, 71 %, against 95 % for capped readers. A written line needs a read and later a write-back on the same bus, and the write-back is charged to whoever evicts the line. This is a gap in the cache, described under the limits below, and it is why even the best policy stops at 74 to 78 % for tenants that copy.</li>
+        <li><b>Writes are the largest remaining loss.</b> Uncapped writers leave the victim 29 %; capped, 71 %, against 95 % for capped readers. A written line needs a read and later a write-back on the same bus. Two things made that worse than it has to be, and the next two sections take them in turn: who is charged for the write-back, and what the cache does while it waits for it.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Partitioning the cache as well</h2>
+    <div class="col">
+      <p>A system that regulates memory bandwidth will normally also partition the shared cache, to stop tenants evicting each other's lines. On AlSaqr that is the second controller in the same cache: a mask of ways per group, set through the same resctrl interface. Here the victim gets 4 of the 16 ways, the tenants 8, and the kernel and default groups the other 4.</p>
+      <p>Partitioning also settles who pays for a write-back. In a shared cache a dirty line is written to memory by whichever request evicts it, and is charged to that request's group. With separate ways a group only ever evicts its own lines, so every write-back is done and paid by its owner.</p>
+    </div>
+    <figure class="chart">
+      <figcaption>Victim next to capped tenants, shared against partitioned cache</figcaption>
+      {{CHART_H}}
+    </figure>
+    <p class="note">Memory-bound setting as above, selective + tag, three tenants capped at 3.4 MB/s together, final hardware. Medians of two passes (shared) and three passes (partitioned); every cell repeats within 0.1 MB/s. Each bar is a share of the same reader running alone, 8.8 MB/s.</p>
+    <div class="col">
+      <ul>
+        <li><b>In a shared cache the victim is charged for lines it did not write.</b> Next to capped writers the reader reads 6.9 MB/s but its group is charged 8.9. Partitioned, it reads 7.4 and is charged 7.4.</li>
+        <li><b>The victim gains where tenants write:</b> 78 % to 84 % next to writers, 84 % to 88 % next to system calls, 83 % to 87 % next to buffered writes. Next to readers it is 94 % either way.</li>
+        <li><b>The charge goes both ways.</b> A capped tenant in a shared cache pays for the victim's dirty lines too, so the work it gets for its cap depends on its neighbour. With separate ways it does not.</li>
+      </ul>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Three capped tenants</th><th>Cache</th><th>Work alone</th><th>Next to a reader</th><th>Next to a writer</th></tr></thead>
+        <tbody>
+{{TENANT_ROWS}}
+        </tbody>
+      </table>
+    </div>
+    <p class="note">MB/s of work by the three tenants together. In every cell their group is charged 3.2 to 3.4 MB/s of memory traffic. A writer's work is about half its traffic, since each line is read and later written back.</p>
+  </section>
+
+  <section>
+    <h2>Write-backs must not hold up other misses</h2>
+    <div class="col">
+      <p>Partitioning settles the billing, yet capped writers still cost the victim more than capped readers causing the same traffic. The cause was in the cache's miss path. All misses pass through one write stage, and that stage sent a dirty line to memory and then waited for the write's acknowledgement before letting the next miss through. With the memory model on, that is about 430 cycles per write-back during which no other group's miss can start, whatever its reservation.</p>
+      <p>The regulator decides when a request may go to memory. It cannot help a request that is stuck behind another group's write-back after that decision. So the write stage now moves on as soon as the line's data is sent:</p>
+      <ul>
+        <li><b>A table of four</b> records each write-back that has not been acknowledged yet, by line address and AXI ID. The acknowledgement frees the entry.</li>
+        <li><b>A read of a line still in the table waits</b> for that acknowledgement. The path to memory queues reads and writes separately, so without this a read could overtake the write and fetch the old copy.</li>
+        <li><b>A fifth write-back waits</b> for a free entry, and a cache flush completes only when the table is empty.</li>
+      </ul>
+    </div>
+    <figure class="chart">
+      <figcaption>Bare-metal victim next to paced tenants, before and after</figcaption>
+      {{CHART_I}}
+    </figure>
+    <p class="note">One reading core against paced reading or writing cores, no operating system, memory-bound setting, 4 million cycles per case. Next to writers the victim's extra cycles per tenant transfer fall from 142 to 74 and its longest read from 1358 to 937 cycles.</p>
+    <div class="col">
+      <p>Reordering work around an unacknowledged write is a risk to data, so the change was attacked directly. A test memory that delays and reorders acknowledgements ran 700 random campaigns, about 21 million write-backs, against a reference model with no wrong data. Three deliberately broken variants, including one without the same-line wait, were each caught. On the board a four-core race test and a 10-minute Linux run of 155 million checked operations found no mismatch.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Baselines: each workload against itself</h2>
+    <div class="col">
+      <p>The charts so far measure one victim, a reader, and express everything as a share of its solo rate. That hides what a cap costs a workload that writes, because a writer is slower than a reader even alone. These baselines run three kinds of victim, each compared only with itself: alone, next to three tenants with no regulator, next to them with the regulator sharing capacity equally, and next to them capped at 3.4 MB/s.</p>
+      <p>They were taken on the final hardware with nothing else touching the board: the script runs on the board at real-time priority, off the victim's core, and reports over the serial console. An earlier set was spoiled by status checks over ssh landing inside the 5-second windows.</p>
+    </div>
+    <figure>
+      <figcaption>Partitioned cache: what each victim keeps of its own solo rate</figcaption>
+      <div class="panels big">{{PANELS_BP}}</div>
+      {{LEGEND_B}}
+    </figure>
+    <figure>
+      <figcaption>Shared cache</figcaption>
+      <div class="panels big">{{PANELS_BS}}</div>
+      {{LEGEND_B}}
+    </figure>
+    <p class="note">Memory-bound setting, regulator capacity 17 MB/s, selective + tag. Medians of three passes (partitioned, 165 runs) and two passes (shared, 110 runs); no run was disturbed or repeated, and each cell's range is within 0.15 MB/s. The victim has 4 of 16 ways when partitioned.</p>
+    <div class="col">
+      <ul>
+        <li><b>The cap helps every victim against every kind of tenant,</b> in both cache settings.</li>
+        <li><b>Under the cap a victim keeps 79 to 94 % of its solo rate with a partitioned cache,</b> and 73 to 94 % with a shared one.</li>
+        <li><b>The cap holds:</b> the tenants' group is charged 3.2 to 3.4 MB/s for every kind of tenant and every neighbour.</li>
+        <li><b>Without a cap, sharing equally is not protection.</b> Three writing tenants leave a reader 31 % with no regulator and 51 to 57 % with equal shares.</li>
+        <li><b>Capped writers still cost more than capped readers,</b> 84 % against 94 % for a reader victim with a partitioned cache. A write-back still occupies the memory bus for longer than a read.</li>
       </ul>
     </div>
   </section>
@@ -230,8 +309,10 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     <h2>Limits of the evidence</h2>
     <div class="col">
       <ul>
-        <li><b>Sample size.</b> Most bars are one or two short runs. Differences of a few tenths of a MB/s are noise. The memory-bound set is missing the stock policy and the page-fault tenant.</li>
-        <li><b>Dirty lines are charged to whoever evicts them.</b> Next to capped tenants that write, the victim keeps 82 to 89 %, against 97 % next to a capped reader (fast memory; 71 % against 95 % when memory is the bottleneck). A user-mode writer and a user-mode copy give the same loss as the system-call tenant, so kernel tagging is not the cause. The cache writes a dirty line back under the tag of the request that evicts it. The victim's group is charged 28 MB/s while the victim itself reads 23: about 5 MB/s of the tenant's write-backs are paid from the victim's traffic and never count against the tenant's cap.</li>
+        <li><b>Sample size.</b> The baselines are medians of two or three passes. Most other bars are one or two short runs, where differences of a few tenths of a MB/s are noise. The memory-bound policy comparison is missing the stock policy and the page-fault tenant.</li>
+        <li><b>No clean before and after of the write-stage change under Linux.</b> The baselines were run on the final hardware only. The before and after shown is the bare-metal one.</li>
+        <li><b>Tenants that write still cost the victim more than readers.</b> Billing and the waiting write stage are both removed, and 6 to 10 points remain. The likely reason is the time a write-back holds the memory bus, which a regulator counting bytes does not see; this is not tested.</li>
+        <li><b>The same-line wait is shown necessary only in unit tests.</b> A full system built without it still passes the board race test, because that path does not reorder reads and writes of one line there.</li>
         <li><b>Smallest cap under selective.</b> At 0.05 MB/s the victim gets 25.2 to 26.0 MB/s under selective against 27.3 under PLZA, with stalls of 20 to 48 ms. The cause is not found.</li>
         <li><b>Shared deferred work.</b> A tag follows the first task that triggers a shared writeback pass. Two tenants writing through the same device would be mixed. Here each tenant had its own loop device.</li>
         <li><b>I/O.</b> Device interrupts and completions are not attributed to the task that issued the request. They run under the kernel's ID.</li>

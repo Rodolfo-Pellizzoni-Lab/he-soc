@@ -29,6 +29,10 @@ field (the QoS tag):
    the miss pipeline by RCID budget.
 5. `axi_llc_evict_unit` writes back a dirty victim and `axi_llc_refill_unit` reads the line. Both are strictly in
    order, and both carry the request's `user` field to memory. `axi_llc_merge_unit` hands the descriptor on.
+   A write-back does not hold the pipeline until its write response: the descriptor goes on once its last W beat
+   is sent, and the write-back waits for the response in a table of `QOS_LLC_WBPEND` entries (`axi_llc_w_master`).
+   Only a refill of a line whose write-back is still in the table waits for that response, because a read sent
+   before it could be served first and return the memory's stale copy. A write-back needs a free entry to start.
 6. `axi_llc_write_unit` / `axi_llc_read_unit` access `axi_llc_ways`, the data SRAMs, one per way.
 
 **Replacement and way locking.** `axi_llc_plru` (tree PLRU, selected in `axi_llc_evict_box`) chooses the victim among
@@ -61,12 +65,14 @@ QoS scoreboard (`qos_monitor`).
 - Geometry: `LLC_SET_ASSOC`, `LLC_NUM_LINES`, `LLC_NUM_BLOCKS` (`ariane_soc_pkg.sv`).
 - `axi_llc_top` parameters set in `host_domain.sv`: `SourceIDStart/End` and `NumCfgRegcp` (per-source masks),
   `QosRcidWidth`/`QosRcidLsb`/`QosAtBit` (where the tag sits in `user`), `QosBc`, `QosBcPoolDepth`,
-  `QosWBufSlots`, `QosGates`/`QosGateSrcMask`.
+  `QosWBufSlots`, `EvictPendDepth`, `QosGates`/`QosGateSrcMask`.
 - Make variables and defines (defaults in `ariane_pkg.sv`):
   - `QOS_RCID_WIDTH`/`QOS_MCID_WIDTH`: RCID and MCID widths, which size the per-RCID tables.
   - `QOS_LLC_BC`: 0 removes the bandwidth controller.
   - `QOS_LLC_BC_POOL`: pool depth.
   - `QOS_LLC_WBUF`: write-buffer slots; 0 removes the buffer.
+  - `QOS_LLC_WBPEND`: write-backs that may wait for their write response while the miss pipeline goes on (4); 0
+    makes every miss behind a write-back wait for its response, as in the original LLC.
   - `QOS_DMA_GATE`: admission gates for the CCU's DMA ports; needs `QOS_LLC_BC`.
 - `EXCLUDE_LLC` (`exclude-llc=1`): the crossbar's DRAM route connects straight to memory, with no LLC, slowdown or
   DRAM model.
@@ -75,7 +81,8 @@ QoS scoreboard (`qos_monitor`).
 
 - **Cached window.** The netboot loader (`software/netboot`) widens it to all DRAM before Linux. The alsaqr-software
   `llcpart` module widens it from Linux. Addresses outside it bypass the LLC.
-- **SPM and flush.** Set ways in `CfgSpm`, write `CfgFlush`, poll `Flushed`.
+- **SPM and flush.** Set ways in `CfgSpm`, write `CfgFlush`, poll `Flushed`. A flush is reported done only when
+  the memory has answered every write-back.
 - **Hit/miss counters.** SoC control registers next to the window registers.
 - **Partitioning and bandwidth.** CBQRI from bare metal (`t_cbqri`, `t_bc`) or from Linux resctrl (alsaqr-resctrl
   worktree, alsaqr-software `linux/resctrl` and `linux/llcpart`).
@@ -89,15 +96,23 @@ QoS scoreboard (`qos_monitor`).
   `t_part` (way partitioning between cores and accelerator DMA, as performance), `t_dram`.
 - By name: `t_bc`, `t_bcw`, `t_bcd` (bandwidth controller, write ordering, DMA gates), `t_sweep` (latency against
   working-set size: L1, LLC, DRAM).
+- By name: `t_wbhol` (how much another core's write-backs cost a reader, with the DRAM timing model), `t_wbrace`
+  (stores must survive when lines leave the LLC dirty and are read back at once; also on the board).
 - Unit testbenches in `hardware/xsim/tests` (`run_*.sh`): `tb_llc_bc` (bandwidth controller), `tb_llc_wbuf` (write
-  buffer with out-of-order writes), `tb_bc_gate` (admission gate). `hardware/ip_list/axi_llc/test/tb_axi_llc.sv` is
+  buffer with out-of-order writes), `tb_llc_wbpend` (write-backs without the wait for their response, in front of
+  a memory that applies a write only with its response, answers late and out of order and serves reads early;
+  `MUTANT=` variants without the waits must fail), `tb_llc_wmaster` (the write stage alone against a model; the
+  same on a synthesised netlist with `run_llc_wmaster_netlist.sh`), `tb_bc_gate` (admission gate). `hardware/ip_list/axi_llc/test/tb_axi_llc.sv` is
   the upstream testbench.
 
 ## Properties
 
 - Line size 64 B against the L1's 16 B. An LLC miss refills 8 beats. Bypassed traffic reaches memory as the L1's
   2-beat fills.
-- The eviction/refill pipeline is in order.
+- The eviction/refill pipeline is in order. A refill never reaches the memory before the write response of an
+  older write-back of the same line; refills of other lines do not wait for write responses.
+- The memory must answer the refills in the order they were sent (the refill unit does not look at the R ID) and
+  the write-backs of one AXI ID in order; write responses of different IDs may come in any order.
 - Refills and evictions carry the `user` field of the request that caused them. Flushes from the configuration port
   carry 0.
 - Shrinking the cached window on a running system does not write back the lines of the removed region.

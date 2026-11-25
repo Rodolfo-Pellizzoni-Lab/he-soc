@@ -75,6 +75,7 @@ Knobs can be set as `make` variables (`QOS_KNOBS` in `hardware/Makefile`), as `f
 | `QOS_NUM_VRCID`, `QOS_NUM_VMCID` | Translation entries (16, at most 16). 0 removes the CSRs. Translation needs the H extension. |
 | `QOS_LLC_BC`, `QOS_LLC_BC_POOL` | Bandwidth controller (on) and its pool size (16). |
 | `QOS_LLC_WBUF` | Write-buffer slots (8). 0 removes the buffer. |
+| `QOS_LLC_WBPEND` | Write-backs that may wait for their write response while the LLC's miss pipeline goes on (4). 0: every miss behind a write-back waits for its response. |
 | `QOS_DMA_GATE` | The admission gates. They need `QOS_LLC_BC`. |
 
 The source-port field is `ceil(log2(cores + 2))` bits wide, so the position of the RCID depends on `NUM_CVA6`.
