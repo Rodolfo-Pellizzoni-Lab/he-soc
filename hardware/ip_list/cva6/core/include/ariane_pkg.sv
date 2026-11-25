@@ -365,6 +365,10 @@ package ariane_pkg;
     //   QOS_LLC_WBUF                     slots of the LLC's write-data buffer (axi_llc_w_buffer, default 8): writes
     //                                    then need only per-ID order, so a parked write holds up only its own ID;
     //                                    0 removes it (every write in AW order)
+    //   QOS_LLC_WBPEND                   write-backs of the LLC that may wait for their write response while its
+    //                                    miss pipeline goes on (axi_llc_w_master, default 4): only a refill of a
+    //                                    line whose write-back is unanswered waits; 0: every miss behind a
+    //                                    write-back waits for its response, as in the original LLC
     //   QOS_DMA_GATE                     1 (default, with QOS_LLC_BC): an admission gate (axi_llc_bc_gate) in front
     //                                    of each DMA port of the CCU, so a hard-limited DMA waits at its own port
     //                                    instead of parking a coherent request that holds the CCU; 0 removes it
@@ -405,6 +409,11 @@ package ariane_pkg;
     localparam int unsigned QOS_LLC_WBUF = `QOS_LLC_WBUF;
 `else
     localparam int unsigned QOS_LLC_WBUF = 8;
+`endif
+`ifdef QOS_LLC_WBPEND
+    localparam int unsigned QOS_LLC_WBPEND = `QOS_LLC_WBPEND;
+`else
+    localparam int unsigned QOS_LLC_WBPEND = 4;
 `endif
 `ifdef QOS_DMA_GATE
     localparam bit QOS_DMA_GATE = (`QOS_DMA_GATE != 0) && QOS_LLC_BC;

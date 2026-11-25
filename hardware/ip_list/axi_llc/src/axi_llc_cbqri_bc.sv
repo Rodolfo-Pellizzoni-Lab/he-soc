@@ -40,8 +40,8 @@
 // Ordering rules (the LLC's own, and one the pool adds): a refill of a line does not leave before an older descriptor
 // that evicts that line (the lookup already gave the line's way to the older one, whose write-back is still to
 // come: a younger refill of the same line, into another way, would read the memory's stale copy; the in-order
-// pipeline downstream keeps the order once both are released, the eviction unit passes a descriptor on only after
-// its write response); descriptors of one AXI ID leave in order, a write whose W beats are not buffered
+// pipeline downstream keeps the order once both are released, and the eviction unit passes a refill of a line on
+// only after the write response of that line's write-back, axi_llc_w_master); descriptors of one AXI ID leave in order, a write whose W beats are not buffered
 // (`wbuf` = 0: every write without the LLC's write-data buffer, axi_llc_w_buffer; with it, only those with more beats
 // than a slot holds) leaves in order with every other write (W beats carry no ID), and a flush leaves in order with
 // everything. Buffered writes need only the per-ID order: a parked write then holds up only its own ID. With regulation off (BC_CTRL.EN = 0, the reset state)

@@ -26,7 +26,10 @@ module axi_llc_evict_unit #(
   /// AXI master port W channel type.
   parameter type w_chan_t = logic,
   /// AXI master port B channel type.
-  parameter type b_chan_t = logic
+  parameter type b_chan_t = logic,
+  /// Write-backs that may wait for their response while the pipeline goes on, see `axi_llc_w_master`
+  /// (0: every descriptor waits for the response of its write-back, as in the original LLC).
+  parameter int unsigned PendDepth = 32'd0
 ) (
   /// Clock, positive edge triggered.
   input logic clk_i,
@@ -145,7 +148,8 @@ module axi_llc_evict_unit #(
     .way_inp_t ( way_inp_t ),
     .way_oup_t ( way_oup_t ),
     .w_chan_t  ( w_chan_t  ),
-    .b_chan_t  ( b_chan_t  )
+    .b_chan_t  ( b_chan_t  ),
+    .PendDepth ( PendDepth )
   ) i_w_master (
     .clk_i           ( clk_i           ),
     .rst_ni          ( rst_ni          ),

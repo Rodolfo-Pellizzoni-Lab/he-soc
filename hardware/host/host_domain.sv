@@ -693,6 +693,7 @@ module host_domain
       .QosBc            ( ariane_pkg::QOS_LLC_BC         ),
       .QosBcPoolDepth   ( ariane_pkg::QOS_LLC_BC_POOL    ),
       .QosWBufSlots     ( ariane_pkg::QOS_LLC_WBUF       ),
+      .EvictPendDepth   ( ariane_pkg::QOS_LLC_WBPEND     ),
       .QosGates         ( ariane_pkg::QOS_DMA_GATE ? ariane_soc::NumCcuDmaPorts : 0 ),
       .QosGateSrcMask   ( ariane_pkg::QOS_DMA_GATE ? QosGateSrcMask : 64'd0 ),
       .QosCcOffset      ( 32'h800                        )

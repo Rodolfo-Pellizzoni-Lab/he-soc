@@ -192,6 +192,10 @@ module axi_llc_top #(
   /// line at full width, so that writes need only per-ID order and a parked write holds up only its own ID
   /// (0: none, every write in AW order as in the original LLC).
   parameter int unsigned QosWBufSlots     = 32'd0,
+  /// Write-backs (evictions) that may wait for their write response while the miss pipeline goes on, see
+  /// `axi_llc_w_master`: only a refill of a line whose write-back is still unanswered waits for the response
+  /// (0: every descriptor behind a write-back waits for its response, as in the original LLC).
+  parameter int unsigned EvictPendDepth   = 32'd0,
   /// Gated DMA ports (axi_llc_bc_gate in front of the coherence unit) that ask the bandwidth controller for
   /// admission (qos_gate_* ports; 0: none), and the sources (user[QosRcidLsb-1:0]) their traffic carries.
   parameter int unsigned QosGates         = 32'd0,
@@ -856,7 +860,8 @@ module axi_llc_top #(
     .way_oup_t ( way_oup_t     ),
     .aw_chan_t ( slv_aw_chan_t ),
     .w_chan_t  ( w_chan_t      ),
-    .b_chan_t  ( slv_b_chan_t  )
+    .b_chan_t  ( slv_b_chan_t  ),
+    .PendDepth ( EvictPendDepth )
   ) i_evict_unit (
     .clk_i             ( clk_i                                ),
     .rst_ni            ( rst_ni                               ),

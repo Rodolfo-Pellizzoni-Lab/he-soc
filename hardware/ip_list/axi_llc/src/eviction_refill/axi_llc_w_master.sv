@@ -17,7 +17,22 @@
 ///               flush, it gets destroyed and the flush control gets notified.
 /// 2'b10: EVICT: The unit generates requests to the macros and sends W beats on the AXI.
 ///               The response data of the macros can get buffered in the FIFO.
-/// 2'b11: RESP:  The unit waits for the B response
+/// 2'b11: RESP:  The unit waits for the B response (only with `PendDepth` = 0)
+///
+/// Write responses (`PendDepth`). In the original unit (`PendDepth` = 0) a descriptor stays in RESP until the B
+/// response of its write-back has come, and the miss pipeline, which is in order, stands behind it for that long:
+/// every refill of every other line waits for a write response it does not depend on. With `PendDepth` > 0 the
+/// unit goes on as soon as the last W beat is sent and keeps the write-back in a table until its response comes:
+/// * a write-back needs a free entry before it starts, so at most `PendDepth` responses are outstanding;
+/// * a descriptor that refills a line whose write-back is still in the table waits in SEND until the response has
+///   come. That is the one case the wait is needed for: the lookup gave the line's way away when it chose it as
+///   victim, so a later miss on that line reads it back from the memory, and a read sent before the write is
+///   answered may be served first (AXI orders nothing between the read and the write channels; in this SoC the
+///   slowdown regulator after the LLC queues them apart) and would return the memory's stale copy;
+/// * a flush descriptor is destroyed, and the flush counted as done, only once the table is empty.
+/// A line cannot be in the table twice: it comes back into the cache only through a refill, which waits. The
+/// entries are kept oldest first and a response removes the oldest one with its ID, which is right for any slave
+/// that keeps AXI's per-ID order.
 ///
 /// On Descriptor load the evict flag of it gets checked. When it is set, initialize two counters.
 /// `i_block_offset_counter`is responsible for generating the block offset of the request towards
@@ -43,7 +58,10 @@ module axi_llc_w_master #(
   /// AXI W channel payload type definition.
   parameter type w_chan_t = logic,
   /// AXI B channel payload type definition.
-  parameter type b_chan_t = logic
+  parameter type b_chan_t = logic,
+  /// Write-backs that may wait for their response while the unit goes on (0: the original unit, which waits for
+  /// every response before it passes the descriptor on).
+  parameter int unsigned PendDepth = 32'd0
 ) (
   /// Clock, positive edge triggered.
   input logic clk_i,
@@ -112,6 +130,18 @@ module axi_llc_w_master #(
   logic          fifo_empty;    // the FIFO is empty -> no valid on channel
   logic          fifo_pop;      // pop data from FIFO if it gets transferred
   data_t         fifo_data;     // gets assigned to the w channel
+  // write-backs waiting for their response (PendDepth > 0)
+  localparam int unsigned LineLsb = Cfg.ByteOffsetLength + Cfg.BlockOffsetLength;
+  typedef logic [Cfg.TagLength+Cfg.IndexLength-1:0] line_t;
+  typedef logic [AxiCfg.SlvPortIdWidth-1:0]         id_t;
+  line_t         evict_line;    // the line the descriptor in the unit writes back
+  line_t         refill_line;   // the line it refills
+  logic          pend_push;     // the last W beat of a write-back leaves: into the table
+  logic          pend_full;     // no entry free: the next write-back waits
+  logic          pend_empty;    // every write response has come
+  logic          pend_hit;      // the write-back of `refill_line` is still unanswered
+  assign evict_line  = {desc_q.evict_tag, desc_q.a_x_addr[LineLsb+:Cfg.IndexLength]};
+  assign refill_line = desc_q.a_x_addr[LineLsb+:(Cfg.TagLength+Cfg.IndexLength)];
 
   // W channel output (data directly from FIFO / last from control)
   assign w_chan_valid_o = ~fifo_empty;
@@ -166,6 +196,7 @@ module axi_llc_w_master #(
     way_inp_valid_o   = 1'b0;
     b_chan_ready_o    = 1'b0;
     desc_valid_o      = 1'b0;
+    pend_push         = 1'b0;
     // flush descriptor output to cfg
     flush_desc_recv_o = 1'b0;
 
@@ -176,14 +207,18 @@ module axi_llc_w_master #(
       end
       2'b01 : begin // unit wants to send the descriptor further, load a new one when possible
         if (desc_q.flush) begin
-          // destroy the flush descriptor and go to idle state
-          flush_desc_recv_o = 1'b1;
-          send_d            = 1'b0;
-          load_send         = 1'b1;
-          load_new_desc();
+          // destroy the flush descriptor and go to idle state, once every write response has come: the flush
+          // is reported done only when the memory holds everything it wrote back
+          if (pend_empty) begin
+            flush_desc_recv_o = 1'b1;
+            send_d            = 1'b0;
+            load_send         = 1'b1;
+            load_new_desc();
+          end
         end else begin
-          desc_valid_o = 1'b1;
-          if (desc_ready_i) begin
+          // a refill of a line whose write-back is still unanswered waits for the response
+          desc_valid_o = ~(desc_q.refill & pend_hit);
+          if (desc_valid_o && desc_ready_i) begin
             // go to idle and load a potential new descriptor
             send_d    = 1'b0;
             load_send = 1'b1;
@@ -204,14 +239,21 @@ module axi_llc_w_master #(
           en_cnt_w_chan = 1'b1;
           // on popping of the last w beat, try to receive the b response
           if(w_chan_mst_o.last) begin
-            b_chan_ready_o = 1'b1;
-            // depending if the b occurs this cycle go the the next states
             send_d    = 1'b1;
             load_send = 1'b1;
-            if (b_chan_valid_i) begin
-              // b response received, go to sending further the descriptor
+            if (PendDepth > 0) begin
+              // the write-back waits for its response in the table, the descriptor goes on
+              pend_push = 1'b1;
               busy_d    = 1'b0;
               load_busy = 1'b1;
+            end else begin
+              b_chan_ready_o = 1'b1;
+              // depending if the b occurs this cycle go the the next states
+              if (b_chan_valid_i) begin
+                // b response received, go to sending further the descriptor
+                busy_d    = 1'b0;
+                load_busy = 1'b1;
+              end
             end
           end
         end
@@ -225,13 +267,122 @@ module axi_llc_w_master #(
       end
       default: /*do nothing*/ ;
     endcase
+    // with the table every response is taken as it comes
+    if (PendDepth > 0) b_chan_ready_o = 1'b1;
   end
+
+  if (PendDepth > 0) begin : gen_pend
+    // entries oldest first, without gaps
+    logic  [PendDepth-1:0] v_d,    v_q;
+    line_t [PendDepth-1:0] line_d, line_q;
+    id_t   [PendDepth-1:0] id_d,   id_q;
+    logic  [PendDepth-1:0] hit, b_is;
+
+    always_comb begin : proc_pend
+      int unsigned rm;
+      logic        found, placed;
+      v_d    = v_q;
+      line_d = line_q;
+      id_d   = id_q;
+      rm     = 0;
+      found  = 1'b0;
+      // a response: the oldest write-back with its ID leaves, the younger ones move up. A response with an ID
+      // that no write-back in the table has (one that was under way through a reset) changes nothing.
+      if (b_chan_valid_i) begin
+        for (int unsigned i = 0; i < PendDepth; i++) begin
+          if (!found && b_is[i]) begin
+            rm    = i;
+            found = 1'b1;
+          end
+        end
+      end
+      if (found) begin
+        for (int unsigned i = 0; i + 1 < PendDepth; i++) begin
+          if (i >= rm) begin
+            v_d[i]    = v_q[i+1];
+            line_d[i] = line_q[i+1];
+            id_d[i]   = id_q[i+1];
+          end
+        end
+        v_d[PendDepth-1] = 1'b0;
+      end
+      // a write-back whose last W beat leaves: behind the youngest
+      placed = 1'b0;
+      if (pend_push) begin
+        for (int unsigned i = 0; i < PendDepth; i++) begin
+          if (!placed && !v_d[i]) begin
+            v_d[i]    = 1'b1;
+            line_d[i] = evict_line;
+            id_d[i]   = desc_q.a_x_id;
+            placed    = 1'b1;
+          end
+        end
+      end
+    end
+
+    for (genvar i = 0; i < PendDepth; i++) begin : gen_hit
+      assign hit[i]  = v_q[i] & (line_q[i] == refill_line);
+      assign b_is[i] = v_q[i] & (id_q[i] == b_chan_mst_i.id);
+    end
+    assign pend_hit   = |hit;
+    assign pend_full  = &v_q;
+    assign pend_empty = ~(|v_q);
+
+    `FFARN(v_q,    v_d,    '0, clk_i, rst_ni)
+    `FFARN(line_q, line_d, '0, clk_i, rst_ni)
+    `FFARN(id_q,   id_d,   '0, clk_i, rst_ni)
+
+    // pragma translate_off
+    `ifndef VERILATOR
+    `ifndef SYNTHESIS
+    // the table is never overrun, every response belongs to a write-back in it, and no line is in it twice
+    always_ff @(posedge clk_i) if (rst_ni) begin
+      if (pend_push && (&v_q) && !(|b_is & b_chan_valid_i))
+        $error("[LLC-WB] t=%0t a write-back ended with no free entry for its response", $time);
+      if (b_chan_valid_i && !(|b_is))
+        $error("[LLC-WB] t=%0t write response with ID %0h and no write-back with that ID outstanding",
+               $time, b_chan_mst_i.id);
+      if (pend_push)
+        for (int unsigned i = 0; i < PendDepth; i++)
+          if (v_q[i] && (line_q[i] == evict_line))
+            $error("[LLC-WB] t=%0t line %0h written back again before the response of its last write-back",
+                   $time, evict_line);
+    end
+    `endif
+    `endif
+    // pragma translate_on
+  end else begin : gen_no_pend
+    assign pend_hit   = 1'b0;
+    assign pend_full  = 1'b0;
+    assign pend_empty = 1'b1;
+  end
+
+`ifndef SYNTHESIS
+  // simulation monitor: write-backs, how long a descriptor stood behind one that was only waiting for its
+  // response (PendDepth = 0) or for a free entry, and how often a refill waited for the write-back of its own line
+  longint unsigned wb_n, wb_behind, wb_full_wait, wb_line_wait_n, wb_line_wait;
+  logic wb_hold_q = 1'b0;
+  always_ff @(posedge clk_i) if (rst_ni) begin
+    if (fifo_pop && w_chan_mst_o.last && busy_q && !send_q) wb_n <= wb_n + 1;
+    if (busy_q && send_q && desc_valid_i)                   wb_behind <= wb_behind + 1;
+    if (!busy_q && !send_q && desc_valid_i && desc_i.evict && pend_full) wb_full_wait <= wb_full_wait + 1;
+    wb_hold_q <= !busy_q && send_q && !desc_q.flush && desc_q.refill && pend_hit;
+    if (!busy_q && send_q && !desc_q.flush && desc_q.refill && pend_hit) begin
+      wb_line_wait <= wb_line_wait + 1;
+      if (!wb_hold_q) wb_line_wait_n <= wb_line_wait_n + 1;
+    end
+    if (fifo_pop && w_chan_mst_o.last && busy_q && !send_q && wb_n >= 31 && ((wb_n + 1) & wb_n) == 0)   // 32, 64, 128, ...
+      $display("[LLC-WB] t=%0t PendDepth %0d: %0d write-backs; descriptors stood %0d cycles behind one waiting for its response, %0d cycles for a free entry; %0d refills waited for the write-back of their own line (%0d cycles)",
+               $time, PendDepth, wb_n + 1, wb_behind, wb_full_wait, wb_line_wait_n, wb_line_wait);
+  end
+`endif
 
   // this function loads a descriptor into the unit
   function void load_new_desc();
-    desc_ready_o = 1'b1;
+    // a write-back needs a free entry for its response before it starts (never the case with PendDepth = 0)
+    desc_ready_o = ~(desc_valid_i & desc_i.evict & pend_full);
     // transfer new descriptor in
-    if (desc_valid_i) begin
+    if (desc_valid_i && desc_ready_o) begin
       desc_d    = desc_i;
       load_desc = 1'b1;
       if (desc_i.evict) begin
